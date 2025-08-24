@@ -10,10 +10,10 @@ interface BankingFormProps {
 }
 
 const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel }) => {
-  const { memos, bills } = useDataStore();
+  const { memos, bills, ledgerEntries, parties } = useDataStore();
   const [formData, setFormData] = useState({
     type: 'credit' as 'credit' | 'debit',
-    category: 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'other',
+    category: 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'other',
     amount: 0,
     date: new Date().toISOString().split('T')[0],
     reference_id: '',
@@ -24,6 +24,14 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel }) => {
   const existingMemos = useMemo(() => memos.map(m => m.memo_number), [memos]);
   const existingBills = useMemo(() => bills.map(b => b.bill_number), [bills]);
   const [showReferenceDropdown, setShowReferenceDropdown] = useState(false);
+  
+  // Get existing general ledger names for expense dropdown
+  const existingLedgerNames = useMemo(() => {
+    const generalEntries = ledgerEntries.filter(entry => entry.ledger_type === 'general');
+    const partyNames = parties.map(p => p.name);
+    const ledgerNames = Array.from(new Set(generalEntries.map(entry => entry.reference_name)));
+    return Array.from(new Set([...partyNames, ...ledgerNames])).sort();
+  }, [ledgerEntries, parties]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +69,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel }) => {
         { value: 'memo_advance', label: 'Memo Advance' },
         { value: 'memo_payment', label: 'Memo Payment' },
         { value: 'expense', label: 'Expense' },
+        { value: 'fuel_wallet', label: 'Fuel Wallet Credit' },
         { value: 'other', label: 'Other Expense' },
       ];
     }
@@ -232,17 +241,77 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel }) => {
           {!needsReference() && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Reference Name
+                {formData.category === 'fuel_wallet' ? 'Fuel Wallet Name' :
+                 (formData.type === 'debit' && (formData.category === 'expense' || formData.category === 'other')) 
+                  ? 'Select Ledger Account' : 'Reference Name'}
               </label>
-              <input
-                type="text"
-                name="reference_name"
-                value={formData.reference_name}
-                onChange={handleInputChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Enter name or description"
-                required
-              />
+              {formData.category === 'fuel_wallet' ? (
+                <select
+                  name="reference_name"
+                  value={formData.reference_name}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Fuel Wallet</option>
+                  <option value="BPCL">BPCL</option>
+                  <option value="HPCL">HPCL</option>
+                  <option value="IOCL">IOCL</option>
+                  <option value="Shell">Shell</option>
+                  <option value="Essar">Essar</option>
+                </select>
+              ) : (formData.type === 'debit' && (formData.category === 'expense' || formData.category === 'other')) ? (
+                <div className="relative">
+                  <input
+                    type="text"
+                    name="reference_name"
+                    value={formData.reference_name}
+                    onChange={handleInputChange}
+                    onFocus={() => setShowReferenceDropdown(true)}
+                    className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Select existing ledger or enter new name"
+                    required
+                  />
+                  <ChevronDown 
+                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 cursor-pointer"
+                    onClick={() => setShowReferenceDropdown(!showReferenceDropdown)}
+                  />
+                  {showReferenceDropdown && existingLedgerNames.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                      {existingLedgerNames
+                        .filter(name => name.toLowerCase().includes(formData.reference_name.toLowerCase()))
+                        .map((name, index) => (
+                        <div
+                          key={index}
+                          className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, reference_name: name }));
+                            setShowReferenceDropdown(false);
+                          }}
+                        >
+                          {name}
+                        </div>
+                      ))}
+                      {formData.reference_name && !existingLedgerNames.some(name => 
+                        name.toLowerCase() === formData.reference_name.toLowerCase()) && (
+                        <div className="px-4 py-2 text-gray-500 italic border-t">
+                          Create new ledger: "{formData.reference_name}"
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <input
+                  type="text"
+                  name="reference_name"
+                  value={formData.reference_name}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter name or description"
+                  required
+                />
+              )}
             </div>
           )}
 

@@ -1,20 +1,24 @@
-import React, { useMemo, useState } from 'react';
-import { Plus, FileText, Edit, Download, Image, Eye } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plus, FileText, Edit, Download, Eye, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
-import BillForm from './forms/BillForm';
+import { getNextSequenceNumber } from '../utils/sequenceGenerator';
 import { generateBillPDF } from '../utils/pdfGenerator';
-import type { Bill } from '../types';
+import BillForm from './forms/BillForm';
 import { useDataStore } from '../lib/store';
+import type { Bill } from '../types';
 
 interface BillsListProps {
   showOnlyFullyReceived?: boolean;
 }
 
 const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = false }) => {
-  const { bills, addBill, updateBill, bankingEntries } = useDataStore();
+  const { bills, addBill, updateBill, deleteBill, bankingEntries, addBankingEntry, loadingSlips, markBillAsReceived } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
+  const [showReceivedModal, setShowReceivedModal] = useState<Bill | null>(null);
+  const [receivedDate, setReceivedDate] = useState('');
+  const [search, setSearch] = useState('');
 
   const handleCreateBill = (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
     const newBill: Bill = {
@@ -27,9 +31,9 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
     setShowForm(false);
   };
 
-  const handleEditBill = (bill: Bill) => {
-    setEditingBill(bill);
-    setShowForm(true);
+
+  const getNextBillNumber = () => {
+    return getNextSequenceNumber(bills, 'bill_number', 'BL');
   };
 
   const handleUpdateBill = (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
@@ -47,18 +51,102 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   };
 
   const handleDownloadPDF = async (bill: Bill) => {
-    await generateBillPDF(bill, bill.pod_image);
+    try {
+      // Find the associated loading slip for this bill
+      const associatedLoadingSlip = loadingSlips.find(ls => ls.id === bill.loading_slip_id);
+      
+      if (associatedLoadingSlip) {
+        await generateBillPDF(bill, associatedLoadingSlip);
+      } else {
+        // Create a dummy loading slip if no associated one is found
+        const dummyLoadingSlip = {
+          id: 'dummy',
+          slip_number: 'N/A',
+          date: bill.date,
+          party: bill.party,
+          vehicle_no: 'N/A',
+          from_location: 'N/A',
+          to_location: 'N/A',
+          dimension: 'N/A',
+          weight: 0,
+          supplier: 'N/A',
+          freight: bill.bill_amount,
+          advance: 0,
+          balance: 0,
+          rto: 0,
+          total_freight: bill.bill_amount,
+          created_at: bill.created_at,
+          updated_at: bill.updated_at
+        };
+        await generateBillPDF(bill, dummyLoadingSlip);
+      }
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Error generating PDF. Please try again.');
+    }
+  };
+
+  const handleMarkAsReceived = (bill: Bill) => {
+    setShowReceivedModal(bill);
+    setReceivedDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const confirmMarkAsReceived = () => {
+    if (showReceivedModal && receivedDate) {
+      // Add banking entry for full payment received
+      addBankingEntry({
+        id: Date.now().toString(),
+        type: 'credit',
+        date: receivedDate,
+        category: 'bill_payment',
+        narration: `Full payment received for Bill ${showReceivedModal.bill_number}`,
+        amount: showReceivedModal.bill_amount,
+        reference_id: showReceivedModal.bill_number,
+        reference_name: showReceivedModal.party,
+        created_at: new Date().toISOString()
+      });
+      // Update bill status and persist receipt meta
+      markBillAsReceived(showReceivedModal.id, receivedDate, showReceivedModal.bill_amount);
+      setShowReceivedModal(null);
+      setReceivedDate('');
+    }
+  };
+
+  const handleDeleteBill = (bill: Bill) => {
+    if (confirm(`Are you sure you want to delete Bill #${bill.bill_number}?`)) {
+      deleteBill(bill.id);
+    }
   };
 
   const filteredBills = useMemo(() => {
-    if (!showOnlyFullyReceived) return bills;
-    return bills.filter(b => {
-      const received = bankingEntries
-        .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === b.bill_number)
-        .reduce((sum, e) => sum + e.amount, 0);
-      return received >= b.net_amount && b.net_amount > 0;
+    // Main list shows only pending; Received Bills view shows only received
+    let base = showOnlyFullyReceived ? bills.filter((b: any) => b.status === 'received') : bills.filter((b: any) => b.status !== 'received');
+    // Optional strict settlement check (kept)
+    if (showOnlyFullyReceived) {
+      base = base.filter(b => {
+        const received = bankingEntries
+          .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === b.bill_number)
+          .reduce((sum, e) => sum + e.amount, 0);
+        return received >= b.net_amount && b.net_amount > 0;
+      });
+    }
+    if (!search.trim()) return base;
+    const q = search.toLowerCase();
+    return base.filter(b => {
+      const ls = loadingSlips.find(ls => ls.id === b.loading_slip_id);
+      const haystack = [
+        b.bill_number,
+        b.party,
+        new Date(b.date).toLocaleDateString('en-IN'),
+        String(b.bill_amount),
+        String(b.net_amount),
+        ls?.vehicle_no || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(q);
     });
-  }, [bills, bankingEntries, showOnlyFullyReceived]);
+  }, [bills, bankingEntries, showOnlyFullyReceived, search, loadingSlips]);
 
   return (
     <div className="space-y-6">
@@ -76,6 +164,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
       {showForm && (
         <BillForm
           initialData={editingBill}
+          nextBillNumber={getNextBillNumber()}
           onSubmit={editingBill ? handleUpdateBill : handleCreateBill}
           onCancel={() => {
             setShowForm(false);
@@ -84,110 +173,128 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         />
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <h3 className="text-lg font-semibold text-gray-900">All Bills</h3>
-        </div>
-        <div className="overflow-x-auto">
-          {filteredBills.length === 0 ? (
-            <div className="text-center text-gray-500 py-12">
-              <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>No bills found</p>
-              <p className="text-sm">Create bills from loading slips</p>
-            </div>
-          ) : (
-            <table className="w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Bill No
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Party
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Bill Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Deductions
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Net Amount
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    POD
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {filteredBills.map((bill) => (
-                  <tr key={bill.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {bill.bill_number}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {new Date(bill.date).toLocaleDateString('en-IN')}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {bill.party}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {formatCurrency(bill.bill_amount)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-red-600">
-                      -{formatCurrency(bill.mamool + bill.tds + bill.penalties)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-medium">
-                      {formatCurrency(bill.net_amount)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {bill.pod_image ? (
-                        <div className="flex items-center space-x-1">
-                          <Image className="w-4 h-4 text-green-600" />
-                          <span className="text-green-600">Yes</span>
-                        </div>
-                      ) : (
-                        <span className="text-gray-400">No</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => setViewBill(bill)}
-                          className="text-gray-700 hover:text-gray-900"
-                          title="View Bill"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEditBill(bill)}
-                          className="text-blue-600 hover:text-blue-800"
-                          title="Edit Bill"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDownloadPDF(bill)}
-                          className="text-green-600 hover:text-green-800"
-                          title="Download PDF"
-                        >
-                          <Download className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+      {/* Search Bar */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search bills by bill number, party name, route, or vehicle..."
+          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+        />
       </div>
+
+      {/* Bills Cards */}
+      {filteredBills.length === 0 ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+          <FileText className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+          <h3 className="text-lg font-medium text-gray-900 mb-2">No bills found</h3>
+          <p className="text-gray-500">Create bills from loading slips</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {filteredBills.map((bill) => {
+            const loadingSlip = loadingSlips.find(ls => ls.id === bill.loading_slip_id);
+            const received = bankingEntries
+              .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
+              .reduce((sum, e) => sum + e.amount, 0);
+            const balance = bill.net_amount - received;
+            const trips = 1; // Default trips count
+            
+            return (
+              <div key={bill.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                <div className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-4 mb-2">
+                        <h3 className="text-lg font-semibold text-blue-600">
+                          Bill #{bill.bill_number}
+                        </h3>
+                        <div className="flex items-center space-x-3 text-sm text-gray-600">
+                          <span>Trips: {trips}</span>
+                          <span className={`font-medium ${
+                            balance > 0 ? 'text-red-600' : balance < 0 ? 'text-green-600' : 'text-gray-600'
+                          }`}>
+                            Balance: {formatCurrency(Math.abs(balance))}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-sm text-gray-500 mb-2">
+                        {new Date(bill.date).toLocaleDateString('en-IN')} • {bill.party}
+                        {showOnlyFullyReceived && bill.received_date && (
+                          <span className="text-green-600 ml-2">
+                            • Received: {new Date(bill.received_date).toLocaleDateString('en-IN')}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        Total Freight: <span className="font-medium">{formatCurrency(bill.bill_amount)}</span>
+                        <span className="ml-4">Advances: {received > 0 ? formatCurrency(received) : '0'}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={() => setViewBill(bill)}
+                        className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="View Details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingBill(bill);
+                          setShowForm(true);
+                        }}
+                        className="p-2 text-blue-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                        title="Edit"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handleDownloadPDF(bill)}
+                        className="p-2 text-green-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-colors"
+                        title="Download PDF"
+                      >
+                        <Download className="w-4 h-4" />
+                      </button>
+                      {!showOnlyFullyReceived && (
+                        <button
+                          onClick={() => handleMarkAsReceived(bill)}
+                          className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors"
+                          title="Mark as Received"
+                        >
+                          Mark as Received
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteBill(bill)}
+                        className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  
+                  {/* Trip Details */}
+                  {loadingSlip && (
+                    <div className="bg-gray-50 rounded-lg p-4 mt-4">
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Trips:</div>
+                      <div className="text-sm text-gray-900">
+                        Invoice Date: {loadingSlip ? `${loadingSlip.from_location} → ${loadingSlip.to_location}` : 'N/A'} ({loadingSlip?.vehicle_no || 'N/A'})
+                      </div>
+                      <div className="text-right mt-2">
+                        <span className="text-lg font-bold text-gray-900">{formatCurrency(bill.bill_amount)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {viewBill && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
@@ -205,14 +312,67 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
               <div className="col-span-2 flex items-center space-x-2">
                 <span className="text-gray-500">POD:</span>
                 {viewBill.pod_image ? (
-                  <span className="text-green-600 flex items-center space-x-1"><Image className="w-4 h-4" /><span>Available</span></span>
+                  <span className="text-green-600 flex items-center space-x-1"><FileText className="w-4 h-4" /><span>Available</span></span>
                 ) : (
                   <span className="text-gray-400">Not Attached</span>
                 )}
               </div>
+              {viewBill.narration && (
+                <div className="col-span-2">
+                  <span className="text-gray-500">Narration:</span>
+                  <p className="mt-1 text-gray-900">{viewBill.narration}</p>
+                </div>
+              )}
             </div>
             <div className="px-6 py-4 border-t flex justify-end">
               <button onClick={() => setViewBill(null)} className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mark as Received Modal */}
+      {showReceivedModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Mark Bill as Received</h3>
+              <button onClick={() => setShowReceivedModal(null)} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-2">
+                  Bill #{showReceivedModal.bill_number} - {showReceivedModal.party}
+                </p>
+                <p className="text-lg font-semibold text-green-600">
+                  Amount: {formatCurrency(showReceivedModal.bill_amount)}
+                </p>
+              </div>
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Received Date
+                </label>
+                <input
+                  type="date"
+                  value={receivedDate}
+                  onChange={(e) => setReceivedDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 border-t flex justify-end space-x-3">
+              <button 
+                onClick={() => setShowReceivedModal(null)}
+                className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmMarkAsReceived}
+                className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700"
+              >
+                Mark as Received
+              </button>
             </div>
           </div>
         </div>

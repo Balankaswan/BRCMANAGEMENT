@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calculator, Upload } from 'lucide-react';
-import { generateBillNumber, formatCurrency } from '../../utils/numberGenerator';
+import { formatCurrency } from '../../utils/numberGenerator';
+import PDFGenerator from '../PDFGenerator';
 import type { LoadingSlip, Bill } from '../../types';
 
 interface BillFormProps {
   loadingSlip?: LoadingSlip;
+  nextBillNumber: string;
   initialData?: Bill | null;
   onSubmit: (data: any) => void;
   onCancel: () => void;
 }
 
-const BillForm: React.FC<BillFormProps> = ({ loadingSlip, initialData, onSubmit, onCancel }) => {
+const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initialData, onSubmit, onCancel }) => {
   const [formData, setFormData] = useState({
-    bill_number: generateBillNumber(),
+    bill_number: initialData ? initialData.bill_number : nextBillNumber,
     loading_slip_id: loadingSlip?.id || '',
     date: new Date().toISOString().split('T')[0],
     party: loadingSlip?.party || '',
@@ -22,6 +24,8 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, initialData, onSubmit,
     penalties: 0,
     net_amount: 0,
     pod_image: '',
+    status: 'pending' as 'pending' | 'received',
+    narration: '',
   });
   const [podFileName, setPodFileName] = useState<string>('');
 
@@ -47,6 +51,8 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, initialData, onSubmit,
         penalties: initialData.penalties,
         net_amount: initialData.net_amount,
         pod_image: initialData.pod_image || '',
+        status: initialData.status || 'pending' as 'pending' | 'received',
+        narration: initialData.narration || '',
       });
     }
   }, [initialData]);
@@ -242,6 +248,21 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, initialData, onSubmit,
             </div>
           </div>
 
+          {/* Narration Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Narration
+            </label>
+            <textarea
+              name="narration"
+              value={formData.narration}
+              onChange={(e) => setFormData(prev => ({ ...prev, narration: e.target.value }))}
+              placeholder="Enter narration or remarks"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={3}
+            />
+          </div>
+
           {/* Calculation Summary */}
           <div className="bg-green-50 p-4 rounded-lg">
             <div className="flex items-center mb-3">
@@ -274,20 +295,32 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, initialData, onSubmit,
             </div>
           </div>
 
-          <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              {initialData ? 'Update' : 'Create'} Bill
-            </button>
+          <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+            <div>
+              {initialData && loadingSlip && (
+                <PDFGenerator
+                  type="bill"
+                  data={initialData}
+                  loadingSlip={loadingSlip}
+                  size="md"
+                />
+              )}
+            </div>
+            <div className="flex items-center space-x-4">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                {initialData ? 'Update' : 'Create'} Bill
+              </button>
+            </div>
           </div>
         </form>
       </div>

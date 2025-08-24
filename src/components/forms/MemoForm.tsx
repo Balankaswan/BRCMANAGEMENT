@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calculator } from 'lucide-react';
-import { generateMemoNumber, formatCurrency } from '../../utils/numberGenerator';
+import { formatCurrency } from '../../utils/numberGenerator';
 import type { LoadingSlip, Memo, AdvancePayment } from '../../types';
 
 interface MemoFormProps {
-  loadingSlip?: LoadingSlip;
+  slip?: LoadingSlip;
+  nextMemoNumber?: string;
   initialData?: Memo | null;
   onSubmit: (data: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => void;
   onCancel: () => void;
@@ -24,23 +25,27 @@ type MemoFormState = {
   rto: number;
   net_amount: number;
   advance_payments: AdvancePayment[];
+  status: 'pending' | 'paid';
+  narration: string;
 };
 
-const MemoForm: React.FC<MemoFormProps> = ({ loadingSlip, initialData, onSubmit, onCancel }) => {
+const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, onSubmit, onCancel }) => {
   const [formData, setFormData] = useState<MemoFormState>({
-    memo_number: generateMemoNumber(),
-    loading_slip_id: loadingSlip?.id || '',
-    date: new Date().toISOString().split('T')[0],
-    supplier: loadingSlip?.supplier || '',
-    freight: loadingSlip?.freight || 0,
+    memo_number: initialData?.memo_number || nextMemoNumber || '',
+    loading_slip_id: initialData?.loading_slip_id || slip?.id || '',
+    date: initialData ? initialData.date.split('T')[0] : new Date().toISOString().split('T')[0],
+    supplier: initialData?.supplier || slip?.supplier || '',
+    freight: initialData?.freight || slip?.freight || 0,
     commission_rate: 6,
-    commission: 0,
-    mamool: 0,
-    detention: 0,
-    extra: 0,
-    rto: loadingSlip?.rto || 0,
-    net_amount: 0,
-    advance_payments: [] as AdvancePayment[],
+    commission: initialData?.commission || 0,
+    mamool: initialData?.mamool || 0,
+    detention: initialData?.detention || 0,
+    extra: initialData?.extra || 0,
+    rto: initialData?.rto || slip?.rto || 0,
+    net_amount: initialData?.net_amount || 0,
+    advance_payments: initialData?.advance_payments || [] as AdvancePayment[],
+    status: initialData?.status || 'pending' as const,
+    narration: initialData?.narration || '',
   });
 
   // When rate or freight changes, update commission from rate
@@ -62,26 +67,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ loadingSlip, initialData, onSubmit,
     }));
   }, [formData.freight, formData.commission, formData.mamool, formData.detention, formData.extra, formData.rto]);
 
-  useEffect(() => {
-    if (initialData) {
-      setFormData({
-        memo_number: initialData.memo_number,
-        loading_slip_id: initialData.loading_slip_id,
-        date: initialData.date.split('T')[0],
-        supplier: initialData.supplier,
-        freight: initialData.freight,
-        commission_rate: 6, // Default to 6%
-        commission: initialData.commission,
-        mamool: initialData.mamool,
-        detention: initialData.detention,
-        extra: initialData.extra,
-        rto: initialData.rto,
-        net_amount: initialData.net_amount,
-        advance_payments: initialData.advance_payments,
-      });
-    }
-  }, [initialData]);
-
+  
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit(formData);
@@ -100,7 +86,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ loadingSlip, initialData, onSubmit,
       <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-6 border-b border-gray-200">
           <h2 className="text-xl font-semibold text-gray-900">
-            {initialData ? 'Edit Memo' : 'New Memo'}
+            New Memo
           </h2>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
             <X className="w-6 h-6" />
@@ -150,25 +136,25 @@ const MemoForm: React.FC<MemoFormProps> = ({ loadingSlip, initialData, onSubmit,
             </div>
           </div>
 
-          {loadingSlip && (
+          {slip && (
             <div className="bg-blue-50 p-4 rounded-lg">
               <h3 className="text-sm font-medium text-blue-900 mb-2">Loading Slip Details</h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-blue-700">Slip No:</span>
-                  <span className="ml-2 font-medium">{loadingSlip.slip_number}</span>
+                  <span className="ml-2 font-medium">{slip.slip_number}</span>
                 </div>
                 <div>
                   <span className="text-blue-700">Vehicle:</span>
-                  <span className="ml-2 font-medium">{loadingSlip.vehicle_no}</span>
+                  <span className="ml-2 font-medium">{slip.vehicle_no}</span>
                 </div>
                 <div>
                   <span className="text-blue-700">Route:</span>
-                  <span className="ml-2 font-medium">{loadingSlip.from_location} → {loadingSlip.to_location}</span>
+                  <span className="ml-2 font-medium">{slip.from_location} → {slip.to_location}</span>
                 </div>
                 <div>
                   <span className="text-blue-700">Party:</span>
-                  <span className="ml-2 font-medium">{loadingSlip.party}</span>
+                  <span className="ml-2 font-medium">{slip.party}</span>
                 </div>
               </div>
             </div>
@@ -284,6 +270,21 @@ const MemoForm: React.FC<MemoFormProps> = ({ loadingSlip, initialData, onSubmit,
             </div>
           </div>
 
+          {/* Narration Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Narration
+            </label>
+            <textarea
+              name="narration"
+              value={formData.narration}
+              onChange={(e) => setFormData(prev => ({ ...prev, narration: e.target.value }))}
+              placeholder="Enter narration or remarks"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={3}
+            />
+          </div>
+
           {/* Calculation Summary */}
           <div className="bg-green-50 p-4 rounded-lg">
             <div className="flex items-center mb-3">
@@ -316,20 +317,24 @@ const MemoForm: React.FC<MemoFormProps> = ({ loadingSlip, initialData, onSubmit,
             </div>
           </div>
 
-          <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              {initialData ? 'Update' : 'Create'} Memo
-            </button>
+          <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+            <div>
+                          </div>
+            <div className="flex items-center space-x-4">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Create Memo
+              </button>
+            </div>
           </div>
         </form>
       </div>

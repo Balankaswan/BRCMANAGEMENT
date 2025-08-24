@@ -5,17 +5,21 @@ import LoadingSlip from './components/LoadingSlip';
 import Memo from './components/Memo';
 import Bills from './components/Bills';
 import Banking from './components/Banking';
+import Cashbook from './components/Cashbook';
 import Ledgers from './components/Ledgers';
 import POD from './components/POD';
-import Party from './components/Party';
-import Supplier from './components/Supplier';
 import LedgerDetail from './components/LedgerDetail';
+import PartyLedger from './components/PartyLedger';
+import SupplierLedger from './components/SupplierLedger';
+import PartyMaster from './components/PartyMaster';
+import SupplierMaster from './components/SupplierMaster';
+import FuelManagement from './components/FuelManagement';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('dashboard');
   const [showLedgerDetail, setShowLedgerDetail] = useState<{
     name: string;
-    type: 'party' | 'supplier';
+    type: 'party' | 'supplier' | 'general';
   } | null>(null);
 
   const renderCurrentPage = () => {
@@ -32,12 +36,20 @@ function App() {
         return <Memo showOnlyFullyPaid />;
       case 'received-bills':
         return <Bills showOnlyFullyReceived />;
-      case 'party':
-        return <Party />;
-      case 'supplier':
-        return <Supplier />;
+      case 'party-master':
+        return <PartyMaster />;
+      case 'supplier-master':
+        return <SupplierMaster />;
+      case 'party-ledger':
+        return <PartyLedger />;
+      case 'supplier-ledger':
+        return <SupplierLedger />;
       case 'banking':
         return <Banking />;
+      case 'cashbook':
+        return <Cashbook />;
+      case 'fuel-management':
+        return <FuelManagement />;
       case 'ledgers':
         return (
           <Ledgers

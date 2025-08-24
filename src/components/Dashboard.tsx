@@ -1,77 +1,84 @@
 import React from 'react';
 import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
+import { useDataStore } from '../lib/store';
 
 const Dashboard: React.FC = () => {
+  const { memos, bills, bankingEntries } = useDataStore();
+
+  // Calculate total commission from all memos
+  const totalCommission = memos.reduce((sum, memo) => sum + (memo.commission || 0), 0);
+
+  // Calculate party balance (bills due from parties)
+  const partyBalance = bills.reduce((sum, bill) => {
+    const billPayments = bankingEntries
+      .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
+      .reduce((total, entry) => total + entry.amount, 0);
+    return sum + (bill.net_amount - billPayments);
+  }, 0);
+
+  // Calculate supplier balance (memos due to suppliers)
+  const supplierBalance = memos.reduce((sum, memo) => {
+    const memoPayments = bankingEntries
+      .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
+      .reduce((total, entry) => total + entry.amount, 0);
+    // Balance = freight - advance - commission - mamul + detention + extra
+    const calculatedBalance = memo.freight - memoPayments - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
+    return sum + Math.max(0, calculatedBalance);
+  }, 0);
+
+  // Calculate monthly revenue (total bill amounts)
+  const monthlyRevenue = bills.reduce((sum, bill) => sum + bill.bill_amount, 0);
+
   const stats = [
     {
       title: 'Total Profit (Actual Commission)',
-      value: 'Rs. 0',
+      value: formatCurrency(totalCommission),
       icon: TrendingUp,
       color: 'bg-green-50 text-green-700',
       iconBg: 'bg-green-100',
     },
     {
       title: 'Party Balance',
-      value: 'Rs. 0',
+      value: formatCurrency(partyBalance),
       icon: Users,
       color: 'bg-blue-50 text-blue-700',
       iconBg: 'bg-blue-100',
     },
     {
       title: 'Supplier Balance',
-      value: 'Rs. 0',
+      value: formatCurrency(supplierBalance),
       icon: Truck,
       color: 'bg-orange-50 text-orange-700',
       iconBg: 'bg-orange-100',
     },
     {
       title: 'Monthly Revenue',
-      value: 'Rs. 0',
+      value: formatCurrency(monthlyRevenue),
       icon: DollarSign,
       color: 'bg-purple-50 text-purple-700',
       iconBg: 'bg-purple-100',
     },
   ];
 
-  // Sample recent data - in real app, this would come from state/database
-  const recentBills = [
-    {
-      id: '1',
-      bill_number: 'BL25081001',
-      party: 'ABC Transport Ltd',
-      amount: 150000,
-      date: '2025-01-16',
-      status: 'Pending'
-    },
-    {
-      id: '2',
-      bill_number: 'BL25081002',
-      party: 'XYZ Logistics',
-      amount: 200000,
-      date: '2025-01-15',
-      status: 'Paid'
-    }
-  ];
+  // Get recent bills and memos from actual data
+  const recentBills = bills.slice(0, 5).map(bill => ({
+    id: bill.id,
+    bill_number: bill.bill_number,
+    party: bill.party,
+    amount: bill.net_amount,
+    date: bill.date,
+    status: 'Pending' // TODO: Add status tracking
+  }));
 
-  const recentMemos = [
-    {
-      id: '1',
-      memo_number: 'MO25081001',
-      supplier: 'Rajesh Transport',
-      amount: 140000,
-      date: '2025-01-16',
-      status: 'Pending'
-    },
-    {
-      id: '2',
-      memo_number: 'MO25081002',
-      supplier: 'Kumar Logistics',
-      amount: 180000,
-      date: '2025-01-15',
-      status: 'Paid'
-    }
-  ];
+  const recentMemos = memos.slice(0, 5).map(memo => ({
+    id: memo.id,
+    memo_number: memo.memo_number,
+    supplier: memo.supplier,
+    amount: memo.net_amount,
+    date: memo.date,
+    status: 'Pending' // TODO: Add status tracking
+  }));
 
   return (
     <div className="space-y-6">

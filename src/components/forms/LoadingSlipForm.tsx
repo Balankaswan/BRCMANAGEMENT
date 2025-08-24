@@ -1,17 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { X, ChevronDown } from 'lucide-react';
-import { generateSlipNumber, formatCurrency } from '../../utils/numberGenerator';
+import { formatCurrency } from '../../utils/numberGenerator';
+import PDFGenerator from '../PDFGenerator';
+import { useDataStore } from '../../lib/store';
 import type { LoadingSlip } from '../../types';
 
 interface LoadingSlipFormProps {
   initialData?: LoadingSlip | null;
+  nextSlipNumber: string;
   onSubmit: (data: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => void;
   onCancel: () => void;
 }
 
-const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit, onCancel }) => {
+const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlipNumber, onSubmit, onCancel }) => {
+  const { parties, suppliers, vehicles, addParty, addSupplier } = useDataStore();
   const [formData, setFormData] = useState({
-    slip_number: generateSlipNumber(),
+    slip_number: initialData ? initialData.slip_number : nextSlipNumber,
     date: new Date().toISOString().split('T')[0],
     party: '',
     vehicle_no: '',
@@ -23,13 +27,15 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
     freight: 0,
     advance: 0,
     rto: 0,
+    narration: '',
   });
 
   // Sample data for autocomplete - in real app, this would come from database
-  const [parties] = useState(['ABC Transport Ltd', 'XYZ Logistics', 'VTS', 'Kumar Transport', 'Rajesh Logistics']);
-  const [suppliers] = useState(['Rajesh Transport', 'Kumar Logistics', 'fcscf', 'Sharma Transport', 'Patel Logistics']);
-  const [vehicles] = useState(['GJ01AB1234', 'GJ05CD5678', 'DD01YV9406', 'MH12EF9012', 'RJ14GH3456']);
   const [locations] = useState(['HAZIRA', 'HYD', 'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Ahmedabad']);
+  const [showNewPartyForm, setShowNewPartyForm] = useState(false);
+  const [showNewSupplierForm, setShowNewSupplierForm] = useState(false);
+  const [newPartyName, setNewPartyName] = useState('');
+  const [newSupplierName, setNewSupplierName] = useState('');
   
   const [showPartyDropdown, setShowPartyDropdown] = useState(false);
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
@@ -52,6 +58,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
         freight: initialData.freight,
         advance: initialData.advance,
         rto: initialData.rto,
+        narration: initialData.narration || '',
       });
     }
   }, [initialData]);
@@ -77,10 +84,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
   };
 
   const handleDropdownSelect = (field: string, value: string) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value,
-    }));
+    setFormData(prev => ({ ...prev, [field]: value }));
     // Close all dropdowns
     setShowPartyDropdown(false);
     setShowSupplierDropdown(false);
@@ -89,10 +93,45 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
     setShowToDropdown(false);
   };
 
-  const filterOptions = (options: string[], searchTerm: string) => {
-    return options.filter(option => 
-      option.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+  const handleAddNewParty = () => {
+    if (newPartyName.trim()) {
+      const newParty = {
+        id: Date.now().toString(),
+        name: newPartyName.trim(),
+        contact: '',
+        address: '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      addParty(newParty);
+      setFormData(prev => ({ ...prev, party: newPartyName.trim() }));
+      setNewPartyName('');
+      setShowNewPartyForm(false);
+    }
+  };
+
+  const handleAddNewSupplier = () => {
+    if (newSupplierName.trim()) {
+      const newSupplier = {
+        id: Date.now().toString(),
+        name: newSupplierName.trim(),
+        contact: '',
+        address: '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+      addSupplier(newSupplier);
+      setFormData(prev => ({ ...prev, supplier: newSupplierName.trim() }));
+      setNewSupplierName('');
+      setShowNewSupplierForm(false);
+    }
+  };
+
+  const filterOptions = (options: any[], searchTerm: string) => {
+    return options.filter(option => {
+      const optionText = typeof option === 'string' ? option : option.vehicle_no || option.name || '';
+      return optionText.toLowerCase().includes(searchTerm.toLowerCase());
+    });
   };
 
   return (
@@ -157,16 +196,30 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
                   onClick={() => setShowPartyDropdown(!showPartyDropdown)}
                 />
                 {showPartyDropdown && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                    {filterOptions(parties, formData.party).map((party, index) => (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {parties.map((party) => (
                       <div
-                        key={index}
+                        key={party.id}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
-                        onClick={() => handleDropdownSelect('party', party)}
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, party: party.name }));
+                          setShowPartyDropdown(false);
+                        }}
                       >
-                        {party}
+                        {party.name}
                       </div>
                     ))}
+                    <div className="border-t border-gray-200">
+                      <div
+                        className="px-4 py-2 text-blue-600 hover:bg-blue-50 cursor-pointer font-medium"
+                        onClick={() => {
+                          setShowNewPartyForm(true);
+                          setShowPartyDropdown(false);
+                        }}
+                      >
+                        + Add New Party
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -198,9 +251,9 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
                       <div
                         key={index}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
-                        onClick={() => handleDropdownSelect('vehicle_no', vehicle)}
+                        onClick={() => handleDropdownSelect('vehicle_no', typeof vehicle === 'string' ? vehicle : vehicle.vehicle_no)}
                       >
-                        {vehicle}
+                        {typeof vehicle === 'string' ? vehicle : vehicle.vehicle_no}
                       </div>
                     ))}
                   </div>
@@ -226,16 +279,30 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
                   onClick={() => setShowSupplierDropdown(!showSupplierDropdown)}
                 />
                 {showSupplierDropdown && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                    {filterOptions(suppliers, formData.supplier).map((supplier, index) => (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {suppliers.map((supplier) => (
                       <div
-                        key={index}
+                        key={supplier.id}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
-                        onClick={() => handleDropdownSelect('supplier', supplier)}
+                        onClick={() => {
+                          setFormData(prev => ({ ...prev, supplier: supplier.name }));
+                          setShowSupplierDropdown(false);
+                        }}
                       >
-                        {supplier}
+                        {supplier.name}
                       </div>
                     ))}
+                    <div className="border-t border-gray-200">
+                      <div
+                        className="px-4 py-2 text-blue-600 hover:bg-blue-50 cursor-pointer font-medium"
+                        onClick={() => {
+                          setShowNewSupplierForm(true);
+                          setShowSupplierDropdown(false);
+                        }}
+                      >
+                        + Add New Supplier
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -387,6 +454,21 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
             </div>
           </div>
 
+          {/* Narration Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Narration
+            </label>
+            <textarea
+              name="narration"
+              value={formData.narration}
+              onChange={(e) => setFormData(prev => ({ ...prev, narration: e.target.value }))}
+              placeholder="Enter narration or remarks"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              rows={3}
+            />
+          </div>
+
           {/* Calculated Fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50 p-4 rounded-lg">
             <div>
@@ -407,23 +489,108 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, onSubmit
             </div>
           </div>
 
-          <div className="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              {initialData ? 'Update' : 'Create'} Loading Slip
-            </button>
+          <div className="flex items-center justify-between pt-6 border-t border-gray-200">
+            <div>
+              {initialData && (
+                <PDFGenerator
+                  type="loading-slip"
+                  data={initialData}
+                  size="md"
+                />
+              )}
+            </div>
+            <div className="flex items-center space-x-4">
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-6 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                {initialData ? 'Update' : 'Create'} Loading Slip
+              </button>
+            </div>
           </div>
         </form>
       </div>
+
+      {/* New Party Modal */}
+      {showNewPartyForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96">
+            <h3 className="text-lg font-semibold mb-4">Add New Party</h3>
+            <input
+              type="text"
+              value={newPartyName}
+              onChange={(e) => setNewPartyName(e.target.value)}
+              placeholder="Enter party name"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+              autoFocus
+            />
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewPartyForm(false);
+                  setNewPartyName('');
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddNewParty}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={!newPartyName.trim()}
+              >
+                Add Party
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Supplier Modal */}
+      {showNewSupplierForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96">
+            <h3 className="text-lg font-semibold mb-4">Add New Supplier</h3>
+            <input
+              type="text"
+              value={newSupplierName}
+              onChange={(e) => setNewSupplierName(e.target.value)}
+              placeholder="Enter supplier name"
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4"
+              autoFocus
+            />
+            <div className="flex justify-end space-x-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewSupplierForm(false);
+                  setNewSupplierName('');
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddNewSupplier}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={!newSupplierName.trim()}
+              >
+                Add Supplier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

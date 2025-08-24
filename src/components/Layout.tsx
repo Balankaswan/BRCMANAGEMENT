@@ -1,5 +1,6 @@
 import React from 'react';
-import { Truck, FileText, Receipt, CreditCard, Users, Building, Archive } from 'lucide-react';
+import { Truck, FileText, Receipt, CreditCard, Archive, Fuel } from 'lucide-react';
+import { COMPANY_LOGO_BASE64 } from '../assets/logo';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,10 +16,10 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
     { id: 'bills', label: 'Bills', icon: Receipt },
     { id: 'paid-memo', label: 'Paid Memo', icon: Receipt },
     { id: 'received-bills', label: 'Received Bills', icon: Receipt },
-    { id: 'party', label: 'Party', icon: Users },
-    { id: 'supplier', label: 'Supplier', icon: Building },
     { id: 'banking', label: 'Banking', icon: CreditCard },
-    { id: 'ledgers', label: 'Ledgers', icon: FileText },
+    { id: 'cashbook', label: 'Cashbook', icon: CreditCard },
+    { id: 'fuel-management', label: 'Fuel Management', icon: Fuel },
+    { id: 'ledgers', label: 'General Ledgers', icon: FileText },
     { id: 'pod', label: 'POD', icon: Archive },
   ];
 
@@ -28,8 +29,21 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
       <div className="w-64 bg-white shadow-lg">
         <div className="p-6 border-b">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Truck className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden">
+              <img 
+                src={COMPANY_LOGO_BASE64} 
+                alt="BRC Logo" 
+                className="w-full h-full object-contain"
+                onError={(e) => {
+                  // Fallback to truck icon if logo fails to load
+                  const target = e.target as HTMLImageElement;
+                  target.style.display = 'none';
+                  target.nextElementSibling?.classList.remove('hidden');
+                }}
+              />
+              <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center hidden">
+                <Truck className="w-6 h-6 text-white" />
+              </div>
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900">BHAVISHYA ROAD</h1>

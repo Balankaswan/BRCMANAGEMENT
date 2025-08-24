@@ -1,48 +1,111 @@
 import React, { useMemo, useState } from 'react';
 import { Users, Truck, Building, Download, Eye } from 'lucide-react';
 import { useDataStore } from '../lib/store';
+import { getAllPartyBalances, getAllSupplierBalances } from '../utils/ledgerUtils';
+import { formatCurrency } from '../utils/numberGenerator';
+import PartyLedger from './PartyLedger';
+import SupplierLedger from './SupplierLedger';
+import GeneralLedger from './GeneralLedger';
 import type { LedgerEntry } from '../types';
 
 interface LedgersProps {
-  onViewLedger?: (name: string, type: 'party' | 'supplier') => void;
+  onViewLedger?: (name: string, type: 'party' | 'supplier' | 'general') => void;
 }
 
 const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
   const [activeTab, setActiveTab] = useState<'party' | 'supplier' | 'general'>('party');
-  const { ledgerEntries } = useDataStore();
+  const [selectedLedger, setSelectedLedger] = useState<{ name: string; type: 'party' | 'supplier' | 'general' } | null>(null);
+  const { ledgerEntries, bills, memos, bankingEntries } = useDataStore();
+
+  // Get party and supplier balances using the new utility functions
+  const partyBalances = useMemo(() => getAllPartyBalances(bills, bankingEntries), [bills, bankingEntries]);
+  const supplierBalances = useMemo(() => getAllSupplierBalances(memos, bankingEntries), [memos, bankingEntries]);
 
   const grouped = useMemo(() => {
-    if (activeTab === 'general') return [] as any[];
-    const type = activeTab;
-    const map = new Map<string, { name: string; entries: LedgerEntry[]; totalDebit: number; totalCredit: number }>();
-    ledgerEntries
-      .filter((e: LedgerEntry) => e.ledger_type === type)
-      .forEach((e: LedgerEntry) => {
-        const key = e.reference_name;
-        const g = map.get(key) || { name: e.reference_name, entries: [], totalDebit: 0, totalCredit: 0 };
-        g.entries = [...g.entries, e];
-        g.totalDebit += e.debit;
-        g.totalCredit += e.credit;
-        map.set(key, g);
-      });
-    return Array.from(map.values());
-  }, [ledgerEntries, activeTab]);
+    if (activeTab === 'general') {
+      // Group general ledger entries by reference_name
+      const generalEntries = ledgerEntries.filter(entry => entry.ledger_type === 'general');
+      const groupedGeneral = generalEntries.reduce((acc, entry) => {
+        const name = entry.reference_name;
+        if (!acc[name]) {
+          acc[name] = {
+            name,
+            entries: [],
+            totalDebit: 0,
+            totalCredit: 0,
+            outstandingAmount: 0
+          };
+        }
+        acc[name].entries.push(entry);
+        acc[name].totalDebit += entry.debit;
+        acc[name].totalCredit += entry.credit;
+        acc[name].outstandingAmount = acc[name].totalDebit - acc[name].totalCredit;
+        return acc;
+      }, {} as Record<string, any>);
+      return Object.values(groupedGeneral);
+    }
+    if (activeTab === 'party') {
+      return partyBalances.map(balance => ({
+        name: balance.partyName,
+        entries: [], // We'll use the new ledger components for detailed view
+        totalDebit: balance.totalBills,
+        totalCredit: balance.totalPayments + balance.totalAdvances,
+        outstandingAmount: balance.outstandingAmount
+      }));
+    }
+    if (activeTab === 'supplier') {
+      return supplierBalances.map(balance => ({
+        name: balance.supplierName,
+        entries: [], // We'll use the new ledger components for detailed view
+        totalDebit: balance.totalMemos + balance.totalDetention + balance.totalExtraWeight,
+        totalCredit: balance.totalPayments + balance.totalAdvances - balance.totalCommission - balance.totalMamul,
+        outstandingAmount: balance.outstandingAmount
+      }));
+    }
+    return [];
+  }, [activeTab, partyBalances, supplierBalances, ledgerEntries]);
 
   const counts = useMemo(() => {
-    const partyNames = new Set<string>();
-    const supplierNames = new Set<string>();
-    ledgerEntries.forEach((e: LedgerEntry) => {
-      if (e.ledger_type === 'party') partyNames.add(e.reference_name);
-      if (e.ledger_type === 'supplier') supplierNames.add(e.reference_name);
-    });
-    return { party: partyNames.size, supplier: supplierNames.size, general: 0 };
-  }, [ledgerEntries]);
+    const generalEntries = ledgerEntries.filter(entry => entry.ledger_type === 'general');
+    const uniqueGeneralNames = new Set(generalEntries.map(entry => entry.reference_name)).size;
+    return { 
+      party: partyBalances.length, 
+      supplier: supplierBalances.length, 
+      general: uniqueGeneralNames 
+    };
+  }, [partyBalances, supplierBalances, ledgerEntries]);
 
   const tabs = [
     { id: 'party', label: 'Party Ledgers', count: counts.party, icon: Users },
     { id: 'supplier', label: 'Supplier Ledgers', count: counts.supplier, icon: Truck },
     { id: 'general', label: 'General Ledgers', count: counts.general, icon: Building },
   ];
+
+  // Handle viewing detailed ledger
+  const handleViewLedger = (name: string, type: 'party' | 'supplier' | 'general') => {
+    setSelectedLedger({ name, type });
+  };
+
+  // If a ledger is selected, show the detailed view
+  if (selectedLedger) {
+    return (
+      <div className="space-y-4">
+        <button
+          onClick={() => setSelectedLedger(null)}
+          className="flex items-center space-x-2 text-blue-600 hover:text-blue-800"
+        >
+          <span>← Back to Ledger Management</span>
+        </button>
+        {selectedLedger.type === 'party' ? (
+          <PartyLedger selectedParty={selectedLedger.name} />
+        ) : selectedLedger.type === 'supplier' ? (
+          <SupplierLedger selectedSupplier={selectedLedger.name} />
+        ) : (
+          <GeneralLedger selectedPerson={selectedLedger.name} />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -88,7 +151,9 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Supplier Outstanding</p>
-                <p className="text-2xl font-bold text-orange-600 mt-2">Rs. 8,46,000</p>
+                <p className="text-2xl font-bold text-orange-600 mt-2">
+                  {formatCurrency(supplierBalances.reduce((sum, balance) => sum + balance.outstandingAmount, 0))}
+                </p>
               </div>
               <div className="w-12 h-12 bg-orange-100 rounded-lg flex items-center justify-center">
                 <Truck className="w-6 h-6 text-orange-600" />
@@ -100,10 +165,10 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Active Supplier Ledgers</p>
-                <p className="text-2xl font-bold text-red-600 mt-2">1</p>
+                <p className="text-2xl font-bold text-red-600 mt-2">{supplierBalances.length}</p>
               </div>
               <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                <span className="text-2xl font-bold text-red-600">1</span>
+                <span className="text-2xl font-bold text-red-600">{supplierBalances.length}</span>
               </div>
             </div>
           </div>
@@ -158,28 +223,50 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {activeTab !== 'general' && grouped.length === 0 && (
+              {grouped.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">No entries</td>
+                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    {activeTab === 'general' ? (
+                      <>
+                        <Building className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                        <p>No general ledger entries found</p>
+                        <p className="text-sm">Create expense transactions in Banking to generate general ledger entries</p>
+                      </>
+                    ) : (
+                      'No entries'
+                    )}
+                  </td>
                 </tr>
               )}
-              {activeTab !== 'general' && grouped.map(g => (
+              {grouped.map(g => (
                 <tr key={g.name} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">{g.name}</div>
                     </div>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{activeTab === 'party' ? g.entries.filter((e: LedgerEntry) => e.bill_number).length : g.entries.filter((e: LedgerEntry) => e.memo_number).length}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{g.entries.length}</td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${activeTab === 'party' ? 'text-green-600' : 'text-orange-600'}`}>
-                    Rs. {(g.totalDebit - g.totalCredit).toLocaleString('en-IN')}
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {activeTab === 'party' ? 
+                      partyBalances.find(p => p.partyName === g.name)?.totalBills || 0 :
+                      activeTab === 'supplier' ?
+                      supplierBalances.find(s => s.supplierName === g.name)?.totalMemos || 0 :
+                      formatCurrency(g.totalDebit)
+                    }
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {activeTab === 'party' ? 'Bills' : activeTab === 'supplier' ? 'Memos' : g.entries.length + ' Entries'}
+                  </td>
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
+                    g.outstandingAmount > 0 ? 'text-red-600' : 
+                    g.outstandingAmount < 0 ? 'text-green-600' : 'text-gray-600'
+                  }`}>
+                    {formatCurrency(Math.abs(g.outstandingAmount))}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     <div className="flex items-center space-x-2">
                       <button
                         className="text-blue-600 hover:text-blue-800"
-                        onClick={() => onViewLedger?.(g.name, activeTab)}
+                        onClick={() => handleViewLedger(g.name, activeTab as 'party' | 'supplier' | 'general')}
                         title="View Ledger"
                       >
                         <Eye className="w-4 h-4" />
@@ -191,15 +278,6 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
                   </td>
                 </tr>
               ))}
-              {activeTab === 'general' && (
-                <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
-                    <Building className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>No general ledgers found</p>
-                    <p className="text-sm">General ledgers will appear here for your own vehicles</p>
-                  </td>
-                </tr>
-              )}
             </tbody>
           </table>
         </div>
