@@ -55,7 +55,7 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     
     // Get allowed origins from environment or use defaults
-    const envOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : [];
+    const envOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [];
     
     const allowedOrigins = [
       // Local development
@@ -65,9 +65,11 @@ const corsOptions = {
       /^http:\/\/192\.168\.\d+\.\d+:3000$/,
       /^http:\/\/10\.\d+\.\d+\.\d+:3000$/,
       /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+:3000$/,
-      // Production domains
+      // Production domains - broader patterns for Vercel
       /^https:\/\/.*\.vercel\.app$/,
       /^https:\/\/.*\.netlify\.app$/,
+      /^https:\/\/brcmanagement.*\.vercel\.app$/,
+      'https://brcmanagement.vercel.app',
       // Environment specific origins
       ...envOrigins
     ];
@@ -83,6 +85,8 @@ const corsOptions = {
       callback(null, true);
     } else {
       console.log('CORS blocked origin:', origin);
+      console.log('Allowed origins:', allowedOrigins);
+      console.log('Environment origins:', envOrigins);
       callback(new Error('Not allowed by CORS'));
     }
   },
