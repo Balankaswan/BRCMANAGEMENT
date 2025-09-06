@@ -18,8 +18,13 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
     { id: 'received-bills', label: 'Received Bills', icon: Receipt },
     { id: 'banking', label: 'Banking', icon: CreditCard },
     { id: 'cashbook', label: 'Cashbook', icon: CreditCard },
+    { id: 'party-ledger', label: 'Party Ledgers', icon: FileText },
+    { id: 'supplier-ledger', label: 'Supplier Ledgers', icon: FileText },
+    { id: 'general-ledger', label: 'General Ledgers', icon: FileText },
+    { id: 'party-commission-ledger', label: 'Party Commission', icon: CreditCard },
     { id: 'fuel-management', label: 'Fuel Management', icon: Fuel },
-    { id: 'ledgers', label: 'General Ledgers', icon: FileText },
+    { id: 'vehicle-ledger', label: 'Vehicle Ledger', icon: Truck },
+    { id: 'vehicle-ownership', label: 'Vehicle Ownership', icon: Truck },
     { id: 'pod', label: 'POD', icon: Archive },
   ];
 

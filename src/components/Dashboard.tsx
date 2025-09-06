@@ -4,10 +4,20 @@ import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
 
 const Dashboard: React.FC = () => {
-  const { memos, bills, bankingEntries } = useDataStore();
+  const { memos, bills, bankingEntries, loadingSlips, vehicles } = useDataStore();
 
-  // Calculate total commission from all memos
-  const totalCommission = memos.reduce((sum, memo) => sum + (memo.commission || 0), 0);
+  // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
+  // TDS is excluded as it's returnable and not a real deduction for profit calculation
+  // Party Commission Cut is excluded as it's not part of the actual profit calculation
+  const totalProfit = (() => {
+    const totalBillNetAmount = bills.reduce((sum, bill) => {
+      // Bill amount + detention + extra + rto - mamool - penalties - party_commission_cut (excluding TDS)
+      const billNetAmountExcludingTDS = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0);
+      return sum + billNetAmountExcludingTDS;
+    }, 0);
+    const totalMemoNetAmount = memos.reduce((sum, memo) => sum + memo.net_amount, 0);
+    return totalBillNetAmount - totalMemoNetAmount;
+  })();
 
   // Calculate party balance (bills due from parties)
   const partyBalance = bills.reduce((sum, bill) => {
@@ -17,8 +27,17 @@ const Dashboard: React.FC = () => {
     return sum + (bill.net_amount - billPayments);
   }, 0);
 
-  // Calculate supplier balance (memos due to suppliers)
+  // Calculate supplier balance (memos due to suppliers - ONLY market vehicles)
   const supplierBalance = memos.reduce((sum, memo) => {
+    // Find the loading slip and vehicle to check ownership
+    const ls = loadingSlips.find(s => s.id === memo.loading_slip_id);
+    const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+    
+    // Only include market vehicles in supplier balance
+    if (vehicle?.ownership_type !== 'market') {
+      return sum;
+    }
+    
     const memoPayments = bankingEntries
       .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
       .reduce((total, entry) => total + entry.amount, 0);
@@ -32,8 +51,8 @@ const Dashboard: React.FC = () => {
 
   const stats = [
     {
-      title: 'Total Profit (Actual Commission)',
-      value: formatCurrency(totalCommission),
+      title: 'Total Profit (Bill - Memo)',
+      value: formatCurrency(totalProfit),
       icon: TrendingUp,
       color: 'bg-green-50 text-green-700',
       iconBg: 'bg-green-100',
@@ -62,8 +81,8 @@ const Dashboard: React.FC = () => {
   ];
 
   // Get recent bills and memos from actual data
-  const recentBills = bills.slice(0, 5).map(bill => ({
-    id: bill.id,
+  const recentBills = bills.slice(0, 5).map((bill, index) => ({
+    id: bill.id || `bill-${index}-${Date.now()}`,
     bill_number: bill.bill_number,
     party: bill.party,
     amount: bill.net_amount,
@@ -71,8 +90,8 @@ const Dashboard: React.FC = () => {
     status: 'Pending' // TODO: Add status tracking
   }));
 
-  const recentMemos = memos.slice(0, 5).map(memo => ({
-    id: memo.id,
+  const recentMemos = memos.slice(0, 5).map((memo, index) => ({
+    id: memo.id || `memo-${index}-${Date.now()}`,
     memo_number: memo.memo_number,
     supplier: memo.supplier,
     amount: memo.net_amount,
@@ -98,7 +117,7 @@ const Dashboard: React.FC = () => {
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <div key={index} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div key={`stat-${stat.title}-${index}`} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">{stat.title}</p>
@@ -128,7 +147,7 @@ const Dashboard: React.FC = () => {
             ) : (
               <div className="space-y-4">
                 {recentBills.map((bill) => (
-                  <div key={bill.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div key={`bill-${bill.id}`} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>
                       <div className="font-medium text-gray-900">{bill.bill_number}</div>
                       <div className="text-sm text-gray-500">{bill.party}</div>
@@ -164,7 +183,7 @@ const Dashboard: React.FC = () => {
             ) : (
               <div className="space-y-4">
                 {recentMemos.map((memo) => (
-                  <div key={memo.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                  <div key={`memo-${memo.id}`} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                     <div>
                       <div className="font-medium text-gray-900">{memo.memo_number}</div>
                       <div className="text-sm text-gray-500">{memo.supplier}</div>

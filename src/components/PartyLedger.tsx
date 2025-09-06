@@ -87,7 +87,10 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
         partyBills.find(b => b.bill_number === entry.data.reference_id);
       
       const loadingSlip = bill?.loadingSlip || loadingSlips.find(ls => ls.id === bill?.loading_slip_id);
-      const tripDetails = loadingSlip ? `${loadingSlip.from_location} – ${loadingSlip.to_location}` : '';
+      const tripDetails = loadingSlip ? 
+        `${loadingSlip.from_location} – ${loadingSlip.to_location} / ${loadingSlip.vehicle_no}` : 
+        bill?.loading_slip_id?.from_location ? 
+        `${bill.loading_slip_id.from_location} – ${bill.loading_slip_id.to_location} / ${bill.loading_slip_id.vehicle_no}` : '';
 
       let credit = 0;
       let debitPayment = 0;
@@ -95,7 +98,8 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
       let remarks = '';
 
       if (entry.type === 'bill') {
-        credit = entry.data.bill_amount;
+        // Calculate net bill amount including detention, extra, RTO minus deductions
+        credit = entry.data.bill_amount + (entry.data.detention || 0) + (entry.data.extra || 0) + (entry.data.rto || 0) - (entry.data.mamool || 0) - (entry.data.penalties || 0) - (entry.data.tds || 0);
         // Check if there was an advance for this bill
         const billAdvances = partyBankingEntries.filter(be => 
           be.category === 'bill_advance' && be.reference_id === entry.data.bill_number

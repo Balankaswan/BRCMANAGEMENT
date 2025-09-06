@@ -1,42 +1,102 @@
-import React, { useMemo, useState } from 'react';
-import { Plus, CreditCard, TrendingUp, TrendingDown, Calendar, Search, Filter, Download } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Plus, Edit, CreditCard, Search, Filter, Download, TrendingUp, TrendingDown, Calendar, Trash } from 'lucide-react';
+import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
 import { formatCurrency } from '../utils/numberGenerator';
 import BankingForm from './forms/BankingForm';
 import type { BankingEntry } from '../types';
-import { useDataStore } from '../lib/store';
 
 type DateFilter = 'all' | 'today' | 'week' | 'month' | 'custom';
 
 const BankingComponent: React.FC = () => {
-  const { bankingEntries: entries, addBankingEntry } = useDataStore();
+  const { bankingEntries: entries, addBankingEntry, updateBankingEntry, deleteBankingEntry } = useDataStore();
   const [showForm, setShowForm] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<BankingEntry | null>(null);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [viewMode, setViewMode] = useState<'statement' | 'list'>('statement');
 
-  const handleCreateEntry = (entryData: Omit<BankingEntry, 'id' | 'created_at'>) => {
-    const newEntry: BankingEntry = {
-      ...entryData,
-      id: Date.now().toString(),
-      created_at: new Date().toISOString(),
-    };
-    addBankingEntry(newEntry);
+
+  const handleCreateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const response = await apiService.createBankingEntry(entryData);
+      addBankingEntry(response.bankingEntry);
+      console.log('Banking entry created and synced:', response.bankingEntry);
+    } catch (error) {
+      console.error('Failed to create banking entry:', error);
+      const newEntry: BankingEntry = {
+        ...entryData,
+        id: Date.now().toString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      addBankingEntry(newEntry);
+    }
     setShowForm(false);
   };
 
-  const totalCredits = entries
-    .filter(entry => entry.type === 'credit')
-    .reduce((sum, entry) => sum + entry.amount, 0);
+  const handleUpdateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at'>) => {
+    if (!editingEntry) return;
+    
+    try {
+      const response = await apiService.updateBankingEntry(editingEntry.id, entryData);
+      updateBankingEntry(editingEntry.id, response.bankingEntry);
+      console.log('Banking entry updated and synced:', response.bankingEntry);
+    } catch (error) {
+      console.error('Failed to update banking entry:', error);
+      const updatedEntry: BankingEntry = {
+        ...entryData,
+        id: editingEntry.id,
+        created_at: editingEntry.created_at,
+        updated_at: new Date().toISOString(),
+      };
+      updateBankingEntry(editingEntry.id, updatedEntry);
+    }
+    setEditingEntry(null);
+    setShowForm(false);
+  };
 
-  const totalDebits = entries
-    .filter(entry => entry.type === 'debit')
-    .reduce((sum, entry) => sum + entry.amount, 0);
+  const handleEditEntry = (entry: BankingEntry) => {
+    setEditingEntry(entry);
+    setShowForm(true);
+  };
 
-  const netBalance = totalCredits - totalDebits;
+  const handleCancelEdit = () => {
+    setEditingEntry(null);
+    setShowForm(false);
+  };
+
+  const handleDeleteEntry = async (id: string) => {
+    if (!id) {
+      console.error('No ID provided for deletion');
+      return;
+    }
+    
+    if (window.confirm('Are you sure you want to delete this entry?')) {
+      try {
+        console.log('Attempting to delete banking entry with ID:', id);
+        
+        // First update local state optimistically
+        deleteBankingEntry(id);
+        console.log('Banking entry deleted locally');
+        
+        // Then try to delete from backend
+        await apiService.deleteBankingEntry(id);
+        console.log('Banking entry deleted from backend');
+        
+        // Trigger data sync to refresh all data
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('Failed to delete banking entry from backend:', error);
+        // Refresh data to restore state if backend deletion failed
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }
+    }
+  };
 
   const filteredEntries = useMemo(() => {
-    let filtered = entries;
+    let filtered = [...entries];
 
     // Apply date filter
     if (dateFilter !== 'all') {
@@ -51,9 +111,9 @@ const BankingComponent: React.FC = () => {
           case 'today':
             return entryDateOnly.getTime() === today.getTime();
           case 'week':
-            const weekStart = new Date(today);
-            weekStart.setDate(today.getDate() - today.getDay());
-            return entryDateOnly >= weekStart && entryDateOnly <= today;
+            const weekAgo = new Date(today);
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            return entryDateOnly >= weekAgo;
           case 'month':
             return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
           case 'custom':
@@ -90,26 +150,33 @@ const BankingComponent: React.FC = () => {
       });
     }
 
-    return filtered;
+    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Latest first
   }, [entries, search, dateFilter, customDateRange]);
 
-  const dailyStatements = useMemo(() => {
-    // Sort entries by date
-    const sortedEntries = [...filteredEntries].sort((a, b) => 
-      new Date(a.date).getTime() - new Date(b.date).getTime()
-    );
+  // Calculate balances for bank entries only (exclude cash)
+  const bankEntries = filteredEntries.filter(entry => entry.payment_mode !== 'cash');
+  
+  const totalCredits = bankEntries
+    .filter(entry => entry.type === 'credit')
+    .reduce((sum, entry) => sum + entry.amount, 0);
 
-    // Group by date
-    const groupedByDate = sortedEntries.reduce((acc, entry) => {
+  const totalDebits = bankEntries
+    .filter(entry => entry.type === 'debit')
+    .reduce((sum, entry) => sum + entry.amount, 0);
+
+  const netBalance = totalCredits - totalDebits;
+
+  const dailyStatements = useMemo(() => {
+    
+    // Group entries by date
+    const groupedByDate = bankEntries.reduce((acc, entry) => {
       const dateKey = new Date(entry.date).toDateString();
-      if (!acc[dateKey]) {
-        acc[dateKey] = [];
-      }
+      if (!acc[dateKey]) acc[dateKey] = [];
       acc[dateKey].push(entry);
       return acc;
     }, {} as Record<string, BankingEntry[]>);
 
-    // Calculate running balances
+    // Calculate running balances for bank entries only
     let runningBalance = 0;
     const statements = Object.keys(groupedByDate)
       .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
@@ -144,7 +211,7 @@ const BankingComponent: React.FC = () => {
       });
 
     return statements;
-  }, [filteredEntries]);
+  }, [bankEntries]);
 
   const exportStatement = () => {
     const csvContent = dailyStatements.map(day => {
@@ -276,8 +343,9 @@ const BankingComponent: React.FC = () => {
 
       {showForm && (
         <BankingForm
-          onSubmit={handleCreateEntry}
-          onCancel={() => setShowForm(false)}
+          onSubmit={editingEntry ? handleUpdateEntry : handleCreateEntry}
+          onCancel={handleCancelEdit}
+          editingEntry={editingEntry}
         />
       )}
 
@@ -389,7 +457,7 @@ const BankingComponent: React.FC = () => {
                       }
                       
                       return (
-                        <div key={entry.id} className="px-6 py-4 hover:bg-gray-50">
+                        <div key={`${entry.id}-${entryIndex}`} className="px-6 py-4 hover:bg-gray-50">
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-3">
@@ -430,6 +498,22 @@ const BankingComponent: React.FC = () => {
                               }`}>
                                 {formatCurrency(runningBalance)}
                               </span>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleEditEntry(entry)}
+                                  className="inline-flex items-center px-2 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded"
+                                  title="Edit entry"
+                                >
+                                  <Edit className="w-3 h-3 mr-1" /> Edit
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteEntry(entry._id || entry.id)}
+                                  className="inline-flex items-center px-2 py-1 text-xs text-white bg-red-600 hover:bg-red-700 rounded"
+                                  title="Delete entry"
+                                >
+                                  <Trash className="w-3 h-3 mr-1" /> Delete
+                                </button>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -480,6 +564,9 @@ const BankingComponent: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Narration
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
@@ -518,6 +605,24 @@ const BankingComponent: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
                       {entry.narration}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleEditEntry(entry)}
+                          className="inline-flex items-center px-2 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded"
+                          title="Edit entry"
+                        >
+                          <Edit className="w-3 h-3 mr-1" /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleDeleteEntry(entry.id)}
+                          className="inline-flex items-center px-2 py-1 text-xs text-white bg-red-600 hover:bg-red-700 rounded"
+                          title="Delete entry"
+                        >
+                          <Trash className="w-3 h-3 mr-1" /> Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

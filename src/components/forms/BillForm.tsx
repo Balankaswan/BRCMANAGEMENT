@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { X, Calculator, Upload } from 'lucide-react';
 import { formatCurrency } from '../../utils/numberGenerator';
 import PDFGenerator from '../PDFGenerator';
+import { apiService } from '../../lib/api';
 import type { LoadingSlip, Bill } from '../../types';
 
 interface BillFormProps {
@@ -19,9 +20,13 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
     date: new Date().toISOString().split('T')[0],
     party: loadingSlip?.party || '',
     bill_amount: loadingSlip?.total_freight || 0,
+    detention: 0,
+    extra: 0,
+    rto: loadingSlip?.rto || 0,
     mamool: 0,
     tds: 0,
     penalties: 0,
+    party_commission_cut: 0,
     net_amount: 0,
     pod_image: '',
     status: 'pending' as 'pending' | 'received',
@@ -29,14 +34,14 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
   });
   const [podFileName, setPodFileName] = useState<string>('');
 
-  // Calculate net amount
+  // Calculate net amount (excludes party commission cut for supplier payment calculation)
   useEffect(() => {
-    const netAmount = formData.bill_amount - formData.mamool - formData.tds - formData.penalties;
+    const netAmount = formData.bill_amount + formData.detention + formData.extra + formData.rto - formData.mamool - formData.tds - formData.penalties - formData.party_commission_cut;
     setFormData(prev => ({
       ...prev,
       net_amount: netAmount,
     }));
-  }, [formData.bill_amount, formData.mamool, formData.tds, formData.penalties]);
+  }, [formData.bill_amount, formData.detention, formData.extra, formData.rto, formData.mamool, formData.tds, formData.penalties, formData.party_commission_cut]);
 
   useEffect(() => {
     if (initialData) {
@@ -46,19 +51,56 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
         date: initialData.date.split('T')[0],
         party: initialData.party,
         bill_amount: initialData.bill_amount,
+        detention: initialData.detention || 0,
+        extra: initialData.extra || 0,
+        rto: initialData.rto || 0,
         mamool: initialData.mamool,
         tds: initialData.tds,
         penalties: initialData.penalties,
+        party_commission_cut: initialData.party_commission_cut || 0,
         net_amount: initialData.net_amount,
         pod_image: initialData.pod_image || '',
         status: initialData.status || 'pending' as 'pending' | 'received',
         narration: initialData.narration || '',
       });
+    } else if (loadingSlip) {
+      // Auto-populate from loading slip when creating new bill
+      setFormData(prev => ({
+        ...prev,
+        bill_number: nextBillNumber,
+        loading_slip_id: loadingSlip.id,
+        party: loadingSlip.party,
+        bill_amount: loadingSlip.total_freight,
+        rto: loadingSlip.rto || 0,
+      }));
     }
-  }, [initialData]);
+  }, [initialData, loadingSlip, nextBillNumber]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // If POD image is uploaded, save it to POD collection
+    if (formData.pod_image) {
+      try {
+        const podData = {
+          filename: podFileName || `POD_${formData.bill_number}_${Date.now()}.jpg`,
+          fileData: formData.pod_image,
+          fileType: 'image/jpeg',
+          billNo: formData.bill_number,
+          party: formData.party,
+          uploadDate: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        };
+        
+        // Save POD to backend
+        await apiService.createPODFile(podData);
+        console.log('POD image saved successfully for bill:', formData.bill_number);
+      } catch (error) {
+        console.error('Failed to save POD image:', error);
+        // Continue with bill creation even if POD save fails
+      }
+    }
+    
     onSubmit(formData);
   };
 
@@ -155,6 +197,22 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
                   <span className="ml-2 font-medium">{loadingSlip.from_location} → {loadingSlip.to_location}</span>
                 </div>
                 <div>
+                  <span className="text-blue-700">Party:</span>
+                  <span className="ml-2 font-medium">{loadingSlip.party}</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Material:</span>
+                  <span className="ml-2 font-medium">{loadingSlip.material || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Weight:</span>
+                  <span className="ml-2 font-medium">{loadingSlip.weight} MT</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Dimension:</span>
+                  <span className="ml-2 font-medium">{loadingSlip.dimension}</span>
+                </div>
+                <div>
                   <span className="text-blue-700">Supplier:</span>
                   <span className="ml-2 font-medium">{loadingSlip.supplier}</span>
                 </div>
@@ -206,6 +264,51 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
+                Detention (₹)
+              </label>
+              <input
+                type="number"
+                name="detention"
+                value={formData.detention}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                step="0.01"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Extra Weight (₹)
+              </label>
+              <input
+                type="number"
+                name="extra"
+                value={formData.extra}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                step="0.01"
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                RTO (₹)
+              </label>
+              <input
+                type="number"
+                name="rto"
+                value={formData.rto}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                step="0.01"
+                min="0"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
                 Mamool (₹)
               </label>
               <input
@@ -248,6 +351,38 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
             </div>
           </div>
 
+          {/* Party Commission Cut Field */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Party Commission Cut (₹)
+              </label>
+              <input
+                type="number"
+                name="party_commission_cut"
+                value={formData.party_commission_cut}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                step="0.01"
+                min="0"
+                placeholder="Enter commission cut amount"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                This amount will be deducted from net payable to supplier and posted to Party Commission Ledger
+              </p>
+            </div>
+            <div className="flex items-center">
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 w-full">
+                <h4 className="text-sm font-medium text-yellow-800 mb-2">Commission Impact</h4>
+                <div className="text-xs text-yellow-700">
+                  <div>• Bill PDF: Shows full freight amount</div>
+                  <div>• Supplier Payment: Reduced by commission cut</div>
+                  <div>• Commission Ledger: Auto-posted as credit</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Narration Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -273,6 +408,18 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
               <div>
                 <span className="text-green-700">Bill Amount:</span>
                 <span className="ml-2 font-medium">{formatCurrency(formData.bill_amount)}</span>
+              </div>
+              <div>
+                <span className="text-green-700">Detention:</span>
+                <span className="ml-2 font-medium">+{formatCurrency(formData.detention)}</span>
+              </div>
+              <div>
+                <span className="text-green-700">Extra Weight:</span>
+                <span className="ml-2 font-medium">+{formatCurrency(formData.extra)}</span>
+              </div>
+              <div>
+                <span className="text-green-700">RTO:</span>
+                <span className="ml-2 font-medium">+{formatCurrency(formData.rto)}</span>
               </div>
               <div>
                 <span className="text-red-700">Mamool:</span>

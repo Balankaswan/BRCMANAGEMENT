@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { X, ChevronDown } from 'lucide-react';
-import { formatCurrency } from '../../utils/numberGenerator';
-import PDFGenerator from '../PDFGenerator';
 import { useDataStore } from '../../lib/store';
+import { apiService } from '../../lib/api';
+import { formatCurrency } from '../../utils/numberGenerator';
 import type { LoadingSlip } from '../../types';
 
 interface LoadingSlipFormProps {
@@ -13,7 +13,7 @@ interface LoadingSlipFormProps {
 }
 
 const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlipNumber, onSubmit, onCancel }) => {
-  const { parties, suppliers, vehicles, addParty, addSupplier } = useDataStore();
+  const { parties, suppliers, vehicles, addParty, addSupplier, addVehicle } = useDataStore();
   const [formData, setFormData] = useState({
     slip_number: initialData ? initialData.slip_number : nextSlipNumber,
     date: new Date().toISOString().split('T')[0],
@@ -21,6 +21,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
     vehicle_no: '',
     from_location: '',
     to_location: '',
+    material: '',
     dimension: '',
     weight: 0,
     supplier: '',
@@ -34,8 +35,17 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
   const [locations] = useState(['HAZIRA', 'HYD', 'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Ahmedabad']);
   const [showNewPartyForm, setShowNewPartyForm] = useState(false);
   const [showNewSupplierForm, setShowNewSupplierForm] = useState(false);
+  const [showNewVehicleForm, setShowNewVehicleForm] = useState(false);
   const [newPartyName, setNewPartyName] = useState('');
   const [newSupplierName, setNewSupplierName] = useState('');
+  const [newVehicleData, setNewVehicleData] = useState({
+    vehicle_no: '',
+    vehicle_type: 'Truck',
+    ownership_type: 'market' as 'own' | 'market',
+    owner_name: '',
+    driver_name: '',
+    driver_phone: ''
+  });
   
   const [showPartyDropdown, setShowPartyDropdown] = useState(false);
   const [showSupplierDropdown, setShowSupplierDropdown] = useState(false);
@@ -46,25 +56,64 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
   useEffect(() => {
     if (initialData) {
       setFormData({
-        slip_number: initialData.slip_number,
-        date: initialData.date.split('T')[0],
-        party: initialData.party,
-        vehicle_no: initialData.vehicle_no,
-        from_location: initialData.from_location,
-        to_location: initialData.to_location,
-        dimension: initialData.dimension,
-        weight: initialData.weight,
-        supplier: initialData.supplier,
-        freight: initialData.freight,
-        advance: initialData.advance,
-        rto: initialData.rto,
+        slip_number: initialData.slip_number || nextSlipNumber,
+        date: initialData.date ? new Date(initialData.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+        party: initialData.party || '',
+        vehicle_no: initialData.vehicle_no || '',
+        from_location: initialData.from_location || '',
+        to_location: initialData.to_location || '',
+        material: initialData.material || '',
+        dimension: initialData.dimension || '',
+        weight: initialData.weight || 0,
+        supplier: initialData.supplier || '',
+        freight: initialData.freight || 0,
+        advance: initialData.advance || 0,
+        rto: initialData.rto || 0,
         narration: initialData.narration || '',
       });
     }
-  }, [initialData]);
+  }, [initialData, nextSlipNumber]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Auto-create vehicle if it doesn't exist
+    if (!vehicles.find(v => v.vehicle_no === formData.vehicle_no)) {
+      const isOwnVehicle = formData.supplier.toLowerCase().includes('bhavishya') || 
+                          formData.supplier.toLowerCase().includes('brc') ||
+                          formData.supplier === 'Self' ||
+                          formData.supplier === 'Own';
+      
+      const newVehicle = {
+        vehicle_no: formData.vehicle_no.trim(),
+        vehicle_type: 'Truck',
+        ownership_type: (isOwnVehicle ? 'own' : 'market') as 'own' | 'market',
+        owner_name: isOwnVehicle ? 'Bhavishya Road Carriers' : formData.supplier,
+        driver_name: '',
+        driver_phone: ''
+      };
+      
+      // Save to backend first, then add to local store - AWAIT to ensure persistence
+      try {
+        const response = await apiService.createVehicle(newVehicle);
+        addVehicle(response.vehicle);
+        console.log('✅ Vehicle auto-created and saved to backend:', response.vehicle);
+        // Trigger sync to ensure all components are updated
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('❌ Failed to save vehicle to backend:', error);
+        // Fallback to local creation with temporary ID
+        const localVehicle = {
+          ...newVehicle,
+          id: Date.now().toString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        addVehicle(localVehicle);
+        console.log('⚠️ Vehicle created locally only (backend failed):', localVehicle);
+      }
+    }
+    
     const balance = formData.freight - formData.advance;
     const total_freight = formData.freight + formData.rto;
     
@@ -93,42 +142,122 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
     setShowToDropdown(false);
   };
 
-  const handleAddNewParty = () => {
+  const handleAddNewParty = async () => {
     if (newPartyName.trim()) {
       const newParty = {
-        id: Date.now().toString(),
         name: newPartyName.trim(),
         contact: '',
-        address: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        address: ''
       };
-      addParty(newParty);
+      
+      // Save to backend first, then add to local store
+      try {
+        const response = await apiService.createParty(newParty);
+        addParty(response.party);
+        console.log('✅ Party auto-created and saved to backend:', response.party);
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('❌ Failed to save party to backend:', error);
+        // Fallback to local creation
+        const localParty = {
+          ...newParty,
+          id: Date.now().toString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        addParty(localParty);
+        console.log('⚠️ Party created locally only (backend failed):', localParty);
+      }
+      
       setFormData(prev => ({ ...prev, party: newPartyName.trim() }));
       setNewPartyName('');
       setShowNewPartyForm(false);
     }
   };
 
-  const handleAddNewSupplier = () => {
+  const handleAddNewSupplier = async () => {
     if (newSupplierName.trim()) {
       const newSupplier = {
-        id: Date.now().toString(),
         name: newSupplierName.trim(),
         contact: '',
-        address: '',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        address: ''
       };
-      addSupplier(newSupplier);
+      
+      // Save to backend first, then add to local store
+      try {
+        const response = await apiService.createSupplier(newSupplier);
+        addSupplier(response.supplier);
+        console.log('✅ Supplier auto-created and saved to backend:', response.supplier);
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('❌ Failed to save supplier to backend:', error);
+        // Fallback to local creation
+        const localSupplier = {
+          ...newSupplier,
+          id: Date.now().toString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        addSupplier(localSupplier);
+        console.log('⚠️ Supplier created locally only (backend failed):', localSupplier);
+      }
+      
       setFormData(prev => ({ ...prev, supplier: newSupplierName.trim() }));
       setNewSupplierName('');
       setShowNewSupplierForm(false);
     }
   };
 
+  const handleAddNewVehicle = async () => {
+    if (newVehicleData.vehicle_no.trim()) {
+      const newVehicle = {
+        ...newVehicleData,
+        vehicle_no: newVehicleData.vehicle_no.trim(),
+      };
+      
+      // Save to backend first, then add to local store
+      try {
+        const response = await apiService.createVehicle(newVehicle);
+        addVehicle(response.vehicle);
+        console.log('✅ Vehicle auto-created and saved to backend:', response.vehicle);
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('❌ Failed to save vehicle to backend:', error);
+        // Fallback to local creation
+        const localVehicle = {
+          ...newVehicle,
+          id: Date.now().toString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        addVehicle(localVehicle);
+        console.log('⚠️ Vehicle created locally only (backend failed):', localVehicle);
+      }
+      
+      setFormData(prev => ({ ...prev, vehicle_no: newVehicleData.vehicle_no.trim() }));
+      setNewVehicleData({
+        vehicle_no: '',
+        vehicle_type: 'Truck',
+        ownership_type: 'market',
+        owner_name: '',
+        driver_name: '',
+        driver_phone: ''
+      });
+      setShowNewVehicleForm(false);
+    }
+  };
+
   const filterOptions = (options: any[], searchTerm: string) => {
-    return options.filter(option => {
+    // Remove duplicates by vehicle_no first, then filter by search term
+    const uniqueOptions = options.reduce((acc: any[], option: any) => {
+      const vehicleNo = typeof option === 'string' ? option : option.vehicle_no;
+      if (!acc.find((item: any) => (typeof item === 'string' ? item : item.vehicle_no) === vehicleNo)) {
+        acc.push(option);
+      }
+      return acc;
+    }, []);
+    
+    return uniqueOptions.filter((option: any) => {
       const optionText = typeof option === 'string' ? option : option.vehicle_no || option.name || '';
       return optionText.toLowerCase().includes(searchTerm.toLowerCase());
     });
@@ -197,16 +326,16 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                 />
                 {showPartyDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {parties.map((party) => (
+                    {[...new Set(parties.map(party => party.name))].map((partyName) => (
                       <div
-                        key={party.id}
+                        key={partyName}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, party: party.name }));
+                          setFormData(prev => ({ ...prev, party: partyName }));
                           setShowPartyDropdown(false);
                         }}
                       >
-                        {party.name}
+                        {partyName}
                       </div>
                     ))}
                     <div className="border-t border-gray-200">
@@ -246,16 +375,41 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                   onClick={() => setShowVehicleDropdown(!showVehicleDropdown)}
                 />
                 {showVehicleDropdown && (
-                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                    {filterOptions(vehicles, formData.vehicle_no).map((vehicle, index) => (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                    {filterOptions(vehicles, formData.vehicle_no).map((vehicle: any, index: number) => (
                       <div
-                        key={index}
-                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
+                        key={`vehicle-${vehicle.id || index}`}
+                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer flex items-center justify-between"
                         onClick={() => handleDropdownSelect('vehicle_no', typeof vehicle === 'string' ? vehicle : vehicle.vehicle_no)}
                       >
-                        {typeof vehicle === 'string' ? vehicle : vehicle.vehicle_no}
+                        <div className="flex items-center space-x-2">
+                          <span>{typeof vehicle === 'string' ? vehicle : vehicle.vehicle_no}</span>
+                          {typeof vehicle !== 'string' && (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              vehicle.ownership_type === 'own' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {vehicle.ownership_type === 'own' ? 'Own Vehicle' : 'Market Vehicle'}
+                            </span>
+                          )}
+                        </div>
+                        {typeof vehicle !== 'string' && vehicle.vehicle_type && (
+                          <span className="text-xs text-gray-500">{vehicle.vehicle_type}</span>
+                        )}
                       </div>
                     ))}
+                    <div className="border-t border-gray-200">
+                      <div
+                        className="px-4 py-2 text-blue-600 hover:bg-blue-50 cursor-pointer font-medium"
+                        onClick={() => {
+                          setShowNewVehicleForm(true);
+                          setShowVehicleDropdown(false);
+                        }}
+                      >
+                        + Add New Vehicle
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -280,16 +434,16 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                 />
                 {showSupplierDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {suppliers.map((supplier) => (
+                    {[...new Set(suppliers.map(supplier => supplier.name))].map((supplierName) => (
                       <div
-                        key={supplier.id}
+                        key={supplierName}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
                         onClick={() => {
-                          setFormData(prev => ({ ...prev, supplier: supplier.name }));
+                          setFormData(prev => ({ ...prev, supplier: supplierName }));
                           setShowSupplierDropdown(false);
                         }}
                       >
-                        {supplier.name}
+                        {supplierName}
                       </div>
                     ))}
                     <div className="border-t border-gray-200">
@@ -330,9 +484,9 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                 />
                 {showFromDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                    {filterOptions(locations, formData.from_location).map((location, index) => (
+                    {filterOptions(locations, formData.from_location).map((location: string, index: number) => (
                       <div
-                        key={index}
+                        key={`from-${index}`}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
                         onClick={() => handleDropdownSelect('from_location', location)}
                       >
@@ -363,9 +517,9 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                 />
                 {showToDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                    {filterOptions(locations, formData.to_location).map((location, index) => (
+                    {filterOptions(locations, formData.to_location).map((location: string, index: number) => (
                       <div
-                        key={index}
+                        key={`to-${index}`}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
                         onClick={() => handleDropdownSelect('to_location', location)}
                       >
@@ -378,7 +532,20 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Material
+              </label>
+              <input
+                type="text"
+                name="material"
+                value={formData.material}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Steel Coils, Iron Ore"
+              />
+            </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Dimension
@@ -492,11 +659,13 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
           <div className="flex items-center justify-between pt-6 border-t border-gray-200">
             <div>
               {initialData && (
-                <PDFGenerator
-                  type="loading-slip"
-                  data={initialData}
-                  size="md"
-                />
+                <button
+                  type="button"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  onClick={() => console.log('PDF generation not implemented yet')}
+                >
+                  Generate PDF
+                </button>
               )}
             </div>
             <div className="flex items-center space-x-4">
@@ -586,6 +755,111 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                 disabled={!newSupplierName.trim()}
               >
                 Add Supplier
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* New Vehicle Modal */}
+      {showNewVehicleForm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-60">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96">
+            <h3 className="text-lg font-semibold mb-4">Add New Vehicle</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Number *</label>
+                <input
+                  type="text"
+                  value={newVehicleData.vehicle_no}
+                  onChange={(e) => setNewVehicleData(prev => ({ ...prev, vehicle_no: e.target.value }))}
+                  placeholder="e.g., GJ01AB1234"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle Type</label>
+                <select
+                  value={newVehicleData.vehicle_type}
+                  onChange={(e) => setNewVehicleData(prev => ({ ...prev, vehicle_type: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="Truck">Truck</option>
+                  <option value="Trailer">Trailer</option>
+                  <option value="Container">Container</option>
+                  <option value="Tanker">Tanker</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ownership Type *</label>
+                <select
+                  value={newVehicleData.ownership_type}
+                  onChange={(e) => setNewVehicleData(prev => ({ ...prev, ownership_type: e.target.value as 'own' | 'market' }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="market">Market Vehicle</option>
+                  <option value="own">Own Vehicle</option>
+                </select>
+              </div>
+              {newVehicleData.ownership_type === 'market' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Owner Name</label>
+                  <input
+                    type="text"
+                    value={newVehicleData.owner_name}
+                    onChange={(e) => setNewVehicleData(prev => ({ ...prev, owner_name: e.target.value }))}
+                    placeholder="Vehicle owner name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Driver Name</label>
+                <input
+                  type="text"
+                  value={newVehicleData.driver_name}
+                  onChange={(e) => setNewVehicleData(prev => ({ ...prev, driver_name: e.target.value }))}
+                  placeholder="Driver name"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Driver Phone</label>
+                <input
+                  type="tel"
+                  value={newVehicleData.driver_phone}
+                  onChange={(e) => setNewVehicleData(prev => ({ ...prev, driver_phone: e.target.value }))}
+                  placeholder="Driver phone number"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-3 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNewVehicleForm(false);
+                  setNewVehicleData({
+                    vehicle_no: '',
+                    vehicle_type: 'Truck',
+                    ownership_type: 'market',
+                    owner_name: '',
+                    driver_name: '',
+                    driver_phone: ''
+                  });
+                }}
+                className="px-4 py-2 text-gray-600 hover:text-gray-800"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleAddNewVehicle}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={!newVehicleData.vehicle_no.trim()}
+              >
+                Add Vehicle
               </button>
             </div>
           </div>

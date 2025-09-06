@@ -6,6 +6,7 @@ export interface LoadingSlip {
   vehicle_no: string;
   from_location: string;
   to_location: string;
+  material: string;
   dimension: string;
   weight: number;
   supplier: string;
@@ -15,6 +16,8 @@ export interface LoadingSlip {
   rto: number;
   total_freight: number;
   narration?: string;
+  memo_number?: string;
+  bill_number?: string;
   created_at: string;
   updated_at: string;
 }
@@ -48,10 +51,16 @@ export interface Bill {
   loading_slip_id: string;
   date: string;
   party: string;
+  party_id?: string;
+  party_name?: string;
   bill_amount: number;
+  detention: number;
+  extra: number;
+  rto: number;
   mamool: number;
   tds: number;
   penalties: number;
+  party_commission_cut: number;
   net_amount: number;
   status: 'pending' | 'received';
   received_date?: string;
@@ -79,14 +88,21 @@ export interface AdvancePayment {
 
 export interface BankingEntry {
   id: string;
+  _id?: string; // MongoDB ObjectId
   type: 'credit' | 'debit';
-  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'other';
+  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_payment' | 'supplier_payment' | 'other';
   amount: number;
   date: string;
-  reference_id?: string;
-  reference_name?: string;
+  reference_id?: string; // bill_number or memo_number
+  reference_name?: string; // party or supplier name
   narration: string;
+  vehicle_no?: string; // for vehicle expenses
   created_at: string;
+  updated_at?: string;
+  memo_advance_id?: string;
+  bill_advance_id?: string;
+  bank_account?: string;
+  payment_mode?: 'cash' | 'bank' | 'cheque' | 'bank_transfer' | 'upi';
 }
 
 export interface Party {
@@ -106,23 +122,30 @@ export interface Supplier {
   created_at: string;
 }
 
-export interface POD {
+export interface PODFile {
   id: string;
-  bill_number: string;
-  loading_slip_id: string;
-  party: string;
-  vehicle_no: string;
-  image_url: string;
-  image_name: string;
-  upload_date: string;
+  filename: string;
+  fileData: string; // Base64 encoded file data
+  fileType: string; // MIME type
+  billNo?: string;
+  vehicleNo?: string;
+  party?: string;
+  uploadDate: string;
   created_at: string;
 }
 
 export interface LedgerEntry {
   id: string;
-  ledger_type: 'party' | 'supplier' | 'general' | 'fuel_wallet' | 'vehicle_fuel';
+  _id?: string;
+  referenceId?: string;
+  type?: 'memo' | 'payment' | 'bill' | 'expense';
+  vehicleNo?: string;
+  partyId?: string;
+  supplierId?: string;
+  memoNumber?: string;
+  ledger_type?: 'party' | 'supplier' | 'general' | 'fuel_wallet' | 'vehicle_fuel' | 'vehicle_income' | 'vehicle_expense' | 'commission' | 'mamul' | 'detention' | 'toll' | 'rto_fine' | 'pod_charges';
   reference_id?: string; // bill_number or memo_number or other ref
-  reference_name: string; // party or supplier name
+  reference_name?: string; // party or supplier name
   date: string;
   description?: string;
   narration?: string;
@@ -133,7 +156,7 @@ export interface LedgerEntry {
   balance?: number;
   source_type?: 'banking' | 'cashbook' | 'memo' | 'bill' | 'fuel';
   source_id?: string;
-  created_at: string;
+  created_at?: string;
   // Trip-related optional fields
   loading_slip_id?: string;
   memo_number?: string;
@@ -146,12 +169,13 @@ export interface LedgerEntry {
 export interface CashbookEntry {
   id: string;
   type: 'credit' | 'debit';
-  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'other';
+  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'other';
   amount: number;
   date: string;
   reference_id?: string;
   reference_name?: string;
   narration: string;
+  vehicle_no?: string;
   created_at: string;
 }
 
@@ -178,8 +202,10 @@ export interface FuelTransaction {
 
 export interface Vehicle {
   id: string;
+  _id?: string;
   vehicle_no: string;
   vehicle_type?: string; // Truck, Trailer, etc.
+  ownership_type?: 'own' | 'market';
   owner_name?: string;
   driver_name?: string;
   driver_phone?: string;

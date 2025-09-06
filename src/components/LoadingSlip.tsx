@@ -1,16 +1,16 @@
 import React, { useState } from 'react';
-import { Plus, FileText, Edit, Download, Eye, Trash2 } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, Eye, Download } from 'lucide-react';
+import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
 import { formatCurrency } from '../utils/numberGenerator';
 import LoadingSlipForm from './forms/LoadingSlipForm';
 import MemoForm from './forms/MemoForm';
 import BillForm from './forms/BillForm';
-import { generateLoadingSlipPDF } from '../utils/pdfGenerator';
-import type { LoadingSlip, Memo, Bill } from '../types';
-import { useDataStore } from '../lib/store';
+import type { LoadingSlip } from '../types';
 
 const LoadingSlipComponent: React.FC = () => {
-  const { loadingSlips, memos, bills, addLoadingSlip, updateLoadingSlip, deleteLoadingSlip, addMemo, addBill } = useDataStore();
+  const { loadingSlips, memos, bills, vehicles, addLoadingSlip, updateLoadingSlip, deleteLoadingSlip } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingSlip, setEditingSlip] = useState<LoadingSlip | null>(null);
   const [viewSlip, setViewSlip] = useState<LoadingSlip | null>(null);
@@ -37,43 +37,69 @@ const LoadingSlipComponent: React.FC = () => {
     setShowForm(true);
   };
 
-  const handleCreateSlip = (slipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
-    const newSlip: LoadingSlip = {
-      ...slipData,
-      id: Date.now().toString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    addLoadingSlip(newSlip);
+  const handleCreateLoadingSlip = async (slipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const response = await apiService.createLoadingSlip(slipData);
+      addLoadingSlip(response.loadingSlip);
+      console.log('Loading slip created and synced to MongoDB:', response.loadingSlip);
+      
+      // Force refresh data on all connected devices by triggering a sync
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to create loading slip:', error);
+      const newSlip: LoadingSlip = {
+        ...slipData,
+        id: getNextSequenceNumber(loadingSlips, 'slip_number', 'LS'),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      addLoadingSlip(newSlip);
+    }
     setShowForm(false);
   };
 
-
-  const handleUpdateSlip = (slipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
+  const handleUpdateLoadingSlip = async (loadingSlipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
     if (editingSlip) {
-      const updatedSlip: LoadingSlip = {
-        ...editingSlip,
-        ...slipData,
-        id: editingSlip.id,
-        created_at: editingSlip.created_at,
-        updated_at: new Date().toISOString(),
-      };
-      updateLoadingSlip(updatedSlip);
-      setShowForm(false);
+      try {
+        const response = await apiService.updateLoadingSlip(editingSlip.id, loadingSlipData);
+        updateLoadingSlip(response.loadingSlip);
+        console.log('Loading slip updated and synced:', response.loadingSlip);
+      } catch (error) {
+        console.error('Failed to update loading slip:', error);
+        const updatedLoadingSlip: LoadingSlip = {
+          ...editingSlip,
+          ...loadingSlipData,
+          updated_at: new Date().toISOString(),
+        };
+        updateLoadingSlip(updatedLoadingSlip);
+      }
       setEditingSlip(null);
+      setShowForm(false);
     }
   };
 
-
-
-
   const handleDownloadPDF = async (slip: LoadingSlip) => {
-    await generateLoadingSlipPDF(slip);
+    try {
+      const { generateLoadingSlipPDF } = await import('../utils/pdfGenerator');
+      await generateLoadingSlipPDF(slip);
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    }
   };
 
-  const handleDeleteSlip = (slip: LoadingSlip) => {
-    if (window.confirm(`Are you sure you want to delete Loading Slip ${slip.slip_number}? This will also delete all related memos and bills.`)) {
-      deleteLoadingSlip(slip.id);
+  const handleDeleteLoadingSlip = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this loading slip?')) {
+      try {
+        await apiService.deleteLoadingSlip(id);
+        deleteLoadingSlip(id);
+        console.log('Loading slip deleted and synced');
+      } catch (error) {
+        console.error('Failed to delete loading slip:', error);
+        deleteLoadingSlip(id);
+      }
     }
   };
 
@@ -114,7 +140,7 @@ const LoadingSlipComponent: React.FC = () => {
         <LoadingSlipForm
           initialData={editingSlip}
           nextSlipNumber={getNextSlipNumber()}
-          onSubmit={editingSlip ? handleUpdateSlip : handleCreateSlip}
+          onSubmit={editingSlip ? handleUpdateLoadingSlip : handleCreateLoadingSlip}
           onCancel={() => {
             setShowForm(false);
             setEditingSlip(null);
@@ -143,13 +169,11 @@ const LoadingSlipComponent: React.FC = () => {
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredSlips.map((slip) => {
-            const relatedMemo = memos.find((m: any) => m.loading_slip_id === slip.id);
-            const relatedBill = bills.find((b: any) => b.loading_slip_id === slip.id);
+          {filteredSlips.map((slip, index) => {
             
             return (
-              <div key={slip.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-                <div className="p-6">
+            <div key={slip.id || `slip-${index}-${slip.slip_number}`} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+              <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-semibold text-blue-600 mb-1">
@@ -185,7 +209,7 @@ const LoadingSlipComponent: React.FC = () => {
                         <Download className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteSlip(slip)}
+                        onClick={() => handleDeleteLoadingSlip(slip.id)}
                         className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete"
                       >
@@ -197,8 +221,23 @@ const LoadingSlipComponent: React.FC = () => {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vehicle & Material</p>
-                      <p className="font-medium text-gray-900">{slip.vehicle_no}</p>
-                      <p className="text-sm text-gray-600">{slip.dimension}</p>
+                      <div className="flex items-center space-x-2 mb-1">
+                        <p className="font-medium text-gray-900">{slip.vehicle_no}</p>
+                        {(() => {
+                          const vehicle = vehicles.find(v => v.vehicle_no === slip.vehicle_no);
+                          return vehicle ? (
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                              vehicle.ownership_type === 'own' 
+                                ? 'bg-green-100 text-green-800' 
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {vehicle.ownership_type === 'own' ? 'Own' : 'Market'}
+                            </span>
+                          ) : null;
+                        })()}
+                      </div>
+                      <p className="text-sm text-gray-600">{slip.material || 'N/A'}</p>
+                      <p className="text-sm text-gray-500">{slip.dimension}</p>
                     </div>
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Party & Weight</p>
@@ -213,16 +252,18 @@ const LoadingSlipComponent: React.FC = () => {
                   
                   <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                     <div className="flex items-center space-x-4">
-                      {relatedMemo ? (
+                      {slip.memo_number ? (
                         <div className="flex items-center space-x-2">
                           <span className="text-xs text-gray-500">Memo:</span>
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                            {relatedMemo.memo_number}
+                            {slip.memo_number}
                           </span>
                         </div>
                       ) : (
                         <button
                           onClick={() => {
+                            console.log('Setting selectedSlipForMemo:', slip);
+                            console.log('Slip ID:', slip.id);
                             setSelectedSlipForMemo(slip);
                             setShowMemoForm(true);
                           }}
@@ -233,11 +274,11 @@ const LoadingSlipComponent: React.FC = () => {
                         </button>
                       )}
                       
-                      {relatedBill ? (
+                      {slip.bill_number ? (
                         <div className="flex items-center space-x-2">
                           <span className="text-xs text-gray-500">Bill:</span>
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                            {relatedBill.bill_number}
+                            {slip.bill_number}
                           </span>
                         </div>
                       ) : (
@@ -279,7 +320,7 @@ const LoadingSlipComponent: React.FC = () => {
                         <Download className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDeleteSlip(slip)}
+                        onClick={() => handleDeleteLoadingSlip(slip.id)}
                         className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete"
                       >
@@ -288,7 +329,7 @@ const LoadingSlipComponent: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
+            </div>
             );
           })}
         </div>
@@ -305,7 +346,22 @@ const LoadingSlipComponent: React.FC = () => {
               <div><span className="text-gray-500">Date:</span> {new Date(viewSlip.date).toLocaleDateString('en-IN')}</div>
               <div><span className="text-gray-500">Party:</span> {viewSlip.party}</div>
               <div><span className="text-gray-500">Supplier:</span> {viewSlip.supplier}</div>
-              <div><span className="text-gray-500">Vehicle No:</span> {viewSlip.vehicle_no}</div>
+              <div className="flex items-center space-x-2">
+                <span className="text-gray-500">Vehicle No:</span> 
+                <span>{viewSlip.vehicle_no}</span>
+                {(() => {
+                  const vehicle = vehicles.find(v => v.vehicle_no === viewSlip.vehicle_no);
+                  return vehicle ? (
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                      vehicle.ownership_type === 'own' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {vehicle.ownership_type === 'own' ? 'Own Vehicle' : 'Market Vehicle'}
+                    </span>
+                  ) : null;
+                })()}
+              </div>
               <div><span className="text-gray-500">Route:</span> {viewSlip.from_location} → {viewSlip.to_location}</div>
               <div><span className="text-gray-500">Weight:</span> {viewSlip.weight} MT</div>
               <div><span className="text-gray-500">Freight:</span> {formatCurrency(viewSlip.freight)}</div>
@@ -332,16 +388,60 @@ const LoadingSlipComponent: React.FC = () => {
         <MemoForm
           slip={selectedSlipForMemo}
           nextMemoNumber={getNextMemoNumber()}
-          onSubmit={(memoData) => {
-            const newMemo: Memo = {
-              ...memoData,
-              id: Date.now().toString(),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
-            addMemo(newMemo);
-            setShowMemoForm(false);
-            setSelectedSlipForMemo(null);
+          onSubmit={async (memoData) => {
+            try {
+              // Check authentication first
+              const token = localStorage.getItem('auth_token');
+              if (!token) {
+                throw new Error('Authentication required - please log in');
+              }
+              
+              // Ensure loading_slip_id is included in the memo data
+              const memoDataWithSlipId = {
+                ...memoData,
+                loading_slip_id: selectedSlipForMemo?.id
+              };
+              
+              console.log('LoadingSlip component - selectedSlipForMemo:', selectedSlipForMemo);
+              console.log('LoadingSlip component - selectedSlipForMemo.id:', selectedSlipForMemo?.id);
+              console.log('LoadingSlip component - memoData received:', memoData);
+              console.log('LoadingSlip component - final data with slip ID:', memoDataWithSlipId);
+              console.log('LoadingSlip component - auth token present:', !!token);
+              
+              if (!selectedSlipForMemo) {
+                throw new Error('No loading slip selected for memo creation');
+              }
+              
+              if (!selectedSlipForMemo.id) {
+                throw new Error('Selected loading slip is missing ID field');
+              }
+              
+              if (!memoDataWithSlipId.loading_slip_id) {
+                throw new Error('Loading slip ID is missing - cannot create memo');
+              }
+              
+              // Create memo directly via API service to bypass sync issues
+              const response = await apiService.createMemo(memoDataWithSlipId);
+              console.log('Memo created successfully:', response);
+              
+              // Trigger immediate data refresh
+              window.dispatchEvent(new CustomEvent('data-sync-required'));
+              
+              setShowMemoForm(false);
+              setSelectedSlipForMemo(null);
+              
+              console.log('Memo created and sync triggered');
+            } catch (error) {
+              console.error('Failed to create memo - Full error details:', error);
+              console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');
+              console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+              
+              // Show user-friendly error message
+              alert(`Failed to create memo: ${error instanceof Error ? error.message : 'Unknown error'}`);
+              
+              setShowMemoForm(false);
+              setSelectedSlipForMemo(null);
+            }
           }}
           onCancel={() => {
             setShowMemoForm(false);
@@ -355,16 +455,38 @@ const LoadingSlipComponent: React.FC = () => {
         <BillForm
           loadingSlip={selectedSlipForBill}
           nextBillNumber={getNextBillNumber()}
-          onSubmit={(billData) => {
-            const newBill: Bill = {
-              ...billData,
-              id: Date.now().toString(),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            };
-            addBill(newBill);
-            setShowBillForm(false);
-            setSelectedSlipForBill(null);
+          onSubmit={async (billData) => {
+            try {
+              // Ensure loading_slip_id is included in the bill data
+              const billDataWithSlipId = {
+                ...billData,
+                loading_slip_id: selectedSlipForBill?.id
+              };
+              
+              console.log('LoadingSlip component - selectedSlipForBill:', selectedSlipForBill);
+              console.log('LoadingSlip component - billData received:', billData);
+              console.log('LoadingSlip component - final data with slip ID:', billDataWithSlipId);
+              
+              if (!billDataWithSlipId.loading_slip_id) {
+                throw new Error('Loading slip ID is missing - cannot create bill');
+              }
+              
+              // Create bill directly via API service to bypass sync issues
+              const response = await apiService.createBill(billDataWithSlipId);
+              console.log('Bill created successfully:', response);
+              
+              // Trigger immediate data refresh
+              window.dispatchEvent(new CustomEvent('data-sync-required'));
+              
+              setShowBillForm(false);
+              setSelectedSlipForBill(null);
+              
+              console.log('Bill created and sync triggered');
+            } catch (error) {
+              console.error('Failed to create bill:', error);
+              setShowBillForm(false);
+              setSelectedSlipForBill(null);
+            }
           }}
           onCancel={() => {
             setShowBillForm(false);

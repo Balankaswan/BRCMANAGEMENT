@@ -2,9 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { Plus, FileText, Edit, Download, Eye, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
-import { generateBillPDF } from '../utils/pdfGenerator';
 import BillForm from './forms/BillForm';
 import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
 import type { Bill } from '../types';
 
 interface BillsListProps {
@@ -20,14 +20,27 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   const [receivedDate, setReceivedDate] = useState('');
   const [search, setSearch] = useState('');
 
-  const handleCreateBill = (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
-    const newBill: Bill = {
-      ...billData,
-      id: Date.now().toString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    addBill(newBill);
+  const handleCreateBill = async (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const response = await apiService.createBill(billData);
+      addBill(response.bill);
+      console.log('Bill created and synced to MongoDB:', response.bill);
+      
+      // Trigger sync across devices
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to create bill:', error);
+      // Fallback to local storage
+      const newBill: Bill = {
+        ...billData,
+        id: Date.now().toString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      addBill(newBill);
+    }
     setShowForm(false);
   };
 
@@ -36,15 +49,27 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
     return getNextSequenceNumber(bills, 'bill_number', 'BL');
   };
 
-  const handleUpdateBill = (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
+  const handleUpdateBill = async (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
     if (editingBill) {
-      const updatedBill: Bill = {
-        ...billData,
-        id: editingBill.id,
-        created_at: editingBill.created_at,
-        updated_at: new Date().toISOString(),
-      };
-      updateBill(updatedBill);
+      try {
+        const response = await apiService.updateBill(editingBill.id, billData);
+        updateBill(response.bill);
+        console.log('Bill updated and synced:', response.bill);
+        
+        // Trigger sync across devices
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('data-sync-required'));
+        }, 1000);
+      } catch (error) {
+        console.error('Failed to update bill:', error);
+        const updatedBill: Bill = {
+          ...billData,
+          id: editingBill.id,
+          created_at: editingBill.created_at,
+          updated_at: new Date().toISOString(),
+        };
+        updateBill(updatedBill);
+      }
       setShowForm(false);
       setEditingBill(null);
     }
@@ -52,33 +77,44 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
 
   const handleDownloadPDF = async (bill: Bill) => {
     try {
-      // Find the associated loading slip for this bill
-      const associatedLoadingSlip = loadingSlips.find(ls => ls.id === bill.loading_slip_id);
+      // Get advance payments from banking entries for this bill
+      const advancePayments = bankingEntries
+        .filter(e => e.category === 'bill_advance' && e.reference_id === bill.bill_number)
+        .map(e => ({
+          id: e.id || e._id || `advance-${Date.now()}-${Math.random()}`,
+          bill_id: bill.id,
+          date: e.date,
+          amount: e.amount,
+          mode: (e.payment_mode as 'cash' | 'bank' | 'other') || 'bank',
+          reference: e.narration || e.reference_id
+        }));
+
+      // Create enhanced bill object with advance payments
+      const enhancedBill = {
+        ...bill,
+        advance_payments: advancePayments
+      };
+
+      const { generateBillPDF } = await import('../utils/pdfGenerator');
       
-      if (associatedLoadingSlip) {
-        await generateBillPDF(bill, associatedLoadingSlip);
+      // Handle populated loading slip object in bill.loading_slip_id
+      let relatedLoadingSlip;
+      
+      if (typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null) {
+        // Loading slip is already populated in the bill object
+        relatedLoadingSlip = bill.loading_slip_id;
+        console.log('Using populated loading slip from bill:', relatedLoadingSlip);
       } else {
-        // Create a dummy loading slip if no associated one is found
-        const dummyLoadingSlip = {
-          id: 'dummy',
-          slip_number: 'N/A',
-          date: bill.date,
-          party: bill.party,
-          vehicle_no: 'N/A',
-          from_location: 'N/A',
-          to_location: 'N/A',
-          dimension: 'N/A',
-          weight: 0,
-          supplier: 'N/A',
-          freight: bill.bill_amount,
-          advance: 0,
-          balance: 0,
-          rto: 0,
-          total_freight: bill.bill_amount,
-          created_at: bill.created_at,
-          updated_at: bill.updated_at
-        };
-        await generateBillPDF(bill, dummyLoadingSlip);
+        // Try to find loading slip by ID in local store
+        relatedLoadingSlip = loadingSlips.find(ls => ls.id === bill.loading_slip_id || (ls as any)._id === bill.loading_slip_id);
+        console.log('Found loading slip in local store:', relatedLoadingSlip);
+      }
+      
+      if (relatedLoadingSlip) {
+        await generateBillPDF(enhancedBill, relatedLoadingSlip);
+      } else {
+        console.error('Related loading slip not found for bill:', bill.id, 'loading_slip_id:', bill.loading_slip_id);
+        alert('Related loading slip not found. Cannot generate PDF.');
       }
     } catch (error) {
       console.error('Error generating PDF:', error);
@@ -91,30 +127,75 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
     setReceivedDate(new Date().toISOString().split('T')[0]);
   };
 
-  const confirmMarkAsReceived = () => {
+  const confirmMarkAsReceived = async () => {
     if (showReceivedModal && receivedDate) {
-      // Add banking entry for full payment received
-      addBankingEntry({
-        id: Date.now().toString(),
-        type: 'credit',
-        date: receivedDate,
-        category: 'bill_payment',
-        narration: `Full payment received for Bill ${showReceivedModal.bill_number}`,
-        amount: showReceivedModal.bill_amount,
-        reference_id: showReceivedModal.bill_number,
-        reference_name: showReceivedModal.party,
-        created_at: new Date().toISOString()
-      });
-      // Update bill status and persist receipt meta
-      markBillAsReceived(showReceivedModal.id, receivedDate, showReceivedModal.bill_amount);
+      try {
+        // Add banking entry for full payment received
+        const bankingEntry = {
+          id: Date.now().toString(),
+          type: 'credit' as const,
+          date: receivedDate,
+          category: 'bill_payment' as const,
+          narration: `Full payment received for Bill ${showReceivedModal.bill_number}`,
+          amount: showReceivedModal.bill_amount,
+          reference_id: showReceivedModal.bill_number,
+          reference_name: showReceivedModal.party,
+          created_at: new Date().toISOString()
+        };
+        
+        await apiService.createBankingEntry(bankingEntry);
+        addBankingEntry(bankingEntry);
+        
+        // Update bill status to received
+        const updatedBillData = {
+          ...showReceivedModal,
+          status: 'received',
+          received_date: receivedDate,
+          received_amount: showReceivedModal.bill_amount
+        };
+        
+        await apiService.updateBill(showReceivedModal.id, updatedBillData);
+        markBillAsReceived(showReceivedModal.id, receivedDate, showReceivedModal.bill_amount);
+        
+        // Trigger sync across devices
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('data-sync-required'));
+        }, 1000);
+        
+        console.log('Bill marked as received and synced');
+      } catch (error) {
+        console.error('Failed to mark bill as received:', error);
+        // Fallback to local update
+        addBankingEntry({
+          id: Date.now().toString(),
+          type: 'credit' as const,
+          date: receivedDate,
+          category: 'bill_payment' as const,
+          narration: `Full payment received for Bill ${showReceivedModal.bill_number}`,
+          amount: showReceivedModal.bill_amount,
+          reference_id: showReceivedModal.bill_number,
+          reference_name: showReceivedModal.party,
+          created_at: new Date().toISOString()
+        });
+        markBillAsReceived(showReceivedModal.id, receivedDate, showReceivedModal.bill_amount);
+      }
       setShowReceivedModal(null);
       setReceivedDate('');
     }
   };
 
-  const handleDeleteBill = (bill: Bill) => {
-    if (confirm(`Are you sure you want to delete Bill #${bill.bill_number}?`)) {
-      deleteBill(bill.id);
+  const handleDeleteBill = async (bill: Bill) => {
+    if (window.confirm(`Are you sure you want to delete Bill #${bill.bill_number}?`)) {
+      try {
+        console.log('Deleting bill with ID:', bill.id);
+        await apiService.deleteBill(bill.id);
+        deleteBill(bill.id);
+        console.log('Bill deleted successfully');
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('Failed to delete bill:', error);
+        deleteBill(bill.id); // Fallback to local deletion
+      }
     }
   };
 
@@ -193,16 +274,21 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredBills.map((bill) => {
-            const loadingSlip = loadingSlips.find(ls => ls.id === bill.loading_slip_id);
+          {bills.map((bill: Bill, index: number) => {
+            // Handle both cases: loading_slip_id as string or populated object
+            const loadingSlip = typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null 
+              ? bill.loading_slip_id 
+              : loadingSlips.find(ls => ls.id === bill.loading_slip_id);
             const received = bankingEntries
               .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
               .reduce((sum, e) => sum + e.amount, 0);
-            const balance = bill.net_amount - received;
+            // Calculate net amount including all charges
+            const netAmount = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.penalties || 0) - (bill.tds || 0);
+            const balance = netAmount - received;
             const trips = 1; // Default trips count
             
             return (
-              <div key={bill.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+              <div key={bill.id || `bill-${index}-${bill.bill_number}`} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">
@@ -228,7 +314,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
                         )}
                       </div>
                       <div className="text-sm text-gray-600">
-                        Total Freight: <span className="font-medium">{formatCurrency(bill.bill_amount)}</span>
+                        Total Freight: <span className="font-medium">{formatCurrency(netAmount)}</span>
                         <span className="ml-4">Advances: {received > 0 ? formatCurrency(received) : '0'}</span>
                       </div>
                     </div>
@@ -277,15 +363,39 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
                     </div>
                   </div>
                   
-                  {/* Trip Details */}
+                  {/* Loading Slip Details */}
                   {loadingSlip && (
-                    <div className="bg-gray-50 rounded-lg p-4 mt-4">
-                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Trips:</div>
-                      <div className="text-sm text-gray-900">
-                        Invoice Date: {loadingSlip ? `${loadingSlip.from_location} → ${loadingSlip.to_location}` : 'N/A'} ({loadingSlip?.vehicle_no || 'N/A'})
+                    <div className="bg-blue-50 rounded-lg p-4 mt-4 border border-blue-200">
+                      <div className="text-xs text-blue-600 uppercase tracking-wide mb-2 font-medium">Loading Slip Details:</div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">Route</div>
+                          <div className="text-sm font-medium text-gray-900">{loadingSlip.from_location} → {loadingSlip.to_location}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">Vehicle</div>
+                          <div className="text-sm font-medium text-gray-900">{loadingSlip.vehicle_no}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">Material</div>
+                          <div className="text-sm font-medium text-gray-900">{loadingSlip.material || 'N/A'}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-gray-500 mb-1">Weight</div>
+                          <div className="text-sm font-medium text-gray-900">{loadingSlip.weight} MT</div>
+                        </div>
                       </div>
-                      <div className="text-right mt-2">
-                        <span className="text-lg font-bold text-gray-900">{formatCurrency(bill.bill_amount)}</span>
+                      <div className="mt-3 pt-3 border-t border-blue-200">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <div className="text-xs text-gray-500">Supplier</div>
+                            <div className="text-sm font-medium text-gray-900">{loadingSlip.supplier}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs text-gray-500">Bill Amount</div>
+                            <div className="text-lg font-bold text-blue-600">{formatCurrency(bill.bill_amount)}</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}

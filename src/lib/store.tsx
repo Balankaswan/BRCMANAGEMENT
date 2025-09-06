@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
-import type { LoadingSlip, Memo, Bill, BankingEntry, LedgerEntry, Party, Supplier, FuelWallet, FuelTransaction, VehicleFuelExpense, Vehicle, AdvancePayment } from '../types';
+import React, { createContext, useContext, useState } from 'react';
+import { apiService } from './api';
+import type { LoadingSlip, Memo, Bill, BankingEntry, LedgerEntry, Party, Supplier, Vehicle, FuelWallet, VehicleFuelExpense, FuelTransaction, PODFile, AdvancePayment } from '../types';
 
 interface DataStoreState {
   loadingSlips: LoadingSlip[];
@@ -14,6 +15,7 @@ interface DataStoreState {
   fuelWallets: FuelWallet[];
   fuelTransactions: FuelTransaction[];
   vehicleFuelExpenses: VehicleFuelExpense[];
+  podFiles: PODFile[];
   // actions
   addLoadingSlip: (slip: LoadingSlip) => void;
   updateLoadingSlip: (slip: LoadingSlip) => void;
@@ -27,25 +29,47 @@ interface DataStoreState {
   deleteBill: (id: string) => void;
   markBillAsReceived: (id: string, receivedDate: string, receivedAmount: number) => void;
   addBankingEntry: (entry: BankingEntry) => void;
+  updateBankingEntry: (id: string, entry: BankingEntry) => void;
   deleteBankingEntry: (id: string) => void;
+  setBankingEntries: (entries: BankingEntry[]) => void;
+  setBills: (bills: Bill[]) => void;
+  setMemos: (memos: Memo[]) => void;
+  setLoadingSlips: (slips: LoadingSlip[]) => void;
+  setLedgerEntries: (entries: LedgerEntry[]) => void;
+  setCashbookEntries: (entries: BankingEntry[]) => void;
+  setPODFiles: (files: PODFile[]) => void;
   addCashbookEntry: (entry: BankingEntry) => void;
+  updateCashbookEntry: (entry: BankingEntry) => void;
   deleteCashbookEntry: (id: string) => void;
   addParty: (party: Party) => void;
+  updateParty: (party: Party) => void;
+  deleteParty: (id: string) => void;
   addSupplier: (supplier: Supplier) => void;
+  updateSupplier: (supplier: Supplier) => void;
+  deleteSupplier: (id: string) => void;
   // Vehicle management actions
   addVehicle: (vehicle: Vehicle) => void;
   updateVehicle: (vehicle: Vehicle) => void;
   deleteVehicle: (id: string) => void;
+  setVehicles: (vehicles: Vehicle[]) => void;
   // Fuel accounting actions
   addFuelWallet: (wallet: FuelWallet) => void;
+  setFuelWallets: (wallets: FuelWallet[]) => void;
   allocateFuelToVehicle: (vehicleNo: string, walletName: string, amount: number, date: string, narration?: string, fuelQuantity?: number, ratePerLiter?: number, odometerReading?: number) => void;
   getFuelWalletBalance: (walletName: string) => number;
   getVehicleFuelExpenses: (vehicleNo: string) => VehicleFuelExpense[];
+  bulkPaySupplierMemos: (supplierName: string, memoIds: string[], paymentAmount: number, paymentDate: string, bankAccount: string, paymentMode: 'cash' | 'bank' | 'cheque' | 'bank_transfer' | 'upi', narration?: string) => void;
+  bulkPayBills: (partyName: string, billIds: string[], paymentAmount: number, paymentDate: string, bankAccount: string, paymentMode: 'cash' | 'bank' | 'cheque' | 'bank_transfer' | 'upi', narration?: string) => void;
+  cleanupSupplierLedgerForOwnVehicles: () => void;
+  // POD management actions
+  addPODFile: (podFile: PODFile) => void;
+  deletePODFile: (id: string) => void;
+  getPODFiles: () => PODFile[];
 }
 
 const DataStoreContext = createContext<DataStoreState | null>(null);
 
-export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ children }): JSX.Element => {
   const [loadingSlips, setLoadingSlips] = useState<LoadingSlip[]>([]);
   const [memos, setMemos] = useState<Memo[]>([]);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -54,22 +78,19 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [ledgerEntries, setLedgerEntries] = useState<LedgerEntry[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [vehicles, setVehicles] = useState<Vehicle[]>([
-    { id: 'v1', vehicle_no: 'GJ01AB1234', vehicle_type: 'Truck', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: 'v2', vehicle_no: 'GJ05CD5678', vehicle_type: 'Truck', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: 'v3', vehicle_no: 'DD01YV9406', vehicle_type: 'Truck', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: 'v4', vehicle_no: 'MH12EF9012', vehicle_type: 'Truck', created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: 'v5', vehicle_no: 'RJ14GH3456', vehicle_type: 'Truck', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
-  ]);
+  const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [fuelWallets, setFuelWallets] = useState<FuelWallet[]>([
-    { id: 'bpcl-wallet', name: 'BPCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: 'hpcl-wallet', name: 'HPCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: 'iocl-wallet', name: 'IOCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+    { id: '1', name: 'BPCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    { id: '2', name: 'HPCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    { id: '3', name: 'IOCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
+    { id: '4', name: 'Shell', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
   ]);
   const [fuelTransactions, setFuelTransactions] = useState<FuelTransaction[]>([]);
   const [vehicleFuelExpenses, setVehicleFuelExpenses] = useState<VehicleFuelExpense[]>([]);
+  const [podFiles, setPodFiles] = useState<PODFile[]>([]);
 
-  const value: DataStoreState = useMemo(() => ({
+
+  const contextValue: DataStoreState = {
     loadingSlips,
     memos,
     bills,
@@ -82,63 +103,293 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     fuelWallets,
     fuelTransactions,
     vehicleFuelExpenses,
-    addLoadingSlip: (slip) => setLoadingSlips(prev => [slip, ...prev]),
-    updateLoadingSlip: (slip) => setLoadingSlips(prev => prev.map(s => s.id === slip.id ? slip : s)),
+    podFiles,
+    setBankingEntries: (entries) => setBankingEntries(entries),
+    setBills: (bills) => setBills(bills),
+    setMemos: (memos) => setMemos(memos),
+    setLoadingSlips: (slips) => setLoadingSlips(slips),
+    setLedgerEntries: (entries) => setLedgerEntries(entries),
+    addLoadingSlip: (slip) => {
+      setLoadingSlips(prev => [slip, ...prev]);
+    },
+    updateLoadingSlip: (slip) => {
+      setLoadingSlips(prev => prev.map(s => s.id === slip.id ? slip : s));
+    },
     deleteLoadingSlip: (id) => {
       setLoadingSlips(prev => prev.filter(s => s.id !== id));
-      // Also remove related memos, bills, and ledger entries
       setMemos(prev => prev.filter(m => m.loading_slip_id !== id));
       setBills(prev => prev.filter(b => b.loading_slip_id !== id));
       setLedgerEntries(prev => prev.filter(l => l.loading_slip_id !== id));
     },
     addMemo: (memo) => {
       setMemos(prev => [memo, ...prev]);
-      // Register Supplier ledger entry using Loading Slip context
+      
       const ls = loadingSlips.find(s => s.id === memo.loading_slip_id);
-      const entry: LedgerEntry = {
-        id: `${memo.id}-ledger`,
-        ledger_type: 'supplier',
-        reference_id: memo.memo_number,
-        reference_name: memo.supplier,
-        date: memo.date,
-        description: 'Memo created',
-        debit: 0,
-        credit: memo.net_amount,
-        balance: 0,
-        created_at: new Date().toISOString(),
-        loading_slip_id: memo.loading_slip_id,
-        memo_number: memo.memo_number,
-        from_location: ls?.from_location,
-        to_location: ls?.to_location,
-        vehicle_no: ls?.vehicle_no,
-      };
-      setLedgerEntries(prev => [entry, ...prev]);
+      const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+      const isOwnVehicle = vehicle?.ownership_type === 'own';
+      
+      console.log('🚛 MEMO CREATION DEBUG:', {
+        memo: memo.memo_number,
+        vehicle: ls?.vehicle_no,
+        vehicleFound: !!vehicle,
+        ownership: vehicle?.ownership_type,
+        isOwn: isOwnVehicle,
+        supplier: memo.supplier,
+        willCreateSupplierEntry: !isOwnVehicle,
+        allVehicles: vehicles.map(v => ({ no: v.vehicle_no, ownership: v.ownership_type }))
+      });
+      
+      if (isOwnVehicle) {
+        console.log('✅ Own vehicle detected - creating vehicle income only, NO supplier entry');
+        
+        const netMemoAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0);
+        
+        const vehicleIncomeEntry: LedgerEntry = {
+          id: `${memo.id}-vehicle-income`,
+          ledger_type: 'vehicle_income',
+          reference_id: memo.memo_number,
+          reference_name: `Vehicle ${ls?.vehicle_no} - Net Freight`,
+          date: memo.date,
+          description: `Net freight from memo ${memo.memo_number} (after commission & mamool)`,
+          debit: 0,
+          credit: netMemoAmount,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: memo.loading_slip_id,
+          memo_number: memo.memo_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+        };
+        
+        const ledgerEntries = [vehicleIncomeEntry];
+        
+        if (memo.detention && memo.detention > 0) {
+          const detentionEntry: LedgerEntry = {
+            id: `${memo.id}-detention`,
+            ledger_type: 'vehicle_income',
+            reference_id: memo.memo_number,
+            reference_name: `Vehicle ${ls?.vehicle_no} - Detention`,
+            date: memo.date,
+            description: `Detention charges from memo ${memo.memo_number}`,
+            debit: 0,
+            credit: memo.detention,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            loading_slip_id: memo.loading_slip_id,
+            memo_number: memo.memo_number,
+            from_location: ls?.from_location,
+            to_location: ls?.to_location,
+            vehicle_no: ls?.vehicle_no,
+          };
+          ledgerEntries.push(detentionEntry);
+        }
+        
+        if (memo.extra && memo.extra > 0) {
+          const extraEntry: LedgerEntry = {
+            id: `${memo.id}-extra`,
+            ledger_type: 'vehicle_income',
+            reference_id: memo.memo_number,
+            reference_name: `Vehicle ${ls?.vehicle_no} - Extra Charges`,
+            date: memo.date,
+            description: `Extra charges from memo ${memo.memo_number}`,
+            debit: 0,
+            credit: memo.extra,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            loading_slip_id: memo.loading_slip_id,
+            memo_number: memo.memo_number,
+            from_location: ls?.from_location,
+            to_location: ls?.to_location,
+            vehicle_no: ls?.vehicle_no,
+          };
+          ledgerEntries.push(extraEntry);
+        }
+        
+        setLedgerEntries(prev => [...ledgerEntries, ...prev]);
+      } else {
+        console.log('📋 Market vehicle detected - creating supplier entry');
+        const supplierCreditAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
+        
+        const supplierEntry: LedgerEntry = {
+          id: `${memo.id}-supplier`,
+          ledger_type: 'supplier',
+          reference_id: memo.memo_number,
+          reference_name: memo.supplier,
+          date: memo.date,
+          description: 'Market vehicle memo - supplier amount',
+          debit: 0,
+          credit: supplierCreditAmount,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: memo.loading_slip_id,
+          memo_number: memo.memo_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+        };
+        
+        setLedgerEntries(prev => [supplierEntry, ...prev]);
+      }
     },
-    updateMemo: (memo) => setMemos(prev => prev.map(m => m.id === memo.id ? memo : m)),
+    updateMemo: (memo) => {
+      setMemos(prev => prev.map(m => m.id === memo.id ? memo : m));
+      
+      // Update corresponding ledger entries when memo is updated
+      const ls = loadingSlips.find(s => s.id === memo.loading_slip_id);
+      const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+      const isOwnVehicle = vehicle?.ownership_type === 'own';
+      
+      // Remove old ledger entries for this memo (improved filtering)
+      setLedgerEntries(prev => prev.filter(entry => 
+        !(entry.memo_number === memo.memo_number || 
+          entry.reference_id === memo.memo_number ||
+          entry.id?.startsWith(`${memo.id}-`))
+      ));
+      
+      if (isOwnVehicle) {
+        // For own vehicles: Credit net memo amount after deductions
+        const netMemoAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0);
+        
+        const vehicleIncomeEntry: LedgerEntry = {
+          id: `${memo.id}-vehicle-income`,
+          ledger_type: 'vehicle_income',
+          reference_id: memo.memo_number,
+          reference_name: `Vehicle ${ls?.vehicle_no} - Net Freight`,
+          date: memo.date,
+          description: `Net freight from memo ${memo.memo_number} (after commission & mamool)`,
+          debit: 0,
+          credit: netMemoAmount,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: memo.loading_slip_id,
+          memo_number: memo.memo_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+        };
+        
+        const ledgerEntries = [vehicleIncomeEntry];
+        
+        // Add separate credit entries for detention and extra charges
+        if (memo.detention && memo.detention > 0) {
+          const detentionEntry: LedgerEntry = {
+            id: `${memo.id}-detention`,
+            ledger_type: 'vehicle_income',
+            reference_id: memo.memo_number,
+            reference_name: `Vehicle ${ls?.vehicle_no} - Detention`,
+            date: memo.date,
+            description: `Detention charges from memo ${memo.memo_number}`,
+            debit: 0,
+            credit: memo.detention,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            loading_slip_id: memo.loading_slip_id,
+            memo_number: memo.memo_number,
+            from_location: ls?.from_location,
+            to_location: ls?.to_location,
+            vehicle_no: ls?.vehicle_no,
+          };
+          ledgerEntries.push(detentionEntry);
+        }
+        
+        if (memo.extra && memo.extra > 0) {
+          const extraEntry: LedgerEntry = {
+            id: `${memo.id}-extra`,
+            ledger_type: 'vehicle_income',
+            reference_id: memo.memo_number,
+            reference_name: `Vehicle ${ls?.vehicle_no} - Extra Charges`,
+            date: memo.date,
+            description: `Extra charges from memo ${memo.memo_number}`,
+            debit: 0,
+            credit: memo.extra,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            loading_slip_id: memo.loading_slip_id,
+            memo_number: memo.memo_number,
+            from_location: ls?.from_location,
+            to_location: ls?.to_location,
+            vehicle_no: ls?.vehicle_no,
+          };
+          ledgerEntries.push(extraEntry);
+        }
+        
+        setLedgerEntries(prev => [...ledgerEntries, ...prev]);
+      } else {
+        // Market Vehicle: Single supplier credit entry
+        const supplierCreditAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
+        
+        const supplierEntry: LedgerEntry = {
+          id: `${memo.id}-supplier`,
+          ledger_type: 'supplier',
+          reference_id: memo.memo_number,
+          reference_name: memo.supplier,
+          date: memo.date,
+          description: 'Market vehicle memo - supplier amount',
+          debit: 0,
+          credit: supplierCreditAmount,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: memo.loading_slip_id,
+          memo_number: memo.memo_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+        };
+        
+        setLedgerEntries(prev => [supplierEntry, ...prev]);
+      }
+    },
     deleteMemo: (id) => {
+      const memo = memos.find(m => m.id === id);
       setMemos(prev => prev.filter(m => m.id !== id));
-      setLedgerEntries(prev => prev.filter(l => l.reference_id !== `${id}-ledger`));
+      
+      // Remove corresponding ledger entries (improved filtering)
+      setLedgerEntries(prev => prev.filter(entry => 
+        !(entry.memo_number === memo?.memo_number || 
+          entry.reference_id === memo?.memo_number ||
+          entry.id?.startsWith(`${id}-`))
+      ));
     },
     markMemoAsPaid: (id, paidDate, paidAmount) => {
       setMemos(prev => prev.map(m => 
-        m.id === id 
-          ? { ...m, status: 'paid', paid_date: paidDate, paid_amount: paidAmount, updated_at: new Date().toISOString() }
-          : m
+        m.id === id ? { ...m, paid_date: paidDate, paid_amount: paidAmount, status: 'paid', is_paid: true } : m
       ));
     },
     addBill: (bill) => {
       setBills(prev => [bill, ...prev]);
-      // Register Party ledger entry using Loading Slip context
+      
       const ls = loadingSlips.find(s => s.id === bill.loading_slip_id);
-      const entry: LedgerEntry = {
-        id: `${bill.id}-ledger`,
+      
+      // Add POD file if present
+      if (bill.pod_image) {
+        const podFile = {
+          id: `${bill.id}-pod`,
+          filename: `POD_${bill.bill_number}.jpg`,
+          fileData: bill.pod_image,
+          fileType: 'image/jpeg',
+          billNo: bill.bill_number,
+          vehicleNo: ls?.vehicle_no,
+          party: bill.party,
+          uploadDate: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        };
+        setPodFiles(prev => [podFile, ...prev]);
+      }
+      
+      // Create professional party ledger entries for bill
+      const ledgerEntries: LedgerEntry[] = [];
+      
+      // 1. Main Bill Entry (Credit to Party)
+      const mainBillEntry: LedgerEntry = {
+        id: `${bill.id}-main`,
         ledger_type: 'party',
         reference_id: bill.bill_number,
         reference_name: bill.party,
         date: bill.date,
-        description: 'Bill created',
-        debit: bill.net_amount,
-        credit: 0,
+        description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Freight Charges`,
+        credit: bill.bill_amount,
+        debit: 0,
         balance: 0,
         created_at: new Date().toISOString(),
         loading_slip_id: bill.loading_slip_id,
@@ -146,215 +397,953 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         from_location: ls?.from_location,
         to_location: ls?.to_location,
         vehicle_no: ls?.vehicle_no,
+        source_type: 'bill',
+        partyId: bill.party
       };
-      setLedgerEntries(prev => [entry, ...prev]);
+      ledgerEntries.push(mainBillEntry);
+      
+      // 2. Detention Charges (Credit to Party)
+      if (bill.detention && bill.detention > 0) {
+        const detentionEntry: LedgerEntry = {
+          id: `${bill.id}-detention`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Detention Charges`,
+          credit: bill.detention,
+          debit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(detentionEntry);
+      }
+      
+      // 3. Extra Charges (Credit to Party)
+      if (bill.extra && bill.extra > 0) {
+        const extraEntry: LedgerEntry = {
+          id: `${bill.id}-extra`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Extra Charges`,
+          credit: bill.extra,
+          debit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(extraEntry);
+      }
+      
+      // 4. RTO Charges (Credit to Party)
+      if (bill.rto && bill.rto > 0) {
+        const rtoEntry: LedgerEntry = {
+          id: `${bill.id}-rto`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | RTO Charges`,
+          credit: bill.rto,
+          debit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(rtoEntry);
+      }
+      
+      // 5. TDS Deduction (Debit from Party)
+      if (bill.tds && bill.tds > 0) {
+        const tdsEntry: LedgerEntry = {
+          id: `${bill.id}-tds`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | TDS Deduction`,
+          debit: bill.tds,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(tdsEntry);
+      }
+      
+      // 6. Penalty Deduction (Debit from Party)
+      if (bill.penalties && bill.penalties > 0) {
+        const penaltyEntry: LedgerEntry = {
+          id: `${bill.id}-penalty`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Penalty Deduction`,
+          debit: bill.penalties,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(penaltyEntry);
+      }
+      
+      // 7. Mamul Deduction (Debit from Party)
+      if (bill.mamool && bill.mamool > 0) {
+        const mamulEntry: LedgerEntry = {
+          id: `${bill.id}-mamul`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Mamul Deduction`,
+          debit: bill.mamool,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(mamulEntry);
+      }
+      
+      setLedgerEntries(prev => [...ledgerEntries, ...prev]);
     },
-    updateBill: (bill) => setBills(prev => prev.map(b => b.id === bill.id ? bill : b)),
+    updateBill: (bill) => {
+      setBills(prev => prev.map(b => b.id === bill.id ? bill : b));
+      
+      const ls = loadingSlips.find(s => s.id === bill.loading_slip_id);
+      
+      // Update or add POD file if present
+      if (bill.pod_image) {
+        const existingPodIndex = podFiles.findIndex(p => p.id === `${bill.id}-pod`);
+        const podFile = {
+          id: `${bill.id}-pod`,
+          filename: `POD_${bill.bill_number}.jpg`,
+          fileData: bill.pod_image,
+          fileType: 'image/jpeg',
+          billNo: bill.bill_number,
+          vehicleNo: ls?.vehicle_no,
+          party: bill.party,
+          uploadDate: new Date().toISOString(),
+          created_at: new Date().toISOString()
+        };
+        
+        if (existingPodIndex >= 0) {
+          setPodFiles(prev => prev.map((p, i) => i === existingPodIndex ? podFile : p));
+        } else {
+          setPodFiles(prev => [podFile, ...prev]);
+        }
+      }
+      
+      // Remove old ledger entries for this bill
+      setLedgerEntries(prev => prev.filter(entry => 
+        !entry.bill_number || entry.bill_number !== bill.bill_number
+      ));
+      
+      // Create updated professional party ledger entries for bill
+      const ledgerEntries: LedgerEntry[] = [];
+      
+      // 1. Main Bill Entry (Credit to Party)
+      const mainBillEntry: LedgerEntry = {
+        id: `${bill.id}-main`,
+        ledger_type: 'party',
+        reference_id: bill.bill_number,
+        reference_name: bill.party,
+        date: bill.date,
+        description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Freight Charges`,
+        credit: bill.bill_amount,
+        debit: 0,
+        balance: 0,
+        created_at: new Date().toISOString(),
+        loading_slip_id: bill.loading_slip_id,
+        bill_number: bill.bill_number,
+        from_location: ls?.from_location,
+        to_location: ls?.to_location,
+        vehicle_no: ls?.vehicle_no,
+        source_type: 'bill',
+        partyId: bill.party
+      };
+      ledgerEntries.push(mainBillEntry);
+      
+      // 2. Detention Charges (Credit to Party)
+      if (bill.detention && bill.detention > 0) {
+        const detentionEntry: LedgerEntry = {
+          id: `${bill.id}-detention`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Detention Charges`,
+          credit: bill.detention,
+          debit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(detentionEntry);
+      }
+      
+      // 3. Extra Charges (Credit to Party)
+      if (bill.extra && bill.extra > 0) {
+        const extraEntry: LedgerEntry = {
+          id: `${bill.id}-extra`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Extra Charges`,
+          credit: bill.extra,
+          debit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(extraEntry);
+      }
+      
+      // 4. RTO Charges (Credit to Party)
+      if (bill.rto && bill.rto > 0) {
+        const rtoEntry: LedgerEntry = {
+          id: `${bill.id}-rto`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | RTO Charges`,
+          credit: bill.rto,
+          debit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(rtoEntry);
+      }
+      
+      // 5. TDS Deduction (Debit from Party)
+      if (bill.tds && bill.tds > 0) {
+        const tdsEntry: LedgerEntry = {
+          id: `${bill.id}-tds`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | TDS Deduction`,
+          debit: bill.tds,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(tdsEntry);
+      }
+      
+      // 6. Penalty Deduction (Debit from Party)
+      if (bill.penalties && bill.penalties > 0) {
+        const penaltyEntry: LedgerEntry = {
+          id: `${bill.id}-penalty`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Penalty Deduction`,
+          debit: bill.penalties,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(penaltyEntry);
+      }
+      
+      // 7. Mamul Deduction (Debit from Party)
+      if (bill.mamool && bill.mamool > 0) {
+        const mamulEntry: LedgerEntry = {
+          id: `${bill.id}-mamul`,
+          ledger_type: 'party',
+          reference_id: bill.bill_number,
+          reference_name: bill.party,
+          date: bill.date,
+          description: `Bill No: ${bill.bill_number} | Date: ${bill.date} | Mamul Deduction`,
+          debit: bill.mamool,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          loading_slip_id: bill.loading_slip_id,
+          bill_number: bill.bill_number,
+          from_location: ls?.from_location,
+          to_location: ls?.to_location,
+          vehicle_no: ls?.vehicle_no,
+          source_type: 'bill',
+          partyId: bill.party
+        };
+        ledgerEntries.push(mamulEntry);
+      }
+      
+      setLedgerEntries(prev => [...ledgerEntries, ...prev]);
+    },
     deleteBill: (id) => {
+      const bill = bills.find(b => b.id === id);
       setBills(prev => prev.filter(b => b.id !== id));
-      setLedgerEntries(prev => prev.filter(l => l.reference_id !== `${id}-ledger`));
+      
+      // Remove corresponding ledger entries
+      setLedgerEntries(prev => prev.filter(entry => 
+        !entry.bill_number || entry.bill_number !== bill?.bill_number
+      ));
     },
     markBillAsReceived: (id, receivedDate, receivedAmount) => {
       setBills(prev => prev.map(b => 
-        b.id === id 
-          ? { ...b, status: 'received', received_date: receivedDate, received_amount: receivedAmount, updated_at: new Date().toISOString() }
-          : b
+        b.id === id ? { ...b, received_date: receivedDate, received_amount: receivedAmount, status: 'received', is_received: true } : b
       ));
     },
     addBankingEntry: (entry) => {
-      setBankingEntries(prev => [entry, ...prev]);
+      setBankingEntries(prev => {
+        // Check if entry already exists to avoid duplicates
+        const exists = prev.some(e => e.id === entry.id);
+        if (exists) return prev;
+        return [entry, ...prev];
+      });
       
-      // Handle fuel wallet transactions with automatic double-entry
-      if (entry.category === 'fuel_wallet' && entry.type === 'debit' && entry.reference_name) {
-        const walletName = entry.reference_name;
-        const transactionId = Date.now().toString();
-        const now = new Date().toISOString();
+      // Handle memo/bill advance payments - create advance payment records and link to memo/bill
+      if (entry.category === 'memo_advance' && entry.reference_id) {
+        const advancePayment: AdvancePayment = {
+          id: `${entry.id}-advance`,
+          memo_id: entry.reference_id,
+          date: entry.date,
+          amount: entry.amount,
+          mode: entry.payment_mode === 'cash' ? 'cash' : 'bank',
+          reference: entry.narration,
+          description: `Advance payment via ${entry.type === 'debit' ? 'bank debit' : 'bank credit'}`,
+          created_at: new Date().toISOString()
+        };
         
-        // Create fuel wallet credit transaction
+        // Add advance payment to memo
+        setMemos(prev => prev.map(memo => 
+          memo.memo_number === entry.reference_id 
+            ? { ...memo, advance_payments: [...(memo.advance_payments || []), advancePayment] }
+            : memo
+        ));
+        
+        // Store advance ID in banking entry for future reference
+        setBankingEntries(prev => prev.map(be => 
+          be.id === entry.id ? { ...be, memo_advance_id: advancePayment.id } : be
+        ));
+        return;
+      }
+      
+      if (entry.category === 'bill_advance' && entry.reference_id) {
+        const advancePayment: AdvancePayment = {
+          id: `${entry.id}-advance`,
+          bill_id: entry.reference_id,
+          date: entry.date,
+          amount: entry.amount,
+          mode: entry.payment_mode === 'cash' ? 'cash' : 'bank',
+          reference: entry.narration,
+          description: `Advance payment via ${entry.type === 'debit' ? 'bank debit' : 'bank credit'}`,
+          created_at: new Date().toISOString()
+        };
+        
+        // Add advance payment to bill
+        setBills(prev => prev.map(bill => 
+          bill.bill_number === entry.reference_id 
+            ? { ...bill, advance_payments: [...(bill.advance_payments || []), advancePayment] }
+            : bill
+        ));
+        
+        // Store advance ID in banking entry for future reference
+        setBankingEntries(prev => prev.map(be => 
+          be.id === entry.id ? { ...be, bill_advance_id: advancePayment.id } : be
+        ));
+        return;
+      }
+      
+      // Skip ledger entries for memo/bill payment categories to avoid duplicates
+      if (['memo_payment', 'bill_payment'].includes(entry.category)) {
+        return;
+      }
+      
+      // Handle vehicle expenses for own vehicles - create vehicle ledger debit entry
+      if (entry.vehicle_no && entry.category === 'vehicle_expense') {
+        const vehicle = vehicles.find(v => v.vehicle_no === entry.vehicle_no);
+        const isOwnVehicle = vehicle?.ownership_type === 'own';
+        
+        if (isOwnVehicle) {
+          const vehicleExpenseEntry: LedgerEntry = {
+            id: `${entry.id}-vehicle-expense`,
+            referenceId: entry.id,
+            reference_id: entry.id,
+            ledger_type: 'vehicle_expense',
+            reference_name: `Vehicle ${entry.vehicle_no} - Expense`,
+            source_type: 'banking',
+            type: 'expense',
+            date: entry.date,
+            description: entry.narration || 'Vehicle expense',
+            debit: entry.amount,
+            credit: 0,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            vehicle_no: entry.vehicle_no,
+          };
+          
+          setLedgerEntries(prev => [vehicleExpenseEntry, ...prev]);
+          return; // Don't create general ledger entry for vehicle expenses
+        }
+      }
+      
+      // Create fuel wallet credit entry for fuel company debits
+      if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
         const fuelTransaction: FuelTransaction = {
-          id: transactionId,
+          id: `${entry.id}-fuel-tx`,
+          wallet_name: entry.narration || 'BPCL',
           type: 'wallet_credit',
-          wallet_name: walletName,
           amount: entry.amount,
           date: entry.date,
-          reference_id: entry.id,
-          narration: entry.narration,
-          created_at: now
+          narration: `Bank debit for fuel - ${entry.narration}`,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
         };
+        
         setFuelTransactions(prev => [fuelTransaction, ...prev]);
         
-        // Update or create fuel wallet
+        // Update fuel wallet balance
+        const walletName = entry.narration || 'BPCL';
         const existingWallet = fuelWallets.find(w => w.name === walletName);
         if (existingWallet) {
           setFuelWallets(prev => prev.map(wallet => 
             wallet.name === walletName 
-              ? { ...wallet, balance: wallet.balance + entry.amount, updated_at: now }
+              ? { ...wallet, balance: wallet.balance + entry.amount }
               : wallet
           ));
         } else {
-          const newWallet: FuelWallet = {
-            id: `${walletName.toLowerCase()}-wallet-${Date.now()}`,
-            name: walletName,
+          setFuelWallets(prev => [...prev, { 
+            id: `wallet-${Date.now()}`,
+            name: walletName, 
             balance: entry.amount,
-            created_at: now,
-            updated_at: now
-          };
-          setFuelWallets(prev => [newWallet, ...prev]);
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }]);
         }
         
-        // Create fuel wallet ledger entry (Credit)
-        const walletLedgerEntry: LedgerEntry = {
-          id: `${entry.id}-wallet-ledger`,
-          ledger_type: 'fuel_wallet',
-          reference_id: walletName,
-          reference_name: `${walletName} Fuel Wallet`,
-          date: entry.date,
-          description: `Fuel wallet credit from bank`,
-          narration: entry.narration,
-          debit: entry.amount,
-          credit: 0,
-          balance: 0,
-          source_type: 'banking',
-          source_id: entry.id,
-          created_at: now
-        };
-        setLedgerEntries(prev => [walletLedgerEntry, ...prev]);
+        // No ledger entry for fuel_wallet category to avoid double entry
+        return;
+      }
+      
+      // Create person-specific ledger entry if reference_name contains a person's name
+      if (entry.reference_name && entry.reference_name.trim() && 
+          !['fuel_wallet', 'vehicle_expense', 'vehicle_credit_note'].includes(entry.category)) {
         
-        return; // Skip the general ledger logic below for fuel wallet transactions
-      }
-      
-      // Auto-register debit entries in supplier/party ledgers
-      if (entry.type === 'debit' && entry.reference_name) {
-        const ledgerEntry: LedgerEntry = {
-          id: `${entry.id}-auto-ledger`,
-          ledger_type: entry.category?.includes('supplier') ? 'supplier' : 'party',
-          reference_id: entry.reference_id || entry.id,
-          reference_name: entry.reference_name,
-          date: entry.date,
-          description: `Banking entry: ${entry.narration}`,
-          debit: 0,
-          credit: entry.amount,
-          balance: 0,
-          created_at: new Date().toISOString(),
-        };
-        setLedgerEntries(prev => [ledgerEntry, ...prev]);
-      }
-      
-      // Auto-create general ledger entries for expense transactions
-      if (entry.type === 'debit' && (entry.category === 'expense' || entry.category === 'other') && entry.reference_name) {
-        const generalLedgerEntry: LedgerEntry = {
-          id: `${entry.id}-expense-ledger`,
+        const personName = entry.reference_name.trim();
+        
+        // Create person ledger entry - BRC perspective
+        // When BRC pays someone (debit), it's a debit in that person's ledger (BRC owes less/person owes more)
+        // When BRC receives from someone (credit), it's a credit in that person's ledger (BRC owes more/person owes less)
+        const personLedgerEntry: LedgerEntry = {
+          id: `${entry.id}-person-ledger`,
           ledger_type: 'general',
           reference_id: entry.id,
-          reference_name: entry.reference_name,
+          reference_name: personName,
           date: entry.date,
-          description: `Expense: ${entry.narration}`,
-          debit: entry.amount,
-          credit: 0,
+          description: `${entry.type === 'debit' ? 'Payment to' : 'Receipt from'} ${personName} - ${entry.narration || entry.category}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
           balance: 0,
           created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+          source_type: 'banking',
         };
-        setLedgerEntries(prev => [generalLedgerEntry, ...prev]);
         
-        // Auto-add to parties list if not exists
-        const existingParty = parties.find(p => p.name.toLowerCase() === entry.reference_name!.toLowerCase());
-        if (!existingParty) {
-          const newParty: Party = {
-            id: `auto-${Date.now()}`,
-            name: entry.reference_name!,
-            contact: '',
-            address: '',
-            created_at: new Date().toISOString(),
-          };
-          setParties(prev => [newParty, ...prev]);
+        setLedgerEntries(prev => [personLedgerEntry, ...prev]);
+      } else {
+        // Create general ledger entry for other banking transactions (without person names)
+        const ledgerEntry: LedgerEntry = {
+          id: `${entry.id}-ledger`,
+          ledger_type: 'general',
+          reference_id: entry.id,
+          reference_name: entry.reference_name || entry.category || 'Other Income',
+          date: entry.date,
+          description: entry.narration || entry.category,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+          source_type: 'banking',
+        };
+        
+        setLedgerEntries(prev => [ledgerEntry, ...prev]);
+        
+        // Save ledger entry to backend
+        try {
+          apiService.createLedgerEntry(ledgerEntry).then(() => {
+            console.log('✅ General ledger entry saved to backend:', ledgerEntry);
+          }).catch(error => {
+            console.error('❌ Failed to save general ledger entry:', error);
+          });
+        } catch (error) {
+          console.error('❌ Error saving general ledger entry:', error);
+        }
+      }
+    },
+    updateBankingEntry: (id, entry) => {
+      const oldEntry = bankingEntries.find(e => e.id === id);
+      setBankingEntries(prev => prev.map(e => e.id === id ? entry : e));
+      
+      // Remove old related entries first
+      if (oldEntry) {
+        // Remove old ledger entries
+        setLedgerEntries(prev => prev.filter(l => l.reference_id !== entry.id || l.source_type !== 'banking'));
+        
+        // Reverse old fuel wallet effects if applicable
+        if (oldEntry.type === 'debit' && oldEntry.category === 'fuel_wallet') {
+          const walletName = oldEntry.narration || 'BPCL';
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: wallet.balance - oldEntry.amount }
+              : wallet
+          ));
+          setFuelTransactions(prev => prev.filter(ft => ft.id !== `${oldEntry.id}-fuel-tx`));
         }
       }
       
-      // Link to memo advances if applicable
-      if (entry.category === 'memo_advance' || entry.category === 'memo_payment') {
-        const memoNumber = entry.reference_id;
-        if (memoNumber) {
-          setMemos(prev => prev.map(m => {
-            if (m.memo_number === memoNumber) {
-              const adv: AdvancePayment = {
-                id: entry.id,
-                memo_id: m.id,
-                date: entry.date,
-                amount: entry.amount,
-                mode: 'bank',
-                reference: entry.reference_id,
-                created_at: entry.created_at,
-              };
-              return { ...m, advance_payments: [...(m.advance_payments || []), adv] };
-            }
-            return m;
-          }));
+      // Handle memo/bill advance payment updates
+      if (entry.category === 'memo_advance' && entry.reference_id) {
+        // Remove old advance payment if it exists
+        if (oldEntry?.memo_advance_id) {
+          setMemos(prev => prev.map(memo => 
+            memo.advance_payments?.some(a => a.id === oldEntry.memo_advance_id) 
+              ? { ...memo, advance_payments: memo.advance_payments?.filter(a => a.id !== oldEntry.memo_advance_id) }
+              : memo
+          ));
+        }
+        
+        // Create new advance payment
+        const advancePayment: AdvancePayment = {
+          id: `${entry.id}-advance`,
+          memo_id: entry.reference_id,
+          date: entry.date,
+          amount: entry.amount,
+          mode: entry.payment_mode === 'cash' ? 'cash' : 'bank',
+          reference: entry.narration,
+          description: `Advance payment via ${entry.type === 'debit' ? 'bank debit' : 'bank credit'}`,
+          created_at: new Date().toISOString()
+        };
+        
+        // Add advance payment to memo
+        setMemos(prev => prev.map(memo => 
+          memo.memo_number === entry.reference_id 
+            ? { ...memo, advance_payments: [...(memo.advance_payments?.filter(a => a.id !== `${entry.id}-advance`) || []), advancePayment] }
+            : memo
+        ));
+        
+        // Update banking entry with advance ID
+        setBankingEntries(prev => prev.map(be => 
+          be.id === entry.id ? { ...be, memo_advance_id: advancePayment.id } : be
+        ));
+        return;
+      }
+      
+      if (entry.category === 'bill_advance' && entry.reference_id) {
+        // Remove old advance payment if it exists
+        if (oldEntry?.bill_advance_id) {
+          setBills(prev => prev.map(bill => 
+            bill.advance_payments?.some(a => a.id === oldEntry.bill_advance_id) 
+              ? { ...bill, advance_payments: bill.advance_payments?.filter(a => a.id !== oldEntry.bill_advance_id) }
+              : bill
+          ));
+        }
+        
+        // Create new advance payment
+        const advancePayment: AdvancePayment = {
+          id: `${entry.id}-advance`,
+          bill_id: entry.reference_id,
+          date: entry.date,
+          amount: entry.amount,
+          mode: entry.payment_mode === 'cash' ? 'cash' : 'bank',
+          reference: entry.narration,
+          description: `Advance payment via ${entry.type === 'debit' ? 'bank debit' : 'bank credit'}`,
+          created_at: new Date().toISOString()
+        };
+        
+        // Add advance payment to bill
+        setBills(prev => prev.map(bill => 
+          bill.bill_number === entry.reference_id 
+            ? { ...bill, advance_payments: [...(bill.advance_payments?.filter(a => a.id !== `${entry.id}-advance`) || []), advancePayment] }
+            : bill
+        ));
+        
+        // Update banking entry with advance ID
+        setBankingEntries(prev => prev.map(be => 
+          be.id === entry.id ? { ...be, bill_advance_id: advancePayment.id } : be
+        ));
+        return;
+      }
+      
+      // Skip ledger entries for memo/bill payment categories to avoid duplicates
+      if (['memo_payment', 'bill_payment'].includes(entry.category)) {
+        return;
+      }
+      
+      // Handle vehicle expenses for own vehicles
+      if (entry.vehicle_no && entry.category === 'vehicle_expense') {
+        const vehicle = vehicles.find(v => v.vehicle_no === entry.vehicle_no);
+        const isOwnVehicle = vehicle?.ownership_type === 'own';
+        
+        if (isOwnVehicle) {
+          const vehicleExpenseEntry: LedgerEntry = {
+            id: `${entry.id}-vehicle-expense`,
+            ledger_type: 'vehicle_expense',
+            reference_id: entry.id,
+            reference_name: `Vehicle ${entry.vehicle_no} - Expense`,
+            date: entry.date,
+            description: entry.narration || 'Vehicle expense',
+            debit: entry.amount,
+            credit: 0,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            vehicle_no: entry.vehicle_no,
+          };
+          
+          setLedgerEntries(prev => [vehicleExpenseEntry, ...prev]);
+          return;
         }
       }
-      // Link to bill advances if applicable
-      if (entry.category === 'bill_advance' || entry.category === 'bill_payment') {
-        const billNumber = entry.reference_id;
-        if (billNumber) {
-          setBills(prev => prev.map(b => {
-            if (b.bill_number === billNumber) {
-              const adv: AdvancePayment = {
-                id: entry.id,
-                bill_id: b.id,
-                date: entry.date,
-                amount: entry.amount,
-                mode: 'bank',
-                reference: entry.reference_id,
-                created_at: entry.created_at,
-              };
-              return { ...b, advance_payments: [...(b.advance_payments || []), adv] };
-            }
-            return b;
-          }));
+      
+      // Create fuel wallet credit entry for fuel company debits
+      if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
+        const fuelTransaction: FuelTransaction = {
+          id: `${entry.id}-fuel-tx`,
+          wallet_name: entry.narration || 'BPCL',
+          type: 'wallet_credit',
+          amount: entry.amount,
+          date: entry.date,
+          narration: `Bank debit for fuel - ${entry.narration}`,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+        };
+        
+        setFuelTransactions(prev => [fuelTransaction, ...prev]);
+        
+        // Update fuel wallet balance
+        const walletName = entry.narration || 'BPCL';
+        const existingWallet = fuelWallets.find(w => w.name === walletName);
+        if (existingWallet) {
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: wallet.balance + entry.amount }
+              : wallet
+          ));
+        } else {
+          setFuelWallets(prev => [...prev, { 
+            id: `wallet-${Date.now()}`,
+            name: walletName, 
+            balance: entry.amount,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }]);
         }
+        return;
+      }
+      
+      // Create person-specific ledger entry if reference_name contains a person's name
+      if (entry.reference_name && entry.reference_name.trim() && 
+          !['fuel_wallet', 'vehicle_expense', 'vehicle_credit_note'].includes(entry.category)) {
+        
+        const personName = entry.reference_name.trim();
+        
+        // Create person ledger entry - BRC perspective
+        const personLedgerEntry: LedgerEntry = {
+          id: `${entry.id}-person-ledger`,
+          ledger_type: 'general',
+          reference_id: entry.id,
+          reference_name: personName,
+          date: entry.date,
+          description: `${entry.type === 'debit' ? 'Payment to' : 'Receipt from'} ${personName} - ${entry.narration || entry.category}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+          source_type: 'banking',
+        };
+        
+        setLedgerEntries(prev => [personLedgerEntry, ...prev]);
+      } else {
+        // Create general ledger entry for other banking transactions (without person names)
+        const ledgerEntry: LedgerEntry = {
+          id: `${entry.id}-ledger`,
+          ledger_type: 'general',
+          reference_id: entry.id,
+          reference_name: entry.category,
+          date: entry.date,
+          description: entry.narration || entry.category,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          source_type: 'banking',
+          created_at: new Date().toISOString(),
+        };
+        
+        setLedgerEntries(prev => [ledgerEntry, ...prev]);
       }
     },
     deleteBankingEntry: (id) => {
+      const entry = bankingEntries.find(e => e.id === id);
       setBankingEntries(prev => prev.filter(e => e.id !== id));
+      
+      // Remove related ledger entries - fix to use reference_id instead of source_id
+      setLedgerEntries(prev => prev.filter(l => !(l.reference_id === id && l.source_type === 'banking')));
+      
+      // Reverse fuel wallet effects if applicable
+      if (entry && entry.type === 'debit' && entry.category === 'fuel_wallet') {
+        const walletName = entry.narration || 'BPCL';
+        const existingWallet = fuelWallets.find(w => w.name === walletName);
+        if (existingWallet) {
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: wallet.balance - entry.amount }
+              : wallet
+          ));
+        }
+        
+        // Remove fuel transaction
+        setFuelTransactions(prev => prev.filter(t => t.id !== `${entry.id}-fuel-tx`));
+      }
+      
+      // Unlink memo/bill advances if applicable
+      if (entry && entry.memo_advance_id) {
+        setMemos(prev => prev.map(m => 
+          m.advance_payments?.some(a => a.id === entry.memo_advance_id) 
+            ? { ...m, advance_payments: m.advance_payments?.filter(a => a.id !== entry.memo_advance_id) }
+            : m
+        ));
+      }
+      
+      if (entry && entry.bill_advance_id) {
+        setBills(prev => prev.map(b => 
+          b.advance_payments?.some(a => a.id === entry.bill_advance_id) 
+            ? { ...b, advance_payments: b.advance_payments?.filter(a => a.id !== entry.bill_advance_id) }
+            : b
+        ));
+      }
     },
     addCashbookEntry: (entry) => {
-      const newEntry: BankingEntry = {
-        ...entry,
-        id: Date.now().toString(),
-        created_at: new Date().toISOString(),
-      };
-      setCashbookEntries(prev => [newEntry, ...prev]);
+      setCashbookEntries(prev => [entry, ...prev]);
       
-      // Create general ledger entries for expense/other debit transactions
-      if (newEntry.type === 'debit' && (newEntry.category === 'expense' || newEntry.category === 'other') && newEntry.reference_name) {
-        const ledgerEntry: LedgerEntry = {
-          id: `ledger_${newEntry.id}`,
-          date: newEntry.date,
-          reference_name: newEntry.reference_name,
-          debit: newEntry.amount,
-          credit: 0,
-          debit_amount: newEntry.amount,
-          credit_amount: 0,
-          narration: `Cashbook: ${newEntry.narration}`,
+      // Handle vehicle expenses for own vehicles - create vehicle ledger debit entry
+      if (entry.vehicle_no && entry.category === 'vehicle_expense') {
+        const vehicle = vehicles.find(v => v.vehicle_no === entry.vehicle_no);
+        const isOwnVehicle = vehicle?.ownership_type === 'own';
+        
+        if (isOwnVehicle) {
+          const vehicleExpenseEntry: LedgerEntry = {
+            id: `${entry.id}-vehicle-expense`,
+            referenceId: entry.id,
+            reference_id: entry.id,
+            ledger_type: 'vehicle_expense',
+            reference_name: `Vehicle ${entry.vehicle_no} - Cash Expense`,
+            source_type: 'cashbook',
+            type: 'expense',
+            date: entry.date,
+            description: entry.narration || 'Vehicle cash expense',
+            debit: entry.amount,
+            credit: 0,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            vehicle_no: entry.vehicle_no,
+          };
+          
+          setLedgerEntries(prev => [vehicleExpenseEntry, ...prev]);
+          return; // Don't create general ledger entry for vehicle expenses
+        }
+      }
+      
+      // Create person-specific ledger entry if reference_name contains a person's name
+      if (entry.reference_name && entry.reference_name.trim() && 
+          !['fuel_wallet', 'vehicle_expense', 'vehicle_credit_note'].includes(entry.category)) {
+        
+        const personName = entry.reference_name.trim();
+        
+        // Create person ledger entry - BRC perspective
+        const personLedgerEntry: LedgerEntry = {
+          id: `${entry.id}-person-ledger`,
           ledger_type: 'general',
+          reference_id: entry.id,
+          reference_name: personName,
+          date: entry.date,
+          description: `${entry.type === 'debit' ? 'Cash payment to' : 'Cash receipt from'} ${personName} - ${entry.narration || entry.category}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
           source_type: 'cashbook',
-          source_id: newEntry.id,
-          created_at: newEntry.created_at,
+        };
+        
+        setLedgerEntries(prev => [personLedgerEntry, ...prev]);
+      } else {
+        // Create general ledger entry for other cashbook transactions
+        const ledgerEntry: LedgerEntry = {
+          id: `${entry.id}-ledger`,
+          ledger_type: 'general',
+          reference_id: entry.id,
+          reference_name: entry.reference_name || entry.category || 'Cash Transaction',
+          date: entry.date,
+          description: entry.narration || entry.category,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+          source_type: 'cashbook',
         };
         
         setLedgerEntries(prev => [ledgerEntry, ...prev]);
+      }
+    },
+    updateCashbookEntry: (entry) => {
+      setCashbookEntries(prev => prev.map(e => e.id === entry.id ? entry : e));
+      
+      // Remove old ledger entries and recreate them
+      setLedgerEntries(prev => prev.filter(l => l.reference_id !== entry.id || l.source_type !== 'cashbook'));
+      
+      // Handle vehicle expenses for own vehicles
+      if (entry.vehicle_no && entry.category === 'vehicle_expense') {
+        const vehicle = vehicles.find(v => v.vehicle_no === entry.vehicle_no);
+        const isOwnVehicle = vehicle?.ownership_type === 'own';
         
-        // Add party if it doesn't exist
-        const currentParties = parties;
-        if (!currentParties.some((p: Party) => p.name === newEntry.reference_name)) {
-          const newParty: Party = {
-            id: Date.now().toString() + '_party',
-            name: newEntry.reference_name,
-            address: '',
-            phone: '',
-            created_at: newEntry.created_at,
+        if (isOwnVehicle) {
+          const vehicleExpenseEntry: LedgerEntry = {
+            id: `${entry.id}-vehicle-expense`,
+            referenceId: entry.id,
+            reference_id: entry.id,
+            ledger_type: 'vehicle_expense',
+            reference_name: `Vehicle ${entry.vehicle_no} - Expense`,
+            source_type: 'cashbook',
+            type: 'expense',
+            date: entry.date,
+            description: entry.narration || 'Vehicle expense',
+            debit: entry.amount,
+            credit: 0,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            vehicle_no: entry.vehicle_no,
           };
-          setParties(prev => [newParty, ...prev]);
+          
+          setLedgerEntries(prev => [vehicleExpenseEntry, ...prev]);
+          return;
         }
+      }
+      
+      // Create person-specific ledger entry if reference_name contains a person's name
+      if (entry.reference_name && entry.reference_name.trim() && 
+          !['fuel_wallet', 'vehicle_expense', 'vehicle_credit_note'].includes(entry.category)) {
+        
+        const personName = entry.reference_name.trim();
+        
+        // Create person ledger entry - BRC perspective
+        const personLedgerEntry: LedgerEntry = {
+          id: `${entry.id}-person-ledger`,
+          ledger_type: 'general',
+          reference_id: entry.id,
+          reference_name: personName,
+          date: entry.date,
+          description: `${entry.type === 'debit' ? 'Cash payment to' : 'Cash receipt from'} ${personName} - ${entry.narration || entry.category}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+          source_type: 'cashbook',
+        };
+        
+        setLedgerEntries(prev => [personLedgerEntry, ...prev]);
+      } else {
+        // Create general ledger entry for other cashbook transactions (without person names)
+        const ledgerEntry: LedgerEntry = {
+          id: `${entry.id}-ledger`,
+          ledger_type: 'general',
+          reference_id: entry.id,
+          reference_name: entry.category,
+          date: entry.date,
+          description: entry.narration || entry.category,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          source_type: 'cashbook',
+          source_id: entry.id,
+          created_at: new Date().toISOString(),
+        };
+        
+        setLedgerEntries(prev => [ledgerEntry, ...prev]);
       }
     },
     deleteCashbookEntry: (id) => {
@@ -362,130 +1351,328 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       setLedgerEntries(prev => prev.filter(l => !(l.source_id === id && l.source_type === 'cashbook')));
     },
     addParty: (party) => setParties(prev => [party, ...prev]),
+    updateParty: (party) => setParties(prev => prev.map(p => p.id === party.id ? party : p)),
+    deleteParty: (id) => setParties(prev => prev.filter(p => p.id !== id)),
     addSupplier: (supplier) => setSuppliers(prev => [supplier, ...prev]),
-    
-    // Vehicle management methods
+    updateSupplier: (supplier) => setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s)),
+    deleteSupplier: (id) => setSuppliers(prev => prev.filter(s => s.id !== id)),
     addVehicle: (vehicle) => setVehicles(prev => [vehicle, ...prev]),
     updateVehicle: (vehicle) => setVehicles(prev => prev.map(v => v.id === vehicle.id ? vehicle : v)),
     deleteVehicle: (id) => setVehicles(prev => prev.filter(v => v.id !== id)),
-    
-    // Fuel accounting methods
+    setVehicles: (vehicles) => setVehicles(vehicles),
     addFuelWallet: (wallet) => setFuelWallets(prev => [wallet, ...prev]),
-    
+    setFuelWallets: (wallets) => setFuelWallets(wallets),
     getFuelWalletBalance: (walletName) => {
       const wallet = fuelWallets.find(w => w.name === walletName);
       return wallet ? wallet.balance : 0;
     },
-    
-    getVehicleFuelExpenses: (vehicleNo) => {
+    getVehicleFuelExpenses: (vehicleNo: string) => {
       return vehicleFuelExpenses.filter(expense => expense.vehicle_no === vehicleNo);
     },
-    
-    allocateFuelToVehicle: (vehicleNo, walletName, amount, date, narration = '', fuelQuantity, ratePerLiter, odometerReading) => {
-      const transactionId = Date.now().toString();
-      const now = new Date().toISOString();
+    // POD management functions
+    addPODFile: (podFile: PODFile) => {
+      setPodFiles(prev => [podFile, ...prev]);
+    },
+    deletePODFile: (id: string) => {
+      setPodFiles(prev => prev.filter(pod => pod.id !== id));
+    },
+    getPODFiles: () => {
+      return podFiles;
+    },
+    allocateFuelToVehicle: async (vehicleNo, walletName, amount, date, narration, fuelQuantity, ratePerLiter, odometerReading) => {
+      try {
+        // Call backend API to allocate fuel
+        const response = await apiService.allocateFuel({
+          vehicle_no: vehicleNo,
+          wallet_name: walletName,
+          amount: amount,
+          date: date,
+          narration: narration || `Fuel allocation from ${walletName}`,
+          fuel_quantity: fuelQuantity,
+          rate_per_liter: ratePerLiter,
+          odometer_reading: odometerReading
+        });
+
+        console.log('✅ Fuel allocated successfully via backend:', response);
+
+        // Update local state with backend response
+        if (response.transaction) {
+          const vehicleFuelExpense: VehicleFuelExpense = {
+            id: response.transaction._id || Date.now().toString(),
+            vehicle_no: vehicleNo,
+            wallet_name: walletName,
+            amount: amount,
+            date: date,
+            narration: narration || `Fuel allocation from ${walletName}`,
+            fuel_quantity: fuelQuantity,
+            rate_per_liter: ratePerLiter,
+            odometer_reading: odometerReading,
+            created_at: new Date().toISOString(),
+          };
+          
+          setVehicleFuelExpenses(prev => [vehicleFuelExpense, ...prev]);
+        }
+
+        // Update wallet balance from backend response
+        if (response.wallet) {
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: response.wallet.balance }
+              : wallet
+          ));
+        }
+
+        // Create ledger entry for fuel allocation - only vehicle expense for own vehicles
+        const vehicle = vehicles.find(v => v.vehicle_no === vehicleNo);
+        const isOwnVehicle = vehicle?.ownership_type === 'own';
+        
+        console.log('🚛 Fuel allocation debug:', {
+          vehicleNo,
+          vehicle: vehicle?.vehicle_no,
+          ownership: vehicle?.ownership_type,
+          isOwnVehicle,
+          amount
+        });
+        
+        if (isOwnVehicle) {
+          // For own vehicles: Create vehicle expense entry
+          const vehicleExpenseEntry: LedgerEntry = {
+            id: `${response.transaction._id || Date.now()}-ledger`,
+            referenceId: response.transaction._id || Date.now().toString(),
+            reference_id: response.transaction._id || Date.now().toString(),
+            ledger_type: 'vehicle_expense',
+            reference_name: `Vehicle ${vehicleNo} - Fuel Expense`,
+            source_type: 'fuel',
+            type: 'expense',
+            date: date,
+            description: `Fuel expense for vehicle ${vehicleNo} from ${walletName}`,
+            debit: amount,
+            credit: 0,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            vehicle_no: vehicleNo,
+          };
+          
+          setLedgerEntries(prev => [vehicleExpenseEntry, ...prev]);
+          console.log('✅ Created fuel expense ledger entry:', vehicleExpenseEntry);
+        }
+
+        // Trigger data sync to refresh ledger entries
+        console.log('🔄 Triggering data sync after successful fuel allocation');
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        
+        // Also manually refresh ledger entries to ensure immediate sync
+        try {
+          const ledgerResponse = await apiService.getLedgerEntries();
+          if (ledgerResponse.ledgerEntries) {
+            setLedgerEntries(ledgerResponse.ledgerEntries);
+            console.log('✅ Manually refreshed ledger entries after fuel allocation:', ledgerResponse.ledgerEntries.length);
+          }
+        } catch (syncError) {
+          console.error('❌ Failed to manually sync ledger entries:', syncError);
+        }
+        
+      } catch (error) {
+        console.error('❌ Failed to allocate fuel via backend:', error);
+        
+        // Fallback to local state update if backend fails
+        const vehicleFuelExpense: VehicleFuelExpense = {
+          id: Date.now().toString(),
+          vehicle_no: vehicleNo,
+          wallet_name: walletName,
+          amount: amount,
+          date: date,
+          narration: narration || `Fuel allocation from ${walletName}`,
+          fuel_quantity: fuelQuantity,
+          rate_per_liter: ratePerLiter,
+          odometer_reading: odometerReading,
+          created_at: new Date().toISOString(),
+        };
+        
+        setVehicleFuelExpenses(prev => [vehicleFuelExpense, ...prev]);
+        
+        // Update fuel wallet balance (decrease)
+        setFuelWallets(prev => prev.map(wallet => 
+          wallet.name === walletName 
+            ? { ...wallet, balance: wallet.balance - amount }
+            : wallet
+        ));
+        
+        // Create ledger entry for fuel allocation - only vehicle expense for own vehicles
+        const vehicle = vehicles.find(v => v.vehicle_no === vehicleNo);
+        const isOwnVehicle = vehicle?.ownership_type === 'own';
+        
+        if (isOwnVehicle) {
+          // For own vehicles: Only create vehicle expense entry
+          const vehicleExpenseEntry: LedgerEntry = {
+            id: `${vehicleFuelExpense.id}-ledger`,
+            referenceId: vehicleFuelExpense.id,
+            reference_id: vehicleFuelExpense.id,
+            ledger_type: 'vehicle_expense',
+            reference_name: `Vehicle ${vehicleNo} - Fuel Expense`,
+            source_type: 'fuel',
+            type: 'expense',
+            date: date,
+            description: `Fuel expense for vehicle ${vehicleNo} from ${walletName}`,
+            debit: amount,
+            credit: 0,
+            balance: 0,
+            created_at: new Date().toISOString(),
+            vehicle_no: vehicleNo,
+          };
+          
+          setLedgerEntries(prev => [vehicleExpenseEntry, ...prev]);
+          
+          // Save to backend
+          try {
+            apiService.createLedgerEntry(vehicleExpenseEntry).then(() => {
+              console.log('✅ Fuel expense ledger entry saved to backend:', vehicleExpenseEntry);
+            }).catch(error => {
+              console.error('❌ Failed to save fuel expense ledger entry:', error);
+            });
+          } catch (error) {
+            console.error('❌ Error creating fuel expense ledger entry:', error);
+          }
+        }
+        
+        // Trigger sync even in fallback scenario
+        console.log('🔄 Triggering data sync after fallback fuel allocation');
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }
       
-      // Create fuel allocation transaction
+      // Create fuel transaction for tracking
       const fuelTransaction: FuelTransaction = {
-        id: transactionId,
+        id: `fuel-tx-${Date.now()}`,
         type: 'fuel_allocation',
         wallet_name: walletName,
-        amount,
-        date,
+        amount: amount,
+        date: date,
         vehicle_no: vehicleNo,
-        narration: narration || `Fuel allocated to ${vehicleNo}`,
-        created_at: now
+        narration: narration || `Fuel allocation from ${walletName}`,
+        created_at: new Date().toISOString(),
       };
+      
       setFuelTransactions(prev => [fuelTransaction, ...prev]);
-      
-      // Create vehicle fuel expense record
-      const vehicleExpense: VehicleFuelExpense = {
-        id: `${transactionId}-expense`,
-        vehicle_no: vehicleNo,
-        wallet_name: walletName,
-        amount,
-        date,
-        fuel_quantity: fuelQuantity,
-        rate_per_liter: ratePerLiter,
-        odometer_reading: odometerReading,
-        narration,
-        created_at: now
+    },
+    bulkPaySupplierMemos: (supplierName: string, memoIds: string[], paymentAmount: number, paymentDate: string, bankAccount: string, paymentMode: 'cash' | 'bank' | 'cheque' | 'bank_transfer' | 'upi', narration?: string, transactionId?: string) => {
+      // Create banking entry for bulk payment
+      const bankingEntry: BankingEntry = {
+        id: transactionId || `bulk-pay-supplier-${Date.now()}`,
+        date: paymentDate,
+        type: 'debit',
+        category: 'supplier_payment',
+        amount: paymentAmount,
+        narration: narration || `Bulk payment to ${supplierName} for ${memoIds.length} memos`,
+        bank_account: bankAccount,
+        payment_mode: paymentMode,
+        created_at: new Date().toISOString(),
       };
-      setVehicleFuelExpenses(prev => [vehicleExpense, ...prev]);
       
-      // Update fuel wallet balance
-      setFuelWallets(prev => prev.map(wallet => 
-        wallet.name === walletName 
-          ? { ...wallet, balance: wallet.balance - amount, updated_at: now }
-          : wallet
+      setBankingEntries(prev => [bankingEntry, ...prev]);
+      
+      // Mark selected memos as paid
+      setMemos(prev => prev.map(memo => 
+        memoIds.includes(memo.id) 
+          ? { ...memo, paid_date: paymentDate, paid_amount: paymentAmount / memoIds.length }
+          : memo
       ));
       
-      // Create ledger entries for double-entry accounting
-      const vehicleLedgerEntry: LedgerEntry = {
-        id: `${transactionId}-vehicle-ledger`,
-        ledger_type: 'vehicle_fuel',
-        reference_id: vehicleNo,
-        reference_name: `${vehicleNo} Fuel Expense`,
-        date,
-        description: `Fuel allocation from ${walletName}`,
-        narration: narration || `Fuel allocated to ${vehicleNo}`,
-        debit: amount,
+      // Create ledger entry for supplier payment
+      const supplierLedgerEntry: LedgerEntry = {
+        id: `${bankingEntry.id}-supplier-ledger`,
+        ledger_type: 'supplier',
+        reference_id: bankingEntry.id,
+        reference_name: supplierName,
+        date: paymentDate,
+        description: `Bulk payment to ${supplierName}`,
+        debit: paymentAmount,
         credit: 0,
         balance: 0,
-        source_type: 'fuel',
-        source_id: transactionId,
-        vehicle_no: vehicleNo,
-        created_at: now
+        created_at: new Date().toISOString(),
       };
       
-      const walletLedgerEntry: LedgerEntry = {
-        id: `${transactionId}-wallet-ledger`,
-        ledger_type: 'fuel_wallet',
-        reference_id: walletName,
-        reference_name: `${walletName} Fuel Wallet`,
-        date,
-        description: `Fuel allocated to ${vehicleNo}`,
-        narration: narration || `Fuel allocated to ${vehicleNo}`,
+      setLedgerEntries(prev => [supplierLedgerEntry, ...prev]);
+    },
+    bulkPayBills: (partyName: string, billIds: string[], paymentAmount: number, paymentDate: string, bankAccount: string, paymentMode: 'cash' | 'bank' | 'cheque' | 'bank_transfer' | 'upi', narration?: string) => {
+      // Create banking entry for bulk payment
+      const bankingEntry: BankingEntry = {
+        id: `bulk-pay-bills-${Date.now()}`,
+        date: paymentDate,
+        type: 'credit',
+        category: 'bill_payment',
+        amount: paymentAmount,
+        narration: narration || `Bulk payment from ${partyName} for ${billIds.length} bills`,
+        bank_account: bankAccount,
+        payment_mode: paymentMode,
+        created_at: new Date().toISOString(),
+      };
+      
+      setBankingEntries(prev => [bankingEntry, ...prev]);
+      
+      // Mark selected bills as received
+      setBills(prev => prev.map(bill => 
+        billIds.includes(bill.id) 
+          ? { ...bill, received_date: paymentDate, received_amount: paymentAmount / billIds.length }
+          : bill
+      ));
+      
+      // Create ledger entry for party payment
+      const partyLedgerEntry: LedgerEntry = {
+        id: `${bankingEntry.id}-party-ledger`,
+        ledger_type: 'party',
+        reference_id: bankingEntry.id,
+        reference_name: partyName,
+        date: paymentDate,
+        description: `Bulk payment from ${partyName}`,
         debit: 0,
-        credit: amount,
+        credit: paymentAmount,
         balance: 0,
-        source_type: 'fuel',
-        source_id: transactionId,
-        vehicle_no: vehicleNo,
-        created_at: now
-      };
-
-      // Create General Ledger entry under vehicle's account name
-      const generalLedgerEntry: LedgerEntry = {
-        id: `${transactionId}-general-ledger`,
-        ledger_type: 'general',
-        reference_id: vehicleNo,
-        reference_name: `Vehicle ${vehicleNo} - Fuel Expense`,
-        date,
-        description: `Fuel expense from ${walletName} wallet`,
-        narration: narration || `Fuel allocated to ${vehicleNo} from ${walletName}`,
-        debit: amount,
-        credit: 0,
-        balance: 0,
-        source_type: 'fuel',
-        source_id: transactionId,
-        vehicle_no: vehicleNo,
-        created_at: now
+        created_at: new Date().toISOString(),
       };
       
-      setLedgerEntries(prev => [vehicleLedgerEntry, walletLedgerEntry, generalLedgerEntry, ...prev]);
-    }
-  }), [loadingSlips, memos, bills, bankingEntries, cashbookEntries, ledgerEntries, parties, suppliers, vehicles, fuelWallets, fuelTransactions, vehicleFuelExpenses]);
+      setLedgerEntries(prev => [partyLedgerEntry, ...prev]);
+    },
+    setCashbookEntries: (entries: any[]) => setCashbookEntries(entries),
+    setPODFiles: (files: any[]) => setPodFiles(files),
+    cleanupSupplierLedgerForOwnVehicles: () => {
+      // Remove supplier ledger entries for own vehicles
+      setLedgerEntries(prev => prev.filter(entry => {
+        if (entry.ledger_type !== 'supplier') return true;
+        
+        // Find the memo for this ledger entry
+        const memo = memos.find(m => m.memo_number === entry.memo_number);
+        if (!memo) return true;
+        
+        // Find the loading slip and vehicle
+        const ls = loadingSlips.find(s => s.id === memo.loading_slip_id);
+        const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+        
+        // If it's an own vehicle, remove this supplier ledger entry
+        if (vehicle?.ownership_type === 'own') {
+          console.log('🧹 Removing incorrect supplier ledger entry for own vehicle:', {
+            memo: memo.memo_number,
+            vehicle: ls?.vehicle_no,
+            supplier: memo.supplier
+          });
+          return false;
+        }
+        
+        return true;
+      }));
+    },
+  };
 
   return (
-    <DataStoreContext.Provider value={value}>
+    <DataStoreContext.Provider value={contextValue}>
       {children}
     </DataStoreContext.Provider>
   );
 };
 
 export const useDataStore = () => {
-  const ctx = useContext(DataStoreContext);
-  if (!ctx) throw new Error('useDataStore must be used within DataStoreProvider');
-  return ctx;
+  const context = useContext(DataStoreContext);
+  if (!context) {
+    throw new Error('useDataStore must be used within a DataStoreProvider');
+  }
+  return context;
 };

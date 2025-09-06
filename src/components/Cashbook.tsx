@@ -1,21 +1,93 @@
-import React, { useState } from 'react';
-import { Plus, CreditCard, TrendingUp, TrendingDown, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Plus, CreditCard, TrendingUp, TrendingDown, Calendar, Trash, Edit } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import BankingForm from './forms/BankingForm';
 import type { BankingEntry } from '../types';
 import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
 
 const CashbookComponent: React.FC = () => {
-  const { cashbookEntries: entries, addCashbookEntry } = useDataStore();
+  const { cashbookEntries: entries, updateCashbookEntry, setCashbookEntries } = useDataStore();
   const [showForm, setShowForm] = useState(false);
+  const [editingEntry, setEditingEntry] = useState<BankingEntry | null>(null);
 
-  const handleCreateEntry = (entryData: Omit<BankingEntry, 'id' | 'created_at'>) => {
-    const newEntry: BankingEntry = {
-      ...entryData,
-      id: Date.now().toString(),
-      created_at: new Date().toISOString(),
+  // Force refresh cashbook data on component mount to ensure data persistence
+  useEffect(() => {
+    const refreshCashbookData = async () => {
+      try {
+        console.log('🔄 Refreshing cashbook data on component mount...');
+        const response = await apiService.getCashbookEntries();
+        if (response.cashbookEntries) {
+          setCashbookEntries(response.cashbookEntries);
+          console.log('✅ Cashbook data refreshed:', response.cashbookEntries.length, 'entries');
+        }
+      } catch (error) {
+        console.error('❌ Failed to refresh cashbook data:', error);
+      }
     };
-    addCashbookEntry(newEntry);
+    
+    refreshCashbookData();
+  }, [setCashbookEntries]);
+
+  const handleCreateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at'>) => {
+    try {
+      if (editingEntry) {
+        // Update existing entry with cash payment mode
+        const updatedEntry: BankingEntry = {
+          ...entryData,
+          payment_mode: 'cash', // Force cash mode for cashbook entries
+          id: editingEntry.id,
+          created_at: editingEntry.created_at,
+        };
+        updateCashbookEntry(updatedEntry);
+        setEditingEntry(null);
+      } else {
+        // Create new entry via API
+        const entryToCreate = {
+          ...entryData,
+          payment_mode: 'cash', // Force cash mode for cashbook entries
+        };
+        
+        const response = await apiService.createCashbookEntry(entryToCreate);
+        const savedEntry = response.cashbookEntry;
+        
+        // Add to local store
+        setCashbookEntries([savedEntry, ...entries]);
+        
+        // Create ledger entry with required fields
+        const ledgerEntry = {
+          referenceId: savedEntry._id,
+          reference_id: savedEntry._id,
+          ledger_type: 'general',
+          reference_name: savedEntry.reference_name || savedEntry.category || 'Cash Transaction',
+          source_type: 'cashbook',
+          type: 'expense',
+          date: savedEntry.date,
+          description: savedEntry.narration || savedEntry.category,
+          debit: savedEntry.type === 'debit' ? savedEntry.amount : 0,
+          credit: savedEntry.type === 'credit' ? savedEntry.amount : 0,
+          balance: 0,
+        };
+        
+        // Save ledger entry to backend
+        await apiService.createLedgerEntry(ledgerEntry);
+        
+        // Trigger data sync
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }
+      setShowForm(false);
+    } catch (error) {
+      console.error('Failed to create cashbook entry:', error);
+    }
+  };
+
+  const handleEditEntry = (entry: BankingEntry) => {
+    setEditingEntry(entry);
+    setShowForm(true);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingEntry(null);
     setShowForm(false);
   };
 
@@ -28,6 +100,68 @@ const CashbookComponent: React.FC = () => {
     .reduce((sum, entry) => sum + entry.amount, 0);
 
   const netBalance = totalCredits - totalDebits;
+
+  const confirmAndDelete = async (id: string) => {
+    if (window.confirm('Delete this cashbook entry? This will also remove related ledger entries.')) {
+      try {
+        console.log('🗑️ Attempting to delete cashbook entry with ID:', id);
+        
+        // Find the entry to get the correct ID
+        const entryToDelete = entries.find(entry => entry._id === id || entry.id === id);
+        if (!entryToDelete) {
+          console.error('Entry not found in local store:', id);
+          alert('Entry not found. Please refresh and try again.');
+          return;
+        }
+        
+        const deleteId = entryToDelete._id || entryToDelete.id;
+        console.log('Using delete ID:', deleteId);
+        
+        // Delete from backend first
+        const deleteResponse = await apiService.deleteCashbookEntry(deleteId);
+        console.log('Delete response:', deleteResponse);
+        
+        // Remove from local store
+        setCashbookEntries(entries.filter(entry => entry._id !== deleteId && entry.id !== deleteId));
+        
+        // Delete related ledger entries
+        const ledgerResponse = await apiService.getLedgerEntries();
+        const relatedLedgers = ledgerResponse.ledgerEntries.filter(
+          ledger => (ledger.reference_id === deleteId || ledger.reference_id === id) && ledger.source_type === 'cashbook'
+        );
+        
+        console.log('Found related ledger entries:', relatedLedgers.length);
+        
+        // Delete each related ledger entry
+        for (const ledger of relatedLedgers) {
+          try {
+            await apiService.deleteLedgerEntry(ledger._id);
+            console.log('Deleted ledger entry:', ledger._id);
+          } catch (ledgerError) {
+            console.warn('Failed to delete ledger entry:', ledger._id, ledgerError);
+          }
+        }
+        
+        // Trigger data sync
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        
+        console.log('✅ Cashbook entry deleted successfully');
+        
+      } catch (error) {
+        console.error('❌ Failed to delete cashbook entry:', error);
+        
+        // Check if it's a 404 error (entry already deleted)
+        if (error instanceof Error && error.message.includes('404')) {
+          // Remove from local store anyway since it's already gone from backend
+          setCashbookEntries(entries.filter(entry => entry._id !== id && entry.id !== id));
+          window.dispatchEvent(new CustomEvent('data-sync-required'));
+          console.log('Entry was already deleted from backend, removed from local store');
+        } else {
+          alert('Failed to delete cashbook entry. Please try again.');
+        }
+      }
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -45,7 +179,8 @@ const CashbookComponent: React.FC = () => {
       {showForm && (
         <BankingForm
           onSubmit={handleCreateEntry}
-          onCancel={() => setShowForm(false)}
+          onCancel={handleCancelEdit}
+          editingEntry={editingEntry}
         />
       )}
 
@@ -123,11 +258,14 @@ const CashbookComponent: React.FC = () => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Narration
                   </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {entries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
+                  <tr key={entry._id || entry.id || `cashbook-${Date.now()}-${Math.random()}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex items-center space-x-2">
                         <Calendar className="w-4 h-4 text-gray-400" />
@@ -161,6 +299,24 @@ const CashbookComponent: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
                       {entry.narration}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handleEditEntry(entry)}
+                          className="inline-flex items-center px-2 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded"
+                          title="Edit entry"
+                        >
+                          <Edit className="w-3 h-3 mr-1" /> Edit
+                        </button>
+                        <button
+                          onClick={() => confirmAndDelete(entry.id)}
+                          className="inline-flex items-center px-2 py-1 text-xs text-white bg-red-600 hover:bg-red-700 rounded"
+                          title="Delete entry"
+                        >
+                          <Trash className="w-3 h-3 mr-1" /> Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

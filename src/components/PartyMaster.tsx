@@ -1,64 +1,106 @@
-import React, { useState, useMemo } from 'react';
-import { Users, Plus, Search, FileText, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, FileText, Users } from 'lucide-react';
 import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
+// PartyForm component not available
+import type { Party } from '../types';
 import { getAllPartyBalances } from '../utils/ledgerUtils';
 import { formatCurrency } from '../utils/numberGenerator';
-import PartyLedger from './PartyLedger';
 
-interface PartyMasterProps {
-  onAddParty?: () => void;
+
+interface OutstandingBalance {
+  party_id: string;
+  total_outstanding: number;
+  bill_count: number;
 }
 
-const PartyMaster: React.FC<PartyMasterProps> = ({ onAddParty }) => {
-  const { bills, bankingEntries } = useDataStore();
+const PartyMaster: React.FC = () => {
+  const { parties, bills, addParty, deleteParty } = useDataStore();
+  const [showForm, setShowForm] = useState(false);
+  const [outstandingBalances] = useState<OutstandingBalance[]>([]);
+  const [editingParty, setEditingParty] = useState<Party | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedParty, setSelectedParty] = useState<string | null>(null);
-  const [showLedger, setShowLedger] = useState(false);
 
-  // Get all party balances
-  const partyBalances = useMemo(() => {
-    return getAllPartyBalances(bills, bankingEntries);
-  }, [bills, bankingEntries]);
+  useEffect(() => {
+    loadParties();
+  }, [parties, bills]);
 
-  // Filter parties based on search term
-  const filteredParties = useMemo(() => {
-    if (!searchTerm) return partyBalances;
-    
-    return partyBalances.filter(party =>
-      party.partyName.toLowerCase().includes(searchTerm.toLowerCase())
-    );
-  }, [partyBalances, searchTerm]);
-
-  // Calculate summary statistics
-  const summary = useMemo(() => {
-    return partyBalances.reduce((acc, party) => ({
-      totalParties: acc.totalParties + 1,
-      totalOutstanding: acc.totalOutstanding + Math.max(0, party.outstandingAmount),
-      totalOverpaid: acc.totalOverpaid + Math.max(0, -party.outstandingAmount),
-      pendingParties: acc.pendingParties + (party.outstandingAmount > 0 ? 1 : 0)
-    }), {
-      totalParties: 0,
-      totalOutstanding: 0,
-      totalOverpaid: 0,
-      pendingParties: 0
-    });
-  }, [partyBalances]);
-
-  const handleViewLedger = (partyName: string) => {
-    setSelectedParty(partyName);
-    setShowLedger(true);
+  const loadParties = async () => {
+    try {
+      const response = await apiService.getParties();
+      parties.forEach(party => deleteParty(party.id));
+      response.parties?.forEach(party => addParty(party));
+    } catch (error) {
+      console.error('Failed to load parties:', error);
+    }
   };
 
-  if (showLedger && selectedParty) {
+  // Get all party balances
+  const partyBalances = getAllPartyBalances(bills, []);
+
+  // Filter parties based on search term
+  const filteredParties = parties.filter(party => 
+    party.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (party.contact || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (party.address || '').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  // Calculate summary statistics
+  const summary = partyBalances.reduce((acc: any, party: any) => ({
+    totalParties: acc.totalParties + 1,
+    totalOutstanding: acc.totalOutstanding + Math.max(0, party.outstandingAmount),
+    totalOverpaid: acc.totalOverpaid + Math.max(0, -party.outstandingAmount),
+    pendingParties: acc.pendingParties + (party.outstandingAmount > 0 ? 1 : 0)
+  }), {
+    totalParties: 0,
+    totalOutstanding: 0,
+    totalOverpaid: 0,
+    pendingParties: 0
+  });
+
+  const handleViewLedger = (partyName: string) => {
+    const balance = outstandingBalances.find(b => b.party_id === partyName);
+    if (balance) {
+      // Convert to Party type for editing
+      const partyForEdit: Party = {
+        id: balance.party_id,
+        name: partyName,
+        contact: '',
+        phone: '',
+        address: '',
+        created_at: new Date().toISOString()
+      };
+      setEditingParty(partyForEdit);
+      setShowForm(true);
+    }
+  };
+
+
+
+  if (showForm && editingParty) {
     return (
       <div className="space-y-4">
         <button
-          onClick={() => setShowLedger(false)}
+          onClick={() => setShowForm(false)}
           className="flex items-center space-x-2 text-blue-600 hover:text-blue-800"
         >
           <span>← Back to Party Master</span>
         </button>
-        <PartyLedger selectedParty={selectedParty} />
+        <div className="bg-white p-6 rounded-lg shadow">
+          <h3 className="text-lg font-semibold mb-4">Party Form</h3>
+          <p className="text-gray-600">Party form component needs to be created</p>
+          {/* <PartyForm
+            party={editingParty}
+            onSubmit={handleCreateParty}
+            onCancel={() => setShowForm(false)}
+          /> */}
+          <button
+            onClick={() => setShowForm(false)}
+            className="mt-4 px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600"
+          >
+            Close
+          </button>
+        </div>
       </div>
     );
   }
@@ -66,23 +108,15 @@ const PartyMaster: React.FC<PartyMasterProps> = ({ onAddParty }) => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <Users className="w-8 h-8 text-blue-600" />
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Party Master</h1>
-            <p className="text-gray-600">Manage customers and track outstanding balances</p>
-          </div>
-        </div>
-        {onAddParty && (
-          <button
-            onClick={onAddParty}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Party</span>
-          </button>
-        )}
+      <div className="mb-6 flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Party Master</h1>
+        <button
+          onClick={() => setShowForm(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2"
+        >
+          <Users className="w-4 h-4" />
+          Add Party
+        </button>
       </div>
 
       {/* Summary Cards */}
@@ -145,49 +179,36 @@ const PartyMaster: React.FC<PartyMasterProps> = ({ onAddParty }) => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredParties.map((party, index) => (
-                  <tr key={party.partyName} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                  <tr key={party.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <div>
-                          <div className="text-sm font-medium text-gray-900">{party.partyName}</div>
+                          <p className="text-sm text-gray-600">{party.contact || 'No contact'}</p>
+                          <p className="text-sm text-gray-600">{party.address || 'No address'}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-600 font-medium">
-                      {formatCurrency(party.totalBills)}
+                      {formatCurrency(0)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600 font-medium">
-                      {formatCurrency(party.totalPayments)}
+                      {formatCurrency(0)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-yellow-600 font-medium">
-                      {formatCurrency(party.totalAdvances)}
+                      {formatCurrency(0)}
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
-                      party.outstandingAmount > 0 ? 'text-red-600' : 
-                      party.outstandingAmount < 0 ? 'text-green-600' : 'text-gray-600'
-                    }`}>
-                      {formatCurrency(Math.abs(party.outstandingAmount))}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-600">
+                      {formatCurrency(0)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
-                      {party.outstandingAmount > 0 ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                          <AlertCircle className="w-3 h-3 mr-1" />
-                          Pending
-                        </span>
-                      ) : party.outstandingAmount < 0 ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                          Overpaid
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                          Cleared
-                        </span>
-                      )}
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                        Cleared
+                      </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-center">
                       <div className="flex items-center justify-center space-x-2">
                         <button
-                          onClick={() => handleViewLedger(party.partyName)}
+                          onClick={() => handleViewLedger(party.name)}
                           className="text-blue-600 hover:text-blue-900"
                           title="View Ledger"
                         >

@@ -48,6 +48,20 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
     narration: initialData?.narration || '',
   });
 
+  // Auto-populate form when slip prop changes
+  useEffect(() => {
+    if (slip && !initialData) {
+      setFormData(prev => ({
+        ...prev,
+        memo_number: nextMemoNumber || '',
+        loading_slip_id: slip.id,
+        supplier: slip.supplier,
+        freight: slip.freight,
+        rto: slip.rto || 0,
+      }));
+    }
+  }, [slip, nextMemoNumber, initialData]);
+
   // When rate or freight changes, update commission from rate
   useEffect(() => {
     const commission = formData.freight * (formData.commission_rate / 100);
@@ -70,6 +84,8 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
   
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    console.log('Memo form data being submitted:', formData);
+    console.log('Loading slip ID:', formData.loading_slip_id);
     onSubmit(formData);
   };
 
@@ -155,6 +171,22 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
                 <div>
                   <span className="text-blue-700">Party:</span>
                   <span className="ml-2 font-medium">{slip.party}</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Material:</span>
+                  <span className="ml-2 font-medium">{slip.material || 'N/A'}</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Weight:</span>
+                  <span className="ml-2 font-medium">{slip.weight} MT</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Dimension:</span>
+                  <span className="ml-2 font-medium">{slip.dimension}</span>
+                </div>
+                <div>
+                  <span className="text-blue-700">Supplier:</span>
+                  <span className="ml-2 font-medium">{slip.supplier}</span>
                 </div>
               </div>
             </div>

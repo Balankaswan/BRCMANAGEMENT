@@ -1,18 +1,18 @@
-import React, { useMemo, useState } from 'react';
-import { Plus, FileText, Edit, Download, Eye, CheckCircle, Trash2 } from 'lucide-react';
-import { formatCurrency } from '../utils/numberGenerator';
-import { getNextSequenceNumber } from '../utils/sequenceGenerator';
-import MemoForm from './forms/MemoForm';
-import { generateMemoPDF } from '../utils/pdfGenerator';
-import type { Memo } from '../types';
+import React, { useState, useMemo } from 'react';
+import { Plus, Edit, Trash2, FileText, Eye, Download, CheckCircle } from 'lucide-react';
 import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
+import { getNextSequenceNumber } from '../utils/sequenceGenerator';
+import { formatCurrency } from '../utils/numberGenerator';
+import MemoForm from './forms/MemoForm';
+import type { Memo } from '../types';
 
 interface MemoListProps {
   showOnlyFullyPaid?: boolean;
 }
 
 const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) => {
-  const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, loadingSlips, addBankingEntry, markMemoAsPaid } = useDataStore();
+  const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, addBankingEntry, markMemoAsPaid, setLedgerEntries, loadingSlips, vehicles } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingMemo, setEditingMemo] = useState<Memo | null>(null);
   const [viewMemo, setViewMemo] = useState<Memo | null>(null);
@@ -20,14 +20,71 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
   const [paidDate, setPaidDate] = useState('');
   const [search, setSearch] = useState('');
 
-  const handleCreateMemo = (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
-    const newMemo: Memo = {
-      ...memoData,
-      id: Date.now().toString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-    addMemo(newMemo);
+  const handleCreateMemo = async (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
+    try {
+      const response = await apiService.createMemo(memoData);
+      addMemo(response.memo);
+      console.log('Memo created and synced to MongoDB:', response.memo);
+      
+      // Create ledger entries for own vehicles after memo creation
+      // CRITICAL FIX: Check both frontend store and backend memo data for loading slip
+      let ls = loadingSlips.find(s => s.id === memoData.loading_slip_id);
+      
+      // If not found in store, check if memo has embedded loading slip data
+      if (!ls && response.memo.loading_slip_id) {
+        const backendLsId = typeof response.memo.loading_slip_id === 'object' 
+          ? response.memo.loading_slip_id._id 
+          : response.memo.loading_slip_id;
+        ls = loadingSlips.find(s => s.id === backendLsId);
+        
+        // If still not found, use embedded loading slip data from backend
+        if (!ls && typeof response.memo.loading_slip_id === 'object') {
+          ls = response.memo.loading_slip_id;
+        }
+      }
+      
+      const vehicle = vehicles.find((v: any) => v.vehicle_no === ls?.vehicle_no);
+      const isOwnVehicle = vehicle?.ownership_type === 'own';
+      
+      console.log('🚛 MEMO LEDGER DEBUG:', {
+        memoId: response.memo.id,
+        memoNumber: response.memo.memo_number,
+        loadingSlipId: memoData.loading_slip_id,
+        loadingSlipFound: !!ls,
+        vehicleNo: ls?.vehicle_no,
+        vehicleFound: !!vehicle,
+        vehicleOwnership: vehicle?.ownership_type,
+        isOwnVehicle,
+        freight: memoData.freight,
+        commission: memoData.commission,
+        mamool: memoData.mamool,
+        netAmount: memoData.freight - (memoData.commission || 0) - (memoData.mamool || 0),
+        allVehicles: vehicles.map(v => ({ no: v.vehicle_no, ownership: v.ownership_type }))
+      });
+      
+      // Backend automatically creates ledger entries, just sync the data
+      try {
+        const ledgerResponse = await apiService.getLedgerEntries();
+        setLedgerEntries(ledgerResponse.ledgerEntries || []);
+        console.log('🔄 Synced ledger entries after memo creation');
+      } catch (error) {
+        console.error('Failed to sync ledger entries:', error);
+      }
+      
+      // Trigger sync across devices
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }, 1000);
+    } catch (error) {
+      console.error('Failed to create memo:', error);
+      const newMemo: Memo = {
+        ...memoData,
+        id: Date.now().toString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      addMemo(newMemo);
+    }
     setShowForm(false);
   };
 
@@ -45,29 +102,56 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
     setShowForm(true);
   };
 
-  const handleUpdateMemo = (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
+  const handleUpdateMemo = async (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
     if (editingMemo) {
-      const updatedMemo: Memo = {
-        ...memoData,
-        id: editingMemo.id,
-        created_at: editingMemo.created_at,
-        updated_at: new Date().toISOString(),
-      };
-      updateMemo(updatedMemo);
-      setShowForm(false);
+      try {
+        const response = await apiService.updateMemo(editingMemo.id, memoData);
+        updateMemo(response.memo);
+        console.log('Memo updated and synced:', response.memo);
+        
+        // Sync ledger entries after memo update
+        try {
+          const ledgerResponse = await apiService.getLedgerEntries();
+          setLedgerEntries(ledgerResponse.ledgerEntries || []);
+          console.log('🔄 Synced ledger entries after memo update');
+        } catch (error) {
+          console.error('Failed to sync ledger entries:', error);
+        }
+        
+        // Trigger sync across devices
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('data-sync-required'));
+        }, 1000);
+      } catch (error) {
+        console.error('Failed to update memo:', error);
+        const updatedMemo: Memo = {
+          ...editingMemo,
+          ...memoData,
+          updated_at: new Date().toISOString(),
+        };
+        updateMemo(updatedMemo);
+      }
       setEditingMemo(null);
+      setShowForm(false);
     }
   };
 
   const handleDownloadPDF = async (memo: Memo) => {
-    const loadingSlip = loadingSlips.find(ls => ls.id === memo.loading_slip_id);
-    if (loadingSlip) {
-      try {
-        await generateMemoPDF(memo, loadingSlip);
-      } catch (error) {
-        console.error('Error generating PDF:', error);
-        alert('Error generating PDF. Please try again.');
+    try {
+      const { generateMemoPDF } = await import('../utils/pdfGenerator');
+      // Handle both cases: loading_slip_id as string or populated object
+      const relatedLoadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null 
+        ? memo.loading_slip_id 
+        : loadingSlips.find(slip => slip.id === memo.loading_slip_id);
+      if (relatedLoadingSlip) {
+        await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries);
+      } else {
+        console.error('Related loading slip not found for memo:', memo.id);
+        alert('Related loading slip not found. Cannot generate PDF.');
       }
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
     }
   };
 
@@ -76,28 +160,71 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
     setPaidDate(new Date().toISOString().split('T')[0]);
   };
 
-  const handleDeleteMemo = (memo: Memo) => {
-    if (confirm(`Are you sure you want to delete Memo #${memo.memo_number}?`)) {
-      deleteMemo(memo.id);
+  const handleDeleteMemo = async (id: string) => {
+    if (window.confirm('Are you sure you want to delete this memo?')) {
+      try {
+        await apiService.deleteMemo(id);
+        deleteMemo(id);
+        console.log('Memo deleted and synced');
+      } catch (error) {
+        console.error('Failed to delete memo:', error);
+        deleteMemo(id);
+      }
     }
   };
 
-  const confirmMarkAsPaid = () => {
+  const confirmMarkAsPaid = async () => {
     if (showPaidModal && paidDate) {
-      // Add banking entry for full payment
-      addBankingEntry({
-        id: Date.now().toString(),
-        type: 'debit',
-        date: paidDate,
-        category: 'memo_payment',
-        narration: `Full payment for Memo ${showPaidModal.memo_number}`,
-        amount: showPaidModal.net_amount,
-        reference_id: showPaidModal.memo_number,
-        reference_name: showPaidModal.supplier,
-        created_at: new Date().toISOString()
-      });
-      // Update memo status and persist payment meta
-      markMemoAsPaid(showPaidModal.id, paidDate, showPaidModal.net_amount);
+      try {
+        // Add banking entry for full payment
+        const bankingEntry = {
+          id: Date.now().toString(),
+          type: 'debit' as const,
+          date: paidDate,
+          category: 'memo_payment' as const,
+          narration: `Full payment for Memo ${showPaidModal.memo_number}`,
+          amount: showPaidModal.net_amount,
+          reference_id: showPaidModal.memo_number,
+          reference_name: showPaidModal.supplier,
+          created_at: new Date().toISOString()
+        };
+        
+        await apiService.createBankingEntry(bankingEntry);
+        addBankingEntry(bankingEntry);
+        
+        // Update memo status to paid
+        const updatedMemoData = {
+          ...showPaidModal,
+          status: 'paid',
+          paid_date: paidDate,
+          paid_amount: showPaidModal.net_amount
+        };
+        
+        await apiService.updateMemo(showPaidModal.id, updatedMemoData);
+        markMemoAsPaid(showPaidModal.id, paidDate, showPaidModal.net_amount);
+        
+        // Trigger sync across devices
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('data-sync-required'));
+        }, 1000);
+        
+        console.log('Memo marked as paid and synced');
+      } catch (error) {
+        console.error('Failed to mark memo as paid:', error);
+        // Fallback to local update
+        addBankingEntry({
+          id: Date.now().toString(),
+          type: 'debit' as const,
+          date: paidDate,
+          category: 'memo_payment' as const,
+          narration: `Full payment for Memo ${showPaidModal.memo_number}`,
+          amount: showPaidModal.net_amount,
+          reference_id: showPaidModal.memo_number,
+          reference_name: showPaidModal.supplier,
+          created_at: new Date().toISOString()
+        });
+        markMemoAsPaid(showPaidModal.id, paidDate, showPaidModal.net_amount);
+      }
       setShowPaidModal(null);
       setPaidDate('');
     }
@@ -195,8 +322,11 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
         </div>
       ) : (
         <div className="space-y-4">
-          {filteredMemos.map((memo) => {
-            const loadingSlip = loadingSlips.find(ls => ls.id === memo.loading_slip_id);
+          {memos.map((memo: Memo, index: number) => {
+            // Handle both cases: loading_slip_id as string or populated object
+            const loadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null 
+              ? memo.loading_slip_id 
+              : loadingSlips.find(ls => ls.id === memo.loading_slip_id);
             const paid = bankingEntries
               .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
               .reduce((sum, e) => sum + e.amount, 0);
@@ -206,7 +336,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
             const balance = Math.max(0, calculatedBalance);
             
             return (
-              <div key={memo.id} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+            <div key={memo.id || `memo-${index}-${memo.memo_number}`} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
@@ -239,11 +369,11 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
                     <div>
                       <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vehicle & Material</div>
                       <div className="font-medium text-gray-900">{loadingSlip?.vehicle_no || 'N/A'}</div>
-                      <div className="text-sm text-gray-600">{loadingSlip?.dimension || 'N/A'}</div>
+                      <div className="text-sm text-gray-600">{loadingSlip?.material || 'N/A'}</div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Supplier & Weight</div>
-                      <div className="font-medium text-gray-900">{memo.supplier}</div>
+                      <div className="font-medium text-gray-900">{loadingSlip?.supplier || memo.supplier}</div>
                       <div className="text-sm text-gray-600">{loadingSlip?.weight || 0} MT</div>
                     </div>
                     <div>
@@ -318,7 +448,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
                         </button>
                       )}
                       <button
-                        onClick={() => handleDeleteMemo(memo)}
+                        onClick={() => handleDeleteMemo(memo.id)}
                         className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                         title="Delete"
                       >

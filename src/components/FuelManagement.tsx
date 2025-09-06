@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Fuel, Truck, Wallet, UserPlus } from 'lucide-react';
-import { formatCurrency } from '../utils/numberGenerator';
+import { Plus, Fuel, UserPlus, Wallet, Truck } from 'lucide-react';
 import { useDataStore } from '../lib/store';
+import { formatCurrency } from '../utils/numberGenerator';
 import type { BankingEntry, Vehicle } from '../types';
 
 const FuelManagement: React.FC = () => {
@@ -53,6 +53,7 @@ const FuelManagement: React.FC = () => {
       id: Date.now().toString(),
       vehicle_no: newVehicleForm.vehicleNo.toUpperCase(),
       vehicle_type: newVehicleForm.vehicleType,
+      ownership_type: 'own',
       owner_name: newVehicleForm.ownerName || undefined,
       driver_name: newVehicleForm.driverName || undefined,
       driver_phone: newVehicleForm.driverPhone || undefined,
@@ -104,6 +105,14 @@ const FuelManagement: React.FC = () => {
     const ratePerLiter = allocationForm.ratePerLiter ? parseFloat(allocationForm.ratePerLiter) : undefined;
     const odometerReading = allocationForm.odometerReading ? parseInt(allocationForm.odometerReading) : undefined;
 
+    console.log('🚛 Fuel allocation started:', {
+      selectedVehicle,
+      selectedWallet,
+      amount,
+      date: allocationForm.date,
+      narration: allocationForm.narration
+    });
+
     allocateFuelToVehicle(
       selectedVehicle,
       selectedWallet,
@@ -127,7 +136,7 @@ const FuelManagement: React.FC = () => {
   };
 
   // Get vehicle fuel summary
-  const vehicleFuelSummary = useMemo(() => {
+  const fuelSummary = useMemo(() => {
     return vehicles.map(vehicle => {
       const expenses = getVehicleFuelExpenses(vehicle.vehicle_no);
       const totalExpense = expenses.reduce((sum, exp) => sum + exp.amount, 0);
@@ -253,7 +262,7 @@ const FuelManagement: React.FC = () => {
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {fuelWallets.map((wallet) => (
-                  <div key={wallet.id} className="border border-gray-200 rounded-lg p-4">
+                <div key={wallet.id || `wallet-${wallet.name}`} className="bg-gray-50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-semibold text-gray-900">{wallet.name}</h4>
                       <Fuel className="w-5 h-5 text-gray-400" />
@@ -287,8 +296,8 @@ const FuelManagement: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select Vehicle</option>
-                  {vehicles.map((vehicle) => (
-                    <option key={vehicle.id} value={vehicle.vehicle_no}>{vehicle.vehicle_no}</option>
+                  {vehicles.filter(v => v.ownership_type === 'own').map((vehicle, index) => (
+                    <option key={vehicle._id || vehicle.id || `vehicle-${vehicle.vehicle_no}-${index}`} value={vehicle.vehicle_no}>{vehicle.vehicle_no}</option>
                   ))}
                 </select>
               </div>
@@ -404,7 +413,7 @@ const FuelManagement: React.FC = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   {fuelWallets.map((wallet) => (
-                    <option key={wallet.id} value={wallet.name}>{wallet.name}</option>
+                    <option key={wallet.id || `wallet-${wallet.name}`} value={wallet.name}>{wallet.name}</option>
                   ))}
                 </select>
               </div>
@@ -476,7 +485,7 @@ const FuelManagement: React.FC = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {fuelWallets.map((wallet) => (
-                    <tr key={wallet.id} className="hover:bg-gray-50">
+                    <tr key={wallet.id || `wallet-row-${wallet.name}`} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {wallet.name}
                       </td>
@@ -526,7 +535,7 @@ const FuelManagement: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {vehicleFuelSummary.map((summary) => (
+                  {fuelSummary.map((summary: any) => (
                     <tr key={summary.vehicleNo} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         <div className="flex items-center space-x-2">

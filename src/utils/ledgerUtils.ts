@@ -1,4 +1,4 @@
-import type { Bill, Memo, BankingEntry } from '../types';
+import type { Bill, Memo, BankingEntry, LoadingSlip, Vehicle } from '../types';
 
 export interface OutstandingBalance {
   partyName: string;
@@ -31,8 +31,11 @@ export const calculatePartyBalance = (
   // Get all bills for this party
   const partyBills = bills.filter(bill => bill.party === partyName);
   
-  // Calculate total bill amounts
-  const totalBills = partyBills.reduce((sum, bill) => sum + bill.bill_amount, 0);
+  // Calculate total bill amounts including detention, extra, RTO minus deductions
+  const totalBills = partyBills.reduce((sum, bill) => {
+    const netAmount = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.penalties || 0) - (bill.tds || 0);
+    return sum + netAmount;
+  }, 0);
   
   // Get all payments and advances for this party's bills
   const partyBankingEntries = bankingEntries.filter(entry => 
@@ -70,7 +73,6 @@ export const calculateSupplierBalance = (
 ): SupplierOutstandingBalance => {
   // Get all memos for this supplier
   const supplierMemos = memos.filter(memo => memo.supplier === supplierName);
-  
   // Calculate totals from memos using the correct formula
   // Balance = Freight - Advance - Commission - Mamul + Extra + Detention
   const totalFreight = supplierMemos.reduce((sum, memo) => sum + memo.freight, 0);
@@ -123,15 +125,29 @@ export const getAllPartyBalances = (
 };
 
 /**
- * Get all supplier outstanding balances
+ * Get all supplier outstanding balances (excluding own vehicles)
  */
 export const getAllSupplierBalances = (
   memos: Memo[],
-  bankingEntries: BankingEntry[]
+  bankingEntries: BankingEntry[],
+  loadingSlips?: LoadingSlip[],
+  vehicles?: Vehicle[]
 ): SupplierOutstandingBalance[] => {
-  const suppliers = Array.from(new Set(memos.map(memo => memo.supplier)));
+  // Filter out memos from own vehicles if loading slips and vehicles data is available
+  let filteredMemos = memos;
+  if (loadingSlips && vehicles) {
+    filteredMemos = memos.filter(memo => {
+      const ls = loadingSlips.find(s => s.id === memo.loading_slip_id);
+      const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+      const isOwnVehicle = vehicle?.ownership_type === 'own';
+      
+      return !isOwnVehicle;
+    });
+  }
   
-  return suppliers.map(supplier => calculateSupplierBalance(supplier, memos, bankingEntries))
+  const suppliers = Array.from(new Set(filteredMemos.map(memo => memo.supplier)));
+  
+  return suppliers.map(supplier => calculateSupplierBalance(supplier, filteredMemos, bankingEntries))
     .sort((a, b) => b.outstandingAmount - a.outstandingAmount);
 };
 

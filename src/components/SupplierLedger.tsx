@@ -90,7 +90,9 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       
       const loadingSlip = memo?.loadingSlip || loadingSlips.find(ls => ls.id === memo?.loading_slip_id);
       const tripDetails = loadingSlip ? 
-        `${loadingSlip.from_location} – ${loadingSlip.to_location} / ${loadingSlip.vehicle_no}` : '';
+        `${loadingSlip.from_location} – ${loadingSlip.to_location} / ${loadingSlip.vehicle_no}` : 
+        memo?.loading_slip_id?.from_location ? 
+        `${memo.loading_slip_id.from_location} – ${memo.loading_slip_id.to_location} / ${memo.loading_slip_id.vehicle_no}` : '';
 
       let credit = 0;
       let debitPayment = 0;

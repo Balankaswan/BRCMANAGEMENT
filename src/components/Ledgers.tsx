@@ -1,12 +1,12 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { Users, Truck, Building, Download, Eye } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { getAllPartyBalances, getAllSupplierBalances } from '../utils/ledgerUtils';
 import { formatCurrency } from '../utils/numberGenerator';
+import { apiService } from '../lib/api';
 import PartyLedger from './PartyLedger';
 import SupplierLedger from './SupplierLedger';
 import GeneralLedger from './GeneralLedger';
-import type { LedgerEntry } from '../types';
 
 interface LedgersProps {
   onViewLedger?: (name: string, type: 'party' | 'supplier' | 'general') => void;
@@ -15,7 +15,25 @@ interface LedgersProps {
 const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
   const [activeTab, setActiveTab] = useState<'party' | 'supplier' | 'general'>('party');
   const [selectedLedger, setSelectedLedger] = useState<{ name: string; type: 'party' | 'supplier' | 'general' } | null>(null);
-  const { ledgerEntries, bills, memos, bankingEntries } = useDataStore();
+  const { ledgerEntries, bills, memos, bankingEntries, setLedgerEntries } = useDataStore();
+
+  // Force refresh ledger data on component mount to ensure data persistence
+  useEffect(() => {
+    const refreshLedgerData = async () => {
+      try {
+        console.log('🔄 Refreshing ledger data on Ledgers component mount...');
+        const response = await apiService.getLedgerEntries();
+        if (response.ledgerEntries) {
+          setLedgerEntries(response.ledgerEntries);
+          console.log('✅ Ledger data refreshed:', response.ledgerEntries.length, 'entries');
+        }
+      } catch (error) {
+        console.error('❌ Failed to refresh ledger data:', error);
+      }
+    };
+    
+    refreshLedgerData();
+  }, [setLedgerEntries]);
 
   // Get party and supplier balances using the new utility functions
   const partyBalances = useMemo(() => getAllPartyBalances(bills, bankingEntries), [bills, bankingEntries]);
@@ -26,7 +44,7 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
       // Group general ledger entries by reference_name
       const generalEntries = ledgerEntries.filter(entry => entry.ledger_type === 'general');
       const groupedGeneral = generalEntries.reduce((acc, entry) => {
-        const name = entry.reference_name;
+        const name = entry.reference_name || 'Unknown';
         if (!acc[name]) {
           acc[name] = {
             name,
@@ -37,8 +55,8 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
           };
         }
         acc[name].entries.push(entry);
-        acc[name].totalDebit += entry.debit;
-        acc[name].totalCredit += entry.credit;
+        acc[name].totalDebit += entry.debit || 0;
+        acc[name].totalCredit += entry.credit || 0;
         acc[name].outstandingAmount = acc[name].totalDebit - acc[name].totalCredit;
         return acc;
       }, {} as Record<string, any>);
@@ -84,6 +102,9 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
   // Handle viewing detailed ledger
   const handleViewLedger = (name: string, type: 'party' | 'supplier' | 'general') => {
     setSelectedLedger({ name, type });
+    if (onViewLedger) {
+      onViewLedger(name, type);
+    }
   };
 
   // If a ledger is selected, show the detailed view
@@ -238,8 +259,8 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
                   </td>
                 </tr>
               )}
-              {grouped.map(g => (
-                <tr key={g.name} className="hover:bg-gray-50">
+              {grouped.map((g, index) => (
+                <tr key={`${activeTab}-${g.name}-${index}`} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">{g.name}</div>

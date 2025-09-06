@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { CheckCircle, Clock, Trash2, FileText, Receipt } from 'lucide-react';
+import { Receipt, FileText, CheckCircle, Trash2, Clock } from 'lucide-react';
 import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
 import { formatCurrency } from '../utils/numberGenerator';
 import type { Memo, Bill } from '../types';
 
@@ -29,15 +30,33 @@ const MemosAndBills: React.FC = () => {
     }
   };
 
-  const handleDeleteMemo = (memo: Memo) => {
+  const handleDeleteMemo = async (memo: Memo) => {
     if (window.confirm(`Are you sure you want to delete memo ${memo.memo_number}?`)) {
-      deleteMemo(memo.id);
+      try {
+        console.log('Deleting memo with ID:', memo.id);
+        await apiService.deleteMemo(memo.id);
+        deleteMemo(memo.id);
+        console.log('Memo deleted successfully');
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('Failed to delete memo:', error);
+        deleteMemo(memo.id); // Fallback to local deletion
+      }
     }
   };
 
-  const handleDeleteBill = (bill: Bill) => {
+  const handleDeleteBill = async (bill: Bill) => {
     if (window.confirm(`Are you sure you want to delete bill ${bill.bill_number}?`)) {
-      deleteBill(bill.id);
+      try {
+        console.log('Deleting bill with ID:', bill.id);
+        await apiService.deleteBill(bill.id);
+        deleteBill(bill.id);
+        console.log('Bill deleted successfully');
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      } catch (error) {
+        console.error('Failed to delete bill:', error);
+        deleteBill(bill.id); // Fallback to local deletion
+      }
     }
   };
 

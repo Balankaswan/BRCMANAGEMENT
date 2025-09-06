@@ -9,53 +9,26 @@ interface LedgerDetailProps {
 }
 
 const LedgerDetail: React.FC<LedgerDetailProps> = ({ ledgerName, ledgerType, onClose }) => {
-  const sampleData = ledgerType === 'supplier' ? {
-    name: 'fcscf',
-    totalEntries: 2,
-    outstandingBalance: 846000,
-    entries: [
-      {
-        date: '15/08/2025',
-        memoNo: '6021',
-        tripDetails: 'csfc to ff (hdjnj)',
-        detention: 0,
-        extraWt: 0,
-        credit: 900000,
-        payment: 0,
-        advance: 0,
-        balance: 900000,
-        remarks: 'Memo Amount - csfc to ff (hdjnj)'
-      },
-      {
-        date: '15/08/2025',
-        memoNo: '6021',
-        tripDetails: 'csfc to ff (hdjnj)',
-        detention: 0,
-        extraWt: 0,
-        credit: 0,
-        payment: 54000,
-        advance: 0,
-        balance: 846000,
-        remarks: 'Commission Deduction - csfc to ff (hdjnj)'
-      }
-    ]
-  } : {
-    name: 'csdcd',
-    totalEntries: 1,
-    outstandingBalance: 900000,
-    entries: [
-      {
-        date: '16/08/2025',
-        billNo: '5909',
-        tripDetails: 'csfc to ff',
-        billAmount: 900000,
-        received: 0,
-        deductions: 0,
-        netReceived: 0,
-        balance: 900000,
-        status: 'Pending'
-      }
-    ]
+  // TODO: Replace with actual ledger data from backend
+  const sampleData = {
+    name: ledgerName,
+    totalEntries: 0,
+    outstandingBalance: 0,
+    entries: [] as Array<{
+      date: string;
+      tripDetails: string;
+      balance: number;
+      billNo?: string;
+      memoNo?: string;
+      billAmount?: number;
+      received?: number;
+      deductions?: number;
+      netReceived?: number;
+      status?: string;
+      credit?: number;
+      payment?: number;
+      remarks?: string;
+    }>
   };
 
   return (

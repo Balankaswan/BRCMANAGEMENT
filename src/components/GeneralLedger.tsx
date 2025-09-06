@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Filter, Download, Table, Building, FileDown } from 'lucide-react';
+import { Filter, Download, Table, Building } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
 
@@ -19,6 +19,7 @@ interface GeneralLedgerProps {
 
 const GeneralLedger: React.FC<GeneralLedgerProps> = ({ selectedPerson }) => {
   const { ledgerEntries } = useDataStore();
+  
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [personFilter, setPersonFilter] = useState(selectedPerson || '');
@@ -49,11 +50,11 @@ const GeneralLedger: React.FC<GeneralLedgerProps> = ({ selectedPerson }) => {
       entries.push({
         id: entry.id,
         date: entry.date,
-        description: entry.description,
+        description: entry.description || entry.narration || '',
         debit: entry.debit,
         credit: entry.credit,
         runningBalance,
-        reference: entry.reference_id
+        reference: entry.reference_id || ''
       });
     });
 

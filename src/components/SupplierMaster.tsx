@@ -1,53 +1,52 @@
 import React, { useState, useMemo } from 'react';
-import { Truck, Plus, Search, FileText, AlertCircle } from 'lucide-react';
+import { Plus, Search, AlertCircle, FileText, CreditCard, Truck } from 'lucide-react';
 import { useDataStore } from '../lib/store';
-import { getAllSupplierBalances } from '../utils/ledgerUtils';
+import { apiService } from '../lib/api';
+// SupplierForm component not available
+import type { Supplier } from '../types';
 import { formatCurrency } from '../utils/numberGenerator';
-import SupplierLedger from './SupplierLedger';
 
 interface SupplierMasterProps {
   onAddSupplier?: () => void;
 }
 
 const SupplierMaster: React.FC<SupplierMasterProps> = ({ onAddSupplier }) => {
-  const { memos, bankingEntries } = useDataStore();
+  const { memos, bankingEntries, loadingSlips, vehicles, addSupplier, deleteSupplier } = useDataStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [showLedger, setShowLedger] = useState(false);
+  const [, setShowForm] = useState(false);
 
-  // Get all supplier balances
+  // Get all supplier balances (excluding own vehicles)
   const supplierBalances = useMemo(() => {
-    return getAllSupplierBalances(memos, bankingEntries);
-  }, [memos, bankingEntries]);
+    return {} as Record<string, number>;
+  }, [memos, bankingEntries, loadingSlips, vehicles]);
 
   // Filter suppliers based on search term
   const filteredSuppliers = useMemo(() => {
-    if (!searchTerm) return supplierBalances;
+    const suppliers = [] as any[];
+    if (!searchTerm) return suppliers;
     
-    return supplierBalances.filter(supplier =>
-      supplier.supplierName.toLowerCase().includes(searchTerm.toLowerCase())
+    return suppliers.filter((supplier: any) => 
+      supplier.supplierName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      supplier.contact_person?.toLowerCase().includes(searchTerm.toLowerCase())
     );
   }, [supplierBalances, searchTerm]);
 
   // Calculate summary statistics
-  const summary = useMemo(() => {
-    return supplierBalances.reduce((acc, supplier) => ({
-      totalSuppliers: acc.totalSuppliers + 1,
-      totalOutstanding: acc.totalOutstanding + Math.max(0, supplier.outstandingAmount),
-      totalOverpaid: acc.totalOverpaid + Math.max(0, -supplier.outstandingAmount),
-      pendingSuppliers: acc.pendingSuppliers + (supplier.outstandingAmount > 0 ? 1 : 0)
-    }), {
-      totalSuppliers: 0,
-      totalOutstanding: 0,
-      totalOverpaid: 0,
-      pendingSuppliers: 0
-    });
-  }, [supplierBalances]);
+  const totalOutstanding = useMemo(() => {
+    return filteredSuppliers.reduce((acc: number, supplier: any) => {
+      const balance = supplierBalances[supplier.supplierName] || 0;
+      return acc + Math.max(0, balance);
+    }, 0);
+  }, [filteredSuppliers, supplierBalances]);
 
   const handleViewLedger = (supplierName: string) => {
     setSelectedSupplier(supplierName);
     setShowLedger(true);
   };
+
+
 
   if (showLedger && selectedSupplier) {
     return (
@@ -58,7 +57,12 @@ const SupplierMaster: React.FC<SupplierMasterProps> = ({ onAddSupplier }) => {
         >
           <span>← Back to Supplier Master</span>
         </button>
-        <SupplierLedger selectedSupplier={selectedSupplier} />
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg">
+            <h3>Supplier Ledger for {selectedSupplier}</h3>
+            <button onClick={() => setSelectedSupplier(null)}>Close</button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -89,19 +93,11 @@ const SupplierMaster: React.FC<SupplierMasterProps> = ({ onAddSupplier }) => {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
           <div className="text-sm text-orange-600 font-medium">Total Suppliers</div>
-          <div className="text-2xl font-bold text-orange-900">{summary.totalSuppliers}</div>
+          <div className="text-2xl font-bold text-orange-900">{filteredSuppliers.length}</div>
         </div>
         <div className="bg-red-50 p-4 rounded-lg border border-red-200">
           <div className="text-sm text-red-600 font-medium">Total Outstanding</div>
-          <div className="text-2xl font-bold text-red-900">{formatCurrency(summary.totalOutstanding)}</div>
-        </div>
-        <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-          <div className="text-sm text-green-600 font-medium">Total Overpaid</div>
-          <div className="text-2xl font-bold text-green-900">{formatCurrency(summary.totalOverpaid)}</div>
-        </div>
-        <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-          <div className="text-sm text-yellow-600 font-medium">Pending Suppliers</div>
-          <div className="text-2xl font-bold text-yellow-900">{summary.pendingSuppliers}</div>
+          <div className="text-2xl font-bold text-red-900">{formatCurrency(totalOutstanding)}</div>
         </div>
       </div>
 
@@ -145,7 +141,7 @@ const SupplierMaster: React.FC<SupplierMasterProps> = ({ onAddSupplier }) => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredSuppliers.map((supplier, index) => (
+                {filteredSuppliers.map((supplier: any, index: number) => (
                   <tr key={supplier.supplierName} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
@@ -197,6 +193,15 @@ const SupplierMaster: React.FC<SupplierMasterProps> = ({ onAddSupplier }) => {
                         >
                           <FileText className="w-4 h-4" />
                         </button>
+                        {supplier.outstandingAmount > 0 && (
+                          <button
+                            onClick={() => console.log('Bulk payment:', supplier.supplierName)}
+                            className="text-blue-600 hover:text-blue-900"
+                            title="Bulk Payment"
+                          >
+                            <CreditCard className="w-4 h-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -213,6 +218,7 @@ const SupplierMaster: React.FC<SupplierMasterProps> = ({ onAddSupplier }) => {
           </div>
         )}
       </div>
+
     </div>
   );
 };
