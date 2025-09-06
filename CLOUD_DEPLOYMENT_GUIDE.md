@@ -25,15 +25,16 @@ Complete guide for deploying your BRC Transport Management System to the cloud u
    - **Build Command**: `npm install`
    - **Start Command**: `npm start`
    - **Plan**: Free (for testing)
+   - **Auto-Deploy**: Yes (recommended)
 
 ### 1.3 Set Environment Variables
 In Render dashboard, add these environment variables:
 
 ```env
 NODE_ENV=production
-PORT=5001
+PORT=10000
 MONGODB_URI=mongodb+srv://balankaswan14:Balan%4030@brcmanagement.xyhobwb.mongodb.net/brc_transport?retryWrites=true&w=majority&appName=BRCMANAGEMENT
-JWT_SECRET=your_production_jwt_secret_change_this
+JWT_SECRET=f02d020112ed32bad3ab32a2b8ec0dacdd562c117122bef7c1dd9a8a4ab2da18f2d82857541a6e70db1567029974584f9bc50334993773044b73986a5aa91ed8
 FRONTEND_URL=https://your-frontend-app.vercel.app
 ALLOWED_ORIGINS=https://your-frontend-app.vercel.app
 ```
