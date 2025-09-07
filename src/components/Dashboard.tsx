@@ -5,6 +5,53 @@ import { useDataStore } from '../lib/store';
 
 const Dashboard: React.FC = () => {
   const { memos, bills, bankingEntries, loadingSlips, vehicles } = useDataStore();
+  
+  console.log('🔍 Dashboard data:', {
+    memos: memos.length,
+    loadingSlips: loadingSlips.length, 
+    vehicles: vehicles.length,
+    bankingEntries: bankingEntries.length
+  });
+  
+  console.log('🔍 Sample memo data:', memos[0] ? {
+    memo_number: memos[0].memo_number,
+    loading_slip_id: memos[0].loading_slip_id,
+    freight: memos[0].freight
+  } : 'No memos in frontend');
+  
+  console.log('🔍 Sample loading slip data:', loadingSlips[0] ? {
+    id: loadingSlips[0].id,
+    _id: (loadingSlips[0] as any)._id,
+    vehicle_no: loadingSlips[0].vehicle_no
+  } : 'No loading slips in frontend');
+  
+  console.log('🔍 All loading slip IDs:', loadingSlips.map(ls => ({
+    id: ls.id,
+    _id: (ls as any)._id,
+    _id_string: String((ls as any)._id),
+    vehicle: ls.vehicle_no
+  })));
+  
+  console.log('🔍 All memo loading slip IDs:', memos.map(m => ({
+    memo: m.memo_number,
+    loading_slip_id: m.loading_slip_id,
+    loading_slip_id_string: String(m.loading_slip_id)
+  })));
+  
+  // Test direct matching
+  if (memos.length > 0 && loadingSlips.length > 0) {
+    const testMemo = memos[0];
+    const matchingSlip = loadingSlips.find(s => 
+      s.id === testMemo.loading_slip_id || 
+      (s as any)._id === testMemo.loading_slip_id ||
+      String((s as any)._id) === String(testMemo.loading_slip_id)
+    );
+    console.log('🧪 Test match:', {
+      memo: testMemo.memo_number,
+      memo_loading_slip_id: testMemo.loading_slip_id,
+      found_slip: matchingSlip ? matchingSlip.slip_number : 'NOT FOUND'
+    });
+  }
 
   // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
   // TDS is excluded as it's returnable and not a real deduction for profit calculation
@@ -20,31 +67,70 @@ const Dashboard: React.FC = () => {
   })();
 
   // Calculate party balance (bills due from parties)
+  // Party should pay: bill_amount + detention + extra + rto - mamool - tds - penalties
+  // (excluding party_commission_cut which is our internal deduction)
   const partyBalance = bills.reduce((sum, bill) => {
     const billPayments = bankingEntries
       .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
       .reduce((total, entry) => total + entry.amount, 0);
-    return sum + (bill.net_amount - billPayments);
+    
+    // Calculate what party owes (excluding party commission cut)
+    const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+    
+    console.log(`💰 Bill ${bill.bill_number}: Party owes ₹${partyOwes}, Paid ₹${billPayments}, Balance ₹${partyOwes - billPayments}`);
+    
+    return sum + (partyOwes - billPayments);
   }, 0);
 
   // Calculate supplier balance (memos due to suppliers - ONLY market vehicles)
   const supplierBalance = memos.reduce((sum, memo) => {
-    // Find the loading slip and vehicle to check ownership
-    const ls = loadingSlips.find(s => s.id === memo.loading_slip_id);
-    const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+    console.log('🔍 Processing memo:', memo.memo_number, 'Loading slip ID:', memo.loading_slip_id);
     
-    // Only include market vehicles in supplier balance
-    if (vehicle?.ownership_type !== 'market') {
+    // Handle both string loading_slip_id and populated object
+    let loadingSlipId: string;
+    if (typeof memo.loading_slip_id === 'string') {
+      loadingSlipId = memo.loading_slip_id;
+    } else if (memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
+      loadingSlipId = (memo.loading_slip_id as any)._id || (memo.loading_slip_id as any).id;
+    } else {
+      console.log('🔍 Invalid loading_slip_id format:', memo.loading_slip_id);
       return sum;
     }
     
-    const memoPayments = bankingEntries
-      .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
-      .reduce((total, entry) => total + entry.amount, 0);
-    // Balance = freight - advance - commission - mamul + detention + extra
-    const calculatedBalance = memo.freight - memoPayments - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
-    return sum + Math.max(0, calculatedBalance);
+    // Find the loading slip and vehicle to check ownership
+    const ls = loadingSlips.find(s => {
+      const idMatch = s.id === loadingSlipId;
+      const objectIdMatch = (s as any)._id === loadingSlipId;
+      const objectIdStringMatch = String((s as any)._id) === String(loadingSlipId);
+      
+      if (idMatch || objectIdMatch || objectIdStringMatch) {
+        console.log('✅ MATCH FOUND:', {
+          slip: s.slip_number,
+          vehicle: s.vehicle_no,
+          matchType: idMatch ? 'id' : objectIdMatch ? '_id' : '_id_string'
+        });
+      }
+      
+      return idMatch || objectIdMatch || objectIdStringMatch;
+    });
+    console.log('🔍 Found loading slip:', ls ? `Vehicle: ${ls.vehicle_no}` : 'NOT FOUND');
+    
+    const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+    console.log('🔍 Found vehicle:', vehicle ? `${vehicle.vehicle_no} (${vehicle.ownership_type})` : 'NOT FOUND');
+    
+    // Only include market vehicles in supplier balance
+    if (vehicle?.ownership_type !== 'market') {
+      console.log('🔍 Skipping - not market vehicle');
+      return sum;
+    }
+    
+    console.log('🔍 Adding to supplier balance:', memo.net_amount);
+    console.log('🔍 Running total:', sum + memo.net_amount);
+    return sum + memo.net_amount;
   }, 0);
+  
+  console.log('🔍 Total supplier balance calculated:', supplierBalance);
+  console.log('💰 Total party balance calculated:', partyBalance);
 
   // Calculate monthly revenue (total bill amounts)
   const monthlyRevenue = bills.reduce((sum, bill) => sum + bill.bill_amount, 0);
