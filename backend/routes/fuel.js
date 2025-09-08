@@ -140,7 +140,9 @@ router.post('/allocate', async (req, res) => {
       narration, 
       fuel_quantity, 
       rate_per_liter, 
-      odometer_reading 
+      odometer_reading,
+      fuel_type,
+      allocated_by 
     } = req.body;
 
     // Check wallet balance
@@ -153,20 +155,22 @@ router.post('/allocate', async (req, res) => {
       return res.status(400).json({ message: 'Insufficient wallet balance' });
     }
 
-    // Create fuel allocation transaction
-    const transaction = new FuelTransaction({
-      type: 'fuel_allocation',
+    // Create fuel transaction record
+    const fuelTransaction = new FuelTransaction({
+      type: 'debit',
       wallet_name,
       amount,
-      date,
+      date: new Date(date),
       vehicle_no,
-      narration: narration || `Fuel allocated to ${vehicle_no}`,
+      narration,
       fuel_quantity,
       rate_per_liter,
-      odometer_reading
+      odometer_reading,
+      fuel_type: fuel_type || 'Diesel',
+      allocated_by: allocated_by || 'System'
     });
 
-    await transaction.save();
+    await fuelTransaction.save();
 
     // Update wallet balance
     wallet.balance -= amount;
@@ -177,8 +181,8 @@ router.post('/allocate', async (req, res) => {
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
       
       const vehicleFuelExpenseEntry = new LedgerEntry({
-        referenceId: transaction._id,
-        reference_id: transaction._id.toString(),
+        referenceId: fuelTransaction._id,
+        reference_id: fuelTransaction._id.toString(),
         ledger_type: 'vehicle_expense',
         reference_name: `Vehicle ${vehicle_no} - Fuel Expense`,
         source_type: 'fuel',
@@ -197,7 +201,7 @@ router.post('/allocate', async (req, res) => {
 
     res.status(201).json({
       message: 'Fuel allocated successfully',
-      transaction,
+      transaction: fuelTransaction,
       wallet
     });
   } catch (error) {

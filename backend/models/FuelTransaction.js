@@ -44,6 +44,15 @@ const fuelTransactionSchema = new mongoose.Schema({
   odometer_reading: {
     type: Number,
     min: 0
+  },
+  fuel_type: {
+    type: String,
+    enum: ['Diesel', 'Petrol', 'CNG', 'Other'],
+    default: 'Diesel'
+  },
+  allocated_by: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true

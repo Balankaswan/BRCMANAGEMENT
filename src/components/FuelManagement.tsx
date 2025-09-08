@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Plus, Fuel, UserPlus, Wallet, Truck } from 'lucide-react';
+import { Plus, Fuel, Truck, UserPlus, Wallet, BarChart3 } from 'lucide-react';
 import { useDataStore } from '../lib/store';
+import FuelAllocationLedger from './FuelAllocationLedger';
 import { formatCurrency } from '../utils/numberGenerator';
 import type { BankingEntry, Vehicle } from '../types';
 
@@ -15,8 +16,8 @@ const FuelManagement: React.FC = () => {
     addVehicle 
   } = useDataStore();
 
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'allocate' | 'wallets' | 'vehicles' | 'add-vehicle'>('dashboard');
-  const [selectedWallet, setSelectedWallet] = useState('BPCL');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'allocate' | 'wallets' | 'vehicles' | 'add-vehicle' | 'ledger'>('dashboard');
+  const [selectedWallet, setSelectedWallet] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [allocationForm, setAllocationForm] = useState({
     amount: '',
@@ -121,7 +122,9 @@ const FuelManagement: React.FC = () => {
       allocationForm.narration,
       fuelQuantity,
       ratePerLiter,
-      odometerReading
+      odometerReading,
+      'Diesel',
+      'System'
     );
 
     setAllocationForm({
@@ -208,6 +211,17 @@ const FuelManagement: React.FC = () => {
           >
             <UserPlus className="w-4 h-4 inline-block mr-2" />
             Add Vehicle
+          </button>
+          <button
+            onClick={() => setActiveTab('ledger')}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'ledger'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <BarChart3 className="w-4 h-4 inline-block mr-2" />
+            Allocation Ledger
           </button>
         </div>
       </div>
@@ -309,8 +323,9 @@ const FuelManagement: React.FC = () => {
                   onChange={(e) => setSelectedWallet(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  {fuelWallets.map((wallet) => (
-                    <option key={wallet.id} value={wallet.name}>
+                  <option value="">Select Fuel Wallet</option>
+                  {fuelWallets.map((wallet, index) => (
+                    <option key={wallet.id || wallet.name || `wallet-${index}`} value={wallet.name}>
                       {wallet.name} - {formatCurrency(wallet.balance)}
                     </option>
                   ))}
@@ -588,10 +603,10 @@ const FuelManagement: React.FC = () => {
                 onChange={(e) => setNewVehicleForm(prev => ({ ...prev, vehicleType: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                <option value="Truck">Truck</option>
-                <option value="Trailer">Trailer</option>
-                <option value="Container">Container</option>
-                <option value="Tanker">Tanker</option>
+                <option key="truck" value="Truck">Truck</option>
+                <option key="trailer" value="Trailer">Trailer</option>
+                <option key="container" value="Container">Container</option>
+                <option key="tanker" value="Tanker">Tanker</option>
               </select>
             </div>
 
@@ -640,6 +655,11 @@ const FuelManagement: React.FC = () => {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Fuel Allocation Ledger Tab */}
+      {activeTab === 'ledger' && (
+        <FuelAllocationLedger />
       )}
     </div>
   );
