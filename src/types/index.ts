@@ -90,7 +90,7 @@ export interface BankingEntry {
   id: string;
   _id?: string; // MongoDB ObjectId
   type: 'credit' | 'debit';
-  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_payment' | 'supplier_payment' | 'other';
+  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_payment' | 'supplier_payment' | 'party_commission' | 'other';
   amount: number;
   date: string;
   reference_id?: string; // bill_number or memo_number
@@ -107,18 +107,23 @@ export interface BankingEntry {
 
 export interface Party {
   id: string;
+  _id?: string;
   name: string;
   address?: string;
   contact?: string;
+  contact_person?: string;
   phone?: string;
   created_at: string;
 }
 
 export interface Supplier {
   id: string;
+  _id?: string;
   name: string;
   address?: string;
   contact?: string;
+  contact_person?: string;
+  phone?: string;
   created_at: string;
 }
 
@@ -138,7 +143,7 @@ export interface LedgerEntry {
   id: string;
   _id?: string;
   referenceId?: string;
-  type?: 'memo' | 'payment' | 'bill' | 'expense';
+  type?: 'memo' | 'payment' | 'bill' | 'expense' | 'commission';
   vehicleNo?: string;
   partyId?: string;
   supplierId?: string;
@@ -169,7 +174,7 @@ export interface LedgerEntry {
 export interface CashbookEntry {
   id: string;
   type: 'credit' | 'debit';
-  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'other';
+  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'party_commission' | 'other';
   amount: number;
   date: string;
   reference_id?: string;

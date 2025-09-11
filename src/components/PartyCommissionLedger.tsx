@@ -1,151 +1,230 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FileText, Download, Filter, Users } from 'lucide-react';
+import { useDataStore } from '../lib/store';
+import { formatCurrency } from '../utils/numberGenerator';
+import { Party } from '../types';
 import { apiService } from '../lib/api';
 
-interface LedgerEntry {
-  _id: string;
-  party_id: string;
-  party_name: string;
-  bill_number?: string;
-  reference_id?: string;
-  date: string;
-  entry_type: 'credit' | 'debit';
-  amount: number;
-  narration: string;
-  running_balance?: number;
-}
-
-interface LedgerSummary {
+interface CommissionSummary {
   totalCredits: number;
   totalDebits: number;
   balance: number;
   totalEntries: number;
+  partiesCount: number;
 }
 
-interface PartyInfo {
-  _id: string;
-  party_name: string;
-  totalCredits: number;
+interface PartyCommissionInfo {
+  party: Party;
   totalDebits: number;
-  balance: number;
   entryCount: number;
   lastEntryDate: string;
 }
 
 interface Filters {
-  date_from: string;
-  date_to: string;
-  bill_number: string;
-  party_id: string;
+  dateFrom: string;
+  dateTo: string;
+  partyId: string;
+  searchTerm: string;
 }
 
 const PartyCommissionLedger: React.FC = () => {
-  const [entries, setEntries] = useState<LedgerEntry[]>([]);
-  const [parties, setParties] = useState<PartyInfo[]>([]);
-  const [selectedParty, setSelectedParty] = useState<PartyInfo | null>(null);
-  const [summary, setSummary] = useState<LedgerSummary>({
-    totalCredits: 0,
-    totalDebits: 0,
-    balance: 0,
-    totalEntries: 0
-  });
-  const [loading, setLoading] = useState(true);
+  const { ledgerEntries, parties } = useDataStore();
+  const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [error, setError] = useState<string>('');
+  const [partyCommissionEntries, setPartyCommissionEntries] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState<Filters>({
-    date_from: '',
-    date_to: '',
-    bill_number: '',
-    party_id: ''
+    dateFrom: '',
+    dateTo: '',
+    partyId: '',
+    searchTerm: ''
   });
 
-  const fetchParties = async () => {
-    try {
-      const partiesData = await apiService.getPartyCommissionLedgerParties();
-      setParties(partiesData as PartyInfo[]);
-    } catch (error) {
-      console.error('Error fetching parties:', error);
-    }
-  };
-
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [entriesData, summaryData] = await Promise.all([
-        apiService.getPartyCommissionLedger(filters),
-        apiService.getPartyCommissionLedgerSummary(filters)
-      ]);
-      
-      setEntries(entriesData as LedgerEntry[]);
-      setSummary(summaryData as LedgerSummary);
-      setError('');
-    } catch (error: any) {
-      console.error('Error fetching party commission ledger data:', error);
-      setError('Failed to fetch ledger data. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  // Fetch party commission entries from the PartyCommissionLedger collection
   useEffect(() => {
-    fetchParties();
+    const fetchPartyCommissionEntries = async () => {
+      try {
+        setLoading(true);
+        const response = await apiService.getPartyCommissionLedger();
+        console.log('🔍 Fetched PartyCommissionLedger entries:', response);
+        setPartyCommissionEntries(Array.isArray(response) ? response : []);
+      } catch (error) {
+        console.error('❌ Failed to fetch party commission entries:', error);
+        setPartyCommissionEntries([]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPartyCommissionEntries();
   }, []);
 
-  useEffect(() => {
-    fetchData();
-  }, [filters]);
-
-  // Calculate running balance for entries
-  const entriesWithRunningBalance = entries.map((entry, index) => {
-    let runningBalance = 0;
+  // Combine both PartyCommissionLedger entries and general ledger commission entries
+  const commissionEntries = useMemo(() => {
+    console.log('🔍 PartyCommissionLedger - Total ledger entries:', ledgerEntries.length);
+    console.log('🔍 PartyCommissionLedger - PartyCommissionLedger entries:', partyCommissionEntries.length);
     
-    // Calculate running balance up to this entry
-    for (let i = entries.length - 1; i >= entries.length - 1 - index; i--) {
-      const currentEntry = entries[i];
-      if (currentEntry.entry_type === 'credit') {
-        runningBalance += currentEntry.amount;
-      } else {
-        runningBalance -= currentEntry.amount;
-      }
+    // Get commission entries from general ledger
+    const generalLedgerCommission = ledgerEntries.filter(entry => 
+      entry.ledger_type === 'commission'
+    );
+    
+    // Convert PartyCommissionLedger entries to match the expected format
+    const convertedPartyCommissionEntries = partyCommissionEntries.map(entry => ({
+      id: entry._id || entry.id,
+      _id: entry._id,
+      ledger_type: 'commission',
+      reference_id: entry.bill_number || entry.reference_id,
+      reference_name: entry.party_name,
+      date: entry.date,
+      description: entry.narration,
+      narration: entry.narration,
+      debit: entry.entry_type === 'debit' ? entry.amount : 0,
+      credit: entry.entry_type === 'credit' ? entry.amount : 0,
+      balance: 0,
+      source_type: 'bill'
+    }));
+    
+    // Combine both arrays
+    const allCommissionEntries = [...generalLedgerCommission, ...convertedPartyCommissionEntries];
+    
+    console.log('🔍 General ledger commission entries:', generalLedgerCommission.length);
+    console.log('🔍 Converted party commission entries:', convertedPartyCommissionEntries.length);
+    console.log('🔍 Total combined commission entries:', allCommissionEntries.length);
+    console.log('🔍 Sample entries:', allCommissionEntries.slice(0, 3));
+    
+    return allCommissionEntries;
+  }, [ledgerEntries, partyCommissionEntries]);
+
+  // Apply filters to entries
+  const filteredEntries = useMemo(() => {
+    let filtered = commissionEntries;
+
+    // Filter by party - check both reference_id and reference_name
+    if (filters.partyId) {
+      filtered = filtered.filter(entry => 
+        entry.reference_id === filters.partyId || 
+        entry.reference_name === filters.partyId ||
+        (entry.reference_name && entry.reference_name.toLowerCase().includes(filters.partyId.toLowerCase()))
+      );
     }
+
+    // Filter by date range
+    if (filters.dateFrom) {
+      filtered = filtered.filter(entry => new Date(entry.date) >= new Date(filters.dateFrom));
+    }
+    if (filters.dateTo) {
+      filtered = filtered.filter(entry => new Date(entry.date) <= new Date(filters.dateTo));
+    }
+
+    // Filter by search term
+    if (filters.searchTerm) {
+      const searchLower = filters.searchTerm.toLowerCase();
+      filtered = filtered.filter(entry => 
+        (entry.description || '').toLowerCase().includes(searchLower) ||
+        (entry.reference_name || '').toLowerCase().includes(searchLower)
+      );
+    }
+
+    // Sort by date (newest first)
+    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [commissionEntries, filters]);
+
+  // Calculate summary
+  const summary = useMemo((): CommissionSummary => {
+    const totalCredits = filteredEntries.reduce((sum, entry) => sum + entry.credit, 0);
+    const totalDebits = filteredEntries.reduce((sum, entry) => sum + entry.debit, 0);
+    const uniqueParties = new Set(filteredEntries.map(entry => entry.reference_id));
     
     return {
-      ...entry,
-      running_balance: runningBalance
+      totalCredits,
+      totalDebits,
+      balance: totalCredits - totalDebits,
+      totalEntries: filteredEntries.length,
+      partiesCount: uniqueParties.size
     };
-  });
+  }, [filteredEntries]);
 
-  const handlePartySelect = (party: PartyInfo | null) => {
+  // Get party commission info
+  const partyCommissionInfo = useMemo((): PartyCommissionInfo[] => {
+    const partyMap = new Map<string, PartyCommissionInfo>();
+
+    commissionEntries.forEach(entry => {
+      // Find party by name instead of ID since entries use party names
+      const party = parties.find(p => 
+        p.name === entry.reference_name || 
+        p.id === entry.reference_id
+      );
+      
+      // If no party found in master list, create a temporary party object
+      const partyToUse = party || {
+        id: entry.reference_name || entry.reference_id,
+        name: entry.reference_name || 'Unknown Party',
+        contact: '',
+        address: '',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      } as Party;
+
+      const partyKey = partyToUse.name;
+
+      if (!partyMap.has(partyKey)) {
+        partyMap.set(partyKey, {
+          party: partyToUse,
+          totalDebits: 0,
+          entryCount: 0,
+          lastEntryDate: entry.date
+        });
+      }
+
+      const info = partyMap.get(partyKey)!;
+      info.totalDebits += entry.debit;
+      info.entryCount += 1;
+      
+      // Update last entry date if this entry is more recent
+      if (new Date(entry.date) > new Date(info.lastEntryDate)) {
+        info.lastEntryDate = entry.date;
+      }
+    });
+
+    return Array.from(partyMap.values()).sort((a, b) => b.totalDebits - a.totalDebits);
+  }, [commissionEntries, parties]);
+
+  // Calculate running balance for entries (credits increase, debits decrease the balance)
+  const entriesWithRunningBalance = useMemo(() => {
+    let runningBalance = 0;
+    
+    // Sort entries by date (oldest first) for proper running balance calculation
+    const sortedEntries = [...filteredEntries].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    const entriesWithBalance = sortedEntries.map((entry) => {
+      runningBalance += entry.credit - entry.debit; // Credits add, debits subtract
+      return {
+        ...entry,
+        running_balance: runningBalance
+      };
+    });
+    
+    // Return in reverse order (newest first) for display
+    return entriesWithBalance.reverse();
+  }, [filteredEntries]);
+
+  const handlePartySelect = (party: Party | null) => {
     setSelectedParty(party);
     setFilters(prev => ({
       ...prev,
-      party_id: party ? party._id : ''
+      partyId: party ? party.name : '' // Use party name for filtering instead of ID
     }));
-  };
-
-  const handleApplyFilters = () => {
-    fetchData();
-    setShowFilters(false);
   };
 
   const handleResetFilters = () => {
     setFilters({
-      date_from: '',
-      date_to: '',
-      bill_number: '',
-      party_id: ''
+      dateFrom: '',
+      dateTo: '',
+      partyId: '',
+      searchTerm: ''
     });
     setSelectedParty(null);
-    setShowFilters(false);
-  };
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
   };
 
   const formatDate = (dateString: string) => {
@@ -154,14 +233,13 @@ const PartyCommissionLedger: React.FC = () => {
 
   // Export to CSV
   const exportToCSV = () => {
-    const partyName = selectedParty ? selectedParty.party_name : 'All_Parties';
-    const csvHeaders = ['Date', 'Bill No/Ref', 'Narration', 'Credit', 'Debit', 'Running Balance'];
+    const partyName = selectedParty ? selectedParty.name.replace(/[^a-zA-Z0-9]/g, '_') : 'All_Parties';
+    const csvHeaders = ['Date', 'Party', 'Description', 'Amount Paid', 'Running Total'];
     const csvData = entriesWithRunningBalance.map(entry => [
-      new Date(entry.date).toLocaleDateString(),
-      entry.bill_number || entry.reference_id,
-      entry.narration,
-      entry.entry_type === 'credit' ? entry.amount.toString() : '0',
-      entry.entry_type === 'debit' ? entry.amount.toString() : '0',
+      formatDate(entry.date),
+      entry.reference_name,
+      entry.description,
+      entry.debit.toString(),
       entry.running_balance.toString()
     ]);
 
@@ -173,24 +251,16 @@ const PartyCommissionLedger: React.FC = () => {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `party-commission-ledger-${partyName}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `party-commission-payments-${partyName}-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     window.URL.revokeObjectURL(url);
   };
 
-  // Export to PDF
-  const exportToPDF = async () => {
-    const { generatePartyCommissionLedgerPDF } = await import('../utils/pdfGenerator');
-    await generatePartyCommissionLedgerPDF(entriesWithRunningBalance, summary, filters, selectedParty);
+  // Export to PDF (placeholder for future implementation)
+  const exportToPDF = () => {
+    alert('PDF export functionality will be implemented soon.');
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-6">
@@ -242,22 +312,22 @@ const PartyCommissionLedger: React.FC = () => {
             <div className="text-sm text-gray-500">View combined ledger</div>
           </div>
           
-          {parties.map((party) => (
+          {partyCommissionInfo.map((info, index) => (
             <div
-              key={party._id}
-              onClick={() => handlePartySelect(party)}
+              key={info.party.id || `party-${index}`}
+              onClick={() => handlePartySelect(info.party)}
               className={`p-4 border-2 rounded-lg cursor-pointer transition-colors ${
-                selectedParty?._id === party._id 
+                selectedParty?.id === info.party.id 
                   ? 'border-blue-500 bg-blue-50' 
                   : 'border-gray-200 hover:border-gray-300'
               }`}
             >
-              <div className="font-medium text-gray-900">{party.party_name}</div>
+              <div className="font-medium text-gray-900">{info.party.name}</div>
               <div className="text-sm text-gray-500">
-                Balance: {formatCurrency(party.balance)} | Entries: {party.entryCount}
+                Total Paid: {formatCurrency(info.totalDebits)} | Entries: {info.entryCount}
               </div>
               <div className="text-xs text-gray-400">
-                Last entry: {formatDate(party.lastEntryDate)}
+                Last payment: {formatDate(info.lastEntryDate)}
               </div>
             </div>
           ))}
@@ -265,11 +335,9 @@ const PartyCommissionLedger: React.FC = () => {
         
         {selectedParty && (
           <div className="mt-4 p-4 bg-blue-50 rounded-lg">
-            <h3 className="font-medium text-blue-900">Selected: {selectedParty.party_name}</h3>
+            <h3 className="font-medium text-blue-900">Selected: {selectedParty.name}</h3>
             <div className="text-sm text-blue-700 mt-1">
-              Credits: {formatCurrency(selectedParty.totalCredits)} | 
-              Debits: {formatCurrency(selectedParty.totalDebits)} | 
-              Balance: {formatCurrency(selectedParty.balance)}
+              Viewing commission payments for this party
             </div>
           </div>
         )}
@@ -342,8 +410,8 @@ const PartyCommissionLedger: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">From Date</label>
               <input
                 type="date"
-                value={filters.date_from}
-                onChange={(e) => setFilters(prev => ({ ...prev, date_from: e.target.value }))}
+                value={filters.dateFrom}
+                onChange={(e) => setFilters(prev => ({ ...prev, dateFrom: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
@@ -351,45 +419,33 @@ const PartyCommissionLedger: React.FC = () => {
               <label className="block text-sm font-medium text-gray-700 mb-1">To Date</label>
               <input
                 type="date"
-                value={filters.date_to}
-                onChange={(e) => setFilters(prev => ({ ...prev, date_to: e.target.value }))}
+                value={filters.dateTo}
+                onChange={(e) => setFilters(prev => ({ ...prev, dateTo: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Bill Number</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
               <input
                 type="text"
-                value={filters.bill_number}
-                onChange={(e) => setFilters(prev => ({ ...prev, bill_number: e.target.value }))}
-                placeholder="Search by bill number"
+                value={filters.searchTerm}
+                onChange={(e) => setFilters(prev => ({ ...prev, searchTerm: e.target.value }))}
+                placeholder="Search by description or party"
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <div className="flex items-end space-x-2">
-              <button
-                onClick={handleApplyFilters}
-                className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Apply
-              </button>
+            <div className="flex items-end">
               <button
                 onClick={handleResetFilters}
-                className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
+                className="w-full px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
               >
-                Reset
+                Reset Filters
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Error Message */}
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-          <p className="text-red-700">{error}</p>
-        </div>
-      )}
 
       {/* Ledger Table */}
       <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
@@ -398,57 +454,71 @@ const PartyCommissionLedger: React.FC = () => {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Date
+                  DATE
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Bill No/Ref
+                  BILL NO/REF
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Narration
+                  NARRATION
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Credit
+                  CREDIT
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Debit
+                  DEBIT
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Running Balance
+                  RUNNING BALANCE
                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {entriesWithRunningBalance.length === 0 ? (
+              {loading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
-                    No commission ledger entries found
+                    <div className="flex items-center justify-center">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600 mr-2"></div>
+                      Loading commission entries...
+                    </div>
+                  </td>
+                </tr>
+              ) : entriesWithRunningBalance.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                    No commission entries found
+                    {selectedParty && (
+                      <div className="text-sm mt-1">
+                        No entries recorded for {selectedParty.name}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
-                entriesWithRunningBalance.map((entry) => (
-                  <tr key={entry._id} className="hover:bg-gray-50">
+                entriesWithRunningBalance.map((entry, index) => (
+                  <tr key={entry.id || entry._id || `entry-${index}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(entry.date).toLocaleDateString()}
+                      {formatDate(entry.date)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {entry.bill_number || entry.reference_id}
+                      {entry.reference_id || '-'}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
-                      {entry.narration}
+                      {entry.description || entry.narration || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                      {entry.entry_type === 'credit' ? (
+                      {entry.credit > 0 ? (
                         <span className="text-green-600 font-medium">
-                          {formatCurrency(entry.amount)}
+                          {formatCurrency(entry.credit)}
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right">
-                      {entry.entry_type === 'debit' ? (
+                      {entry.debit > 0 ? (
                         <span className="text-red-600 font-medium">
-                          {formatCurrency(entry.amount)}
+                          {formatCurrency(entry.debit)}
                         </span>
                       ) : (
                         <span className="text-gray-400">-</span>

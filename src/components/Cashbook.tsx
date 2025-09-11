@@ -7,7 +7,7 @@ import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 
 const CashbookComponent: React.FC = () => {
-  const { cashbookEntries: entries, updateCashbookEntry, setCashbookEntries } = useDataStore();
+  const { cashbookEntries: entries, updateCashbookEntry, setCashbookEntries, parties } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BankingEntry | null>(null);
 
@@ -54,11 +54,40 @@ const CashbookComponent: React.FC = () => {
         // Add to local store
         setCashbookEntries([savedEntry, ...entries]);
         
-        // Create ledger entry with required fields
+        // Create party commission ledger entry for commission payments
+        if (entryToCreate.category === 'party_commission' && entryToCreate.reference_name) {
+          // Find the party ID for the reference
+          const party = parties.find(p => p.name === entryToCreate.reference_name);
+          const partyId = party ? party.id : entryToCreate.reference_name;
+          
+          const commissionLedgerEntry = {
+            referenceId: partyId,
+            ledger_type: 'commission',
+            reference_id: partyId,
+            reference_name: entryToCreate.reference_name,
+            type: 'commission',
+            date: entryToCreate.date,
+            description: `Commission Payment – Cash Payment`,
+            narration: `Commission Payment – Cash Payment`,
+            debit: entryToCreate.amount,
+            credit: 0,
+            balance: 0,
+            source_type: 'cashbook',
+          };
+          
+          try {
+            await apiService.createLedgerEntry(commissionLedgerEntry);
+            console.log('✅ Party commission ledger entry created from cashbook:', commissionLedgerEntry);
+          } catch (error) {
+            console.error('❌ Failed to create party commission ledger entry from cashbook:', error);
+          }
+        }
+        
+        // Create general ledger entry for other transactions
         const ledgerEntry = {
           referenceId: savedEntry._id,
           reference_id: savedEntry._id,
-          ledger_type: 'general',
+          ledger_type: entryToCreate.category === 'party_commission' ? 'commission' : 'general',
           reference_name: savedEntry.reference_name || savedEntry.category || 'Cash Transaction',
           source_type: 'cashbook',
           type: 'expense',
@@ -69,8 +98,10 @@ const CashbookComponent: React.FC = () => {
           balance: 0,
         };
         
-        // Save ledger entry to backend
-        await apiService.createLedgerEntry(ledgerEntry);
+        // Save ledger entry to backend (skip for party_commission as it's already created above)
+        if (entryToCreate.category !== 'party_commission') {
+          await apiService.createLedgerEntry(ledgerEntry);
+        }
         
         // Trigger data sync
         window.dispatchEvent(new CustomEvent('data-sync-required'));
@@ -123,6 +154,28 @@ const CashbookComponent: React.FC = () => {
         
         // Remove from local store
         setCashbookEntries(entries.filter(entry => entry._id !== deleteId && entry.id !== deleteId));
+        
+        // Create party commission ledger entry for commission payments
+        if (entryToDelete.category === 'party_commission' && entryToDelete.reference_name) {
+          const commissionLedgerEntry = {
+            ledger_type: 'commission',
+            reference_id: entryToDelete.reference_id || `CASH-COMM-${Date.now()}`,
+            reference_name: entryToDelete.reference_name,
+            date: entryToDelete.date,
+            description: entryToDelete.narration || `Party commission payment to ${entryToDelete.reference_name}`,
+            debit: entryToDelete.amount,
+            credit: 0,
+            balance: 0,
+            source_type: 'cashbook',
+          };
+          
+          try {
+            await apiService.createLedgerEntry(commissionLedgerEntry);
+            console.log('✅ Party commission ledger entry created from cashbook:', commissionLedgerEntry);
+          } catch (error) {
+            console.error('❌ Failed to create party commission ledger entry from cashbook:', error);
+          }
+        }
         
         // Delete related ledger entries
         const ledgerResponse = await apiService.getLedgerEntries();

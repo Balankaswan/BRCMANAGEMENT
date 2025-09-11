@@ -214,7 +214,10 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
     if (!search.trim()) return base;
     const q = search.toLowerCase();
     return base.filter(b => {
-      const ls = loadingSlips.find(ls => ls.id === b.loading_slip_id);
+      // Handle both cases: loading_slip_id as string or populated object
+      const ls = typeof b.loading_slip_id === 'object' && b.loading_slip_id !== null 
+        ? b.loading_slip_id 
+        : loadingSlips.find(ls => ls.id === b.loading_slip_id);
       const haystack = [
         b.bill_number,
         b.party,
@@ -274,7 +277,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         </div>
       ) : (
         <div className="space-y-4">
-          {bills.map((bill: Bill, index: number) => {
+          {filteredBills.map((bill: Bill, index: number) => {
             // Handle both cases: loading_slip_id as string or populated object
             const loadingSlip = typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null 
               ? bill.loading_slip_id 

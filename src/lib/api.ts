@@ -361,9 +361,23 @@ class ApiService {
     });
   }
 
+  async updateFuelWallet(id: string, data: any) {
+    return this.request<{wallet: any}>(`/fuel/wallets/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
   async getFuelTransactions(params?: {wallet_name?: string, vehicle_no?: string, type?: string, page?: number, limit?: number}) {
     const queryString = params ? '?' + new URLSearchParams(params as any).toString() : '';
     return this.request<{transactions: any[], total: number, totalPages: number}>(`/fuel/transactions${queryString}`);
+  }
+
+  async createFuelTransaction(data: any) {
+    return this.request<{transaction: any}>('/fuel/transactions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   async allocateFuel(data: {
@@ -374,7 +388,9 @@ class ApiService {
     narration?: string,
     fuel_quantity?: number,
     rate_per_liter?: number,
-    odometer_reading?: number
+    odometer_reading?: number,
+    fuel_type?: string,
+    allocated_by?: string
   }) {
     return this.request<{transaction: any, wallet: any}>('/fuel/allocate', {
       method: 'POST',

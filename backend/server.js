@@ -9,14 +9,14 @@ import { fileURLToPath } from 'url';
 
 // Import routes
 import authRoutes from './routes/auth.js';
+import loadingSlipRoutes from './routes/loadingSlips.js';
 import billRoutes from './routes/bills.js';
 import memoRoutes from './routes/memos.js';
-import loadingSlipRoutes from './routes/loadingSlips.js';
-import bankingRoutes from './routes/banking.js';
-import cashbookRoutes from './routes/cashbook.js';
 import partyRoutes from './routes/parties.js';
 import supplierRoutes from './routes/suppliers.js';
 import vehicleRoutes from './routes/vehicles.js';
+import bankingRoutes from './routes/banking.js';
+import cashbookRoutes from './routes/cashbook.js';
 import ledgerRoutes from './routes/ledgers.js';
 import fuelRoutes from './routes/fuel.js';
 import podRoutes from './routes/pod.js';
@@ -182,6 +182,68 @@ app.use('/api/ledgers', ledgerRoutes);
 app.use('/api/fuel', fuelRoutes);
 app.use('/api/pod', podRoutes);
 app.use('/api/party-commission-ledger', partyCommissionLedgerRoutes);
+
+// Store connected clients for real-time updates
+const connectedClients = new Set();
+
+// SSE endpoint for real-time sync
+app.get('/api/sync/events', (req, res) => {
+  // Set headers for SSE
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Cache-Control'
+  });
+
+  // Send initial connection message
+  res.write('data: {"type":"connected","message":"Real-time sync connected"}\n\n');
+
+  // Add client to connected clients
+  connectedClients.add(res);
+
+  // Handle client disconnect
+  req.on('close', () => {
+    connectedClients.delete(res);
+  });
+
+  req.on('aborted', () => {
+    connectedClients.delete(res);
+  });
+});
+
+// Broadcast changes to all connected clients
+const broadcastChange = (changeType, collection, data) => {
+  const message = JSON.stringify({
+    type: 'data_change',
+    changeType,
+    collection,
+    data,
+    timestamp: new Date().toISOString()
+  });
+
+  connectedClients.forEach(client => {
+    try {
+      client.write(`data: ${message}\n\n`);
+    } catch (error) {
+      // Remove disconnected clients
+      connectedClients.delete(client);
+    }
+  });
+};
+
+// Sync status endpoint
+app.get('/api/sync/status', (req, res) => {
+  res.json({
+    connectedClients: connectedClients.size,
+    serverTime: new Date().toISOString(),
+    status: 'active'
+  });
+});
+
+// Export broadcast function for use in routes
+app.locals.broadcastChange = broadcastChange;
 
 // Serve React frontend in production
 if (process.env.NODE_ENV === 'production') {

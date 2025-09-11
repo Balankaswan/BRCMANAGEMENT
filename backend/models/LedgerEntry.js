@@ -12,7 +12,7 @@ const ledgerEntrySchema = new mongoose.Schema({
   },
   ledger_type: {
     type: String,
-    enum: ['general', 'party', 'supplier', 'vehicle', 'vehicle_income', 'vehicle_expense'],
+    enum: ['general', 'party', 'supplier', 'vehicle', 'vehicle_income', 'vehicle_expense', 'commission'],
     default: 'general'
   },
   reference_name: {
@@ -25,7 +25,7 @@ const ledgerEntrySchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['memo', 'payment', 'bill', 'expense']
+    enum: ['memo', 'payment', 'bill', 'expense', 'commission']
   },
   vehicleNo: {
     type: String,

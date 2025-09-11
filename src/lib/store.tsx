@@ -55,7 +55,8 @@ interface DataStoreState {
   // Fuel accounting actions
   addFuelWallet: (wallet: FuelWallet) => void;
   setFuelWallets: (wallets: FuelWallet[]) => void;
-  allocateFuelToVehicle: (vehicleNo: string, walletName: string, amount: number, date: string, narration?: string, fuelQuantity?: number, ratePerLiter?: number, odometerReading?: number) => void;
+  setFuelTransactions: (transactions: FuelTransaction[]) => void;
+  allocateFuelToVehicle: (vehicleNo: string, walletName: string, amount: number, date: string, narration?: string, fuelQuantity?: number, ratePerLiter?: number, odometerReading?: number, fuelType?: string, allocatedBy?: string) => void;
   getFuelWalletBalance: (walletName: string) => number;
   getVehicleFuelExpenses: (vehicleNo: string) => VehicleFuelExpense[];
   bulkPaySupplierMemos: (supplierName: string, memoIds: string[], paymentAmount: number, paymentDate: string, bankAccount: string, paymentMode: 'cash' | 'bank' | 'cheque' | 'bank_transfer' | 'upi', narration?: string) => void;
@@ -79,12 +80,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [parties, setParties] = useState<Party[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [fuelWallets, setFuelWallets] = useState<FuelWallet[]>([
-    { id: '1', name: 'BPCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: '2', name: 'HPCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: '3', name: 'IOCL', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-    { id: '4', name: 'Shell', balance: 0, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-  ]);
+  const [fuelWallets, setFuelWallets] = useState<FuelWallet[]>([]);
   const [fuelTransactions, setFuelTransactions] = useState<FuelTransaction[]>([]);
   const [vehicleFuelExpenses, setVehicleFuelExpenses] = useState<VehicleFuelExpense[]>([]);
   const [podFiles, setPodFiles] = useState<PODFile[]>([]);
@@ -106,8 +102,19 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     podFiles,
     setBankingEntries: (entries) => setBankingEntries(entries),
     setBills: (bills) => setBills(bills),
-    setMemos: (memos) => setMemos(memos),
-    setLoadingSlips: (slips) => setLoadingSlips(slips),
+    setMemos: (memos) => {
+      console.log('📋 Setting memos in store:', memos.length);
+      setMemos(memos);
+    },
+    setLoadingSlips: (slips) => {
+      console.log('🚛 Setting loading slips in store:', slips.length);
+      console.log('🚛 First loading slip:', slips[0] ? {
+        id: slips[0].id,
+        _id: (slips[0] as any)._id,
+        vehicle_no: slips[0].vehicle_no
+      } : 'No loading slips');
+      setLoadingSlips(slips);
+    },
     setLedgerEntries: (entries) => setLedgerEntries(entries),
     addLoadingSlip: (slip) => {
       setLoadingSlips(prev => [slip, ...prev]);
@@ -861,40 +868,96 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       // Create fuel wallet credit entry for fuel company debits
       if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
+        const walletName = entry.reference_name || entry.narration || 'BPCL';
+        console.log('🔥 Creating fuel wallet credit for:', walletName, 'Amount:', entry.amount);
+        
         const fuelTransaction: FuelTransaction = {
           id: `${entry.id}-fuel-tx`,
-          wallet_name: entry.narration || 'BPCL',
+          wallet_name: walletName,
           type: 'wallet_credit',
           amount: entry.amount,
           date: entry.date,
-          narration: `Bank debit for fuel - ${entry.narration}`,
+          narration: `Bank debit for fuel - ${walletName}`,
           created_at: new Date().toISOString(),
           vehicle_no: entry.vehicle_no,
         };
         
-        setFuelTransactions(prev => [fuelTransaction, ...prev]);
-        
+        setFuelTransactions(prev => {
+          console.log('🔥 Adding fuel transaction:', fuelTransaction);
+          return [fuelTransaction, ...prev];
+        });
+
+        // Create fuel transaction in backend
+        try {
+          apiService.createFuelTransaction(fuelTransaction).then(() => {
+            console.log('✅ Fuel transaction created in backend');
+          }).catch((error: any) => {
+            console.error('❌ Failed to create fuel transaction in backend:', error);
+          });
+        } catch (error) {
+          console.error('❌ Error creating fuel transaction:', error);
+        }
+
         // Update fuel wallet balance
-        const walletName = entry.narration || 'BPCL';
         const existingWallet = fuelWallets.find(w => w.name === walletName);
         if (existingWallet) {
+          const newBalance = existingWallet.balance + entry.amount;
+          console.log('🔥 Updating existing wallet:', walletName, 'Current balance:', existingWallet.balance, 'Adding:', entry.amount, 'New balance:', newBalance);
           setFuelWallets(prev => prev.map(wallet => 
             wallet.name === walletName 
-              ? { ...wallet, balance: wallet.balance + entry.amount }
+              ? { ...wallet, balance: newBalance, updated_at: new Date().toISOString() }
               : wallet
           ));
+          
+          // Update wallet balance in backend
+          try {
+            const walletId = (existingWallet as any)._id || existingWallet.id;
+            if (walletId) {
+              apiService.updateFuelWallet(walletId, {
+                name: existingWallet.name,
+                balance: newBalance,
+                updated_at: new Date().toISOString()
+              }).then(() => {
+                console.log('✅ Fuel wallet balance updated in backend');
+                // Trigger data sync to refresh UI
+                window.dispatchEvent(new CustomEvent('data-sync-required'));
+              }).catch((error: any) => {
+                console.error('❌ Failed to update fuel wallet in backend:', error);
+              });
+            } else {
+              console.error('❌ No valid wallet ID found for update');
+            }
+          } catch (error) {
+            console.error('❌ Error updating fuel wallet:', error);
+          }
         } else {
-          setFuelWallets(prev => [...prev, { 
+          console.log('🔥 Creating new fuel wallet:', walletName, 'Initial balance:', entry.amount);
+          // Create new fuel wallet
+          const newWallet = { 
             id: `wallet-${Date.now()}`,
             name: walletName, 
             balance: entry.amount,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
-          }]);
+          };
+          setFuelWallets(prev => {
+            console.log('🔥 Adding new wallet to state:', newWallet);
+            return [...prev, newWallet];
+          });
+          
+          // Also create wallet in backend
+          try {
+            apiService.createFuelWallet(newWallet).then(() => {
+              console.log('✅ Fuel wallet created in backend:', newWallet);
+              // Trigger data sync to refresh UI
+              window.dispatchEvent(new CustomEvent('data-sync-required'));
+            }).catch((error: any) => {
+              console.error('❌ Failed to create fuel wallet in backend:', error);
+            });
+          } catch (error) {
+            console.error('❌ Error creating fuel wallet:', error);
+          }
         }
-        
-        // No ledger entry for fuel_wallet category to avoid double entry
-        return;
       }
       
       // Create person-specific ledger entry if reference_name contains a person's name
@@ -908,9 +971,12 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // When BRC receives from someone (credit), it's a credit in that person's ledger (BRC owes more/person owes less)
         const personLedgerEntry: LedgerEntry = {
           id: `${entry.id}-person-ledger`,
-          ledger_type: 'general',
+          referenceId: entry.id,
           reference_id: entry.id,
+          ledger_type: 'general',
           reference_name: personName,
+          source_type: 'banking',
+          type: entry.type === 'debit' ? 'payment' : 'payment',
           date: entry.date,
           description: `${entry.type === 'debit' ? 'Payment to' : 'Receipt from'} ${personName} - ${entry.narration || entry.category}`,
           debit: entry.type === 'debit' ? entry.amount : 0,
@@ -918,7 +984,6 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           balance: 0,
           created_at: new Date().toISOString(),
           vehicle_no: entry.vehicle_no,
-          source_type: 'banking',
         };
         
         setLedgerEntries(prev => [personLedgerEntry, ...prev]);
@@ -926,9 +991,12 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Create general ledger entry for other banking transactions (without person names)
         const ledgerEntry: LedgerEntry = {
           id: `${entry.id}-ledger`,
-          ledger_type: 'general',
+          referenceId: entry.id,
           reference_id: entry.id,
+          ledger_type: 'general',
           reference_name: entry.reference_name || entry.category || 'Other Income',
+          source_type: 'banking',
+          type: entry.type === 'debit' ? 'payment' : 'payment',
           date: entry.date,
           description: entry.narration || entry.category,
           debit: entry.type === 'debit' ? entry.amount : 0,
@@ -936,15 +1004,19 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           balance: 0,
           created_at: new Date().toISOString(),
           vehicle_no: entry.vehicle_no,
-          source_type: 'banking',
         };
         
         setLedgerEntries(prev => [ledgerEntry, ...prev]);
         
-        // Save ledger entry to backend
+        // Save ledger entry to backend with required fields
         try {
-          apiService.createLedgerEntry(ledgerEntry).then(() => {
-            console.log('✅ General ledger entry saved to backend:', ledgerEntry);
+          const backendLedgerEntry = {
+            ...ledgerEntry,
+            referenceId: ledgerEntry.reference_id || ledgerEntry.id,
+            type: ledgerEntry.type || 'payment'
+          };
+          apiService.createLedgerEntry(backendLedgerEntry).then(() => {
+            console.log('✅ General ledger entry saved to backend:', backendLedgerEntry);
           }).catch(error => {
             console.error('❌ Failed to save general ledger entry:', error);
           });
@@ -964,13 +1036,22 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         
         // Reverse old fuel wallet effects if applicable
         if (oldEntry.type === 'debit' && oldEntry.category === 'fuel_wallet') {
-          const walletName = oldEntry.narration || 'BPCL';
+          const walletName = oldEntry.reference_name || oldEntry.narration || 'BPCL';
           setFuelWallets(prev => prev.map(wallet => 
             wallet.name === walletName 
               ? { ...wallet, balance: wallet.balance - oldEntry.amount }
               : wallet
           ));
           setFuelTransactions(prev => prev.filter(ft => ft.id !== `${oldEntry.id}-fuel-tx`));
+        }
+        
+        // Remove old party commission ledger entries if applicable
+        if (oldEntry.category === 'party_commission' && oldEntry.reference_name) {
+          setLedgerEntries(prev => prev.filter(l => !(
+            l.ledger_type === 'commission' && 
+            l.reference_name === oldEntry.reference_name && 
+            l.source_type === 'banking'
+          )));
         }
       }
       
@@ -1060,9 +1141,12 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (isOwnVehicle) {
           const vehicleExpenseEntry: LedgerEntry = {
             id: `${entry.id}-vehicle-expense`,
-            ledger_type: 'vehicle_expense',
+            referenceId: entry.id,
             reference_id: entry.id,
+            ledger_type: 'vehicle_expense',
             reference_name: `Vehicle ${entry.vehicle_no} - Expense`,
+            source_type: 'banking',
+            type: 'expense',
             date: entry.date,
             description: entry.narration || 'Vehicle expense',
             debit: entry.amount,
@@ -1079,13 +1163,15 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       // Create fuel wallet credit entry for fuel company debits
       if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
+        const walletName = entry.reference_name || entry.narration || 'BPCL';
+        
         const fuelTransaction: FuelTransaction = {
           id: `${entry.id}-fuel-tx`,
-          wallet_name: entry.narration || 'BPCL',
+          wallet_name: walletName,
           type: 'wallet_credit',
           amount: entry.amount,
           date: entry.date,
-          narration: `Bank debit for fuel - ${entry.narration}`,
+          narration: `Bank debit for fuel - ${walletName}`,
           created_at: new Date().toISOString(),
           vehicle_no: entry.vehicle_no,
         };
@@ -1093,23 +1179,76 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setFuelTransactions(prev => [fuelTransaction, ...prev]);
         
         // Update fuel wallet balance
-        const walletName = entry.narration || 'BPCL';
         const existingWallet = fuelWallets.find(w => w.name === walletName);
         if (existingWallet) {
+          const newBalance = existingWallet.balance + entry.amount;
+          console.log('🔥 Updating existing wallet:', walletName, 'Current balance:', existingWallet.balance, 'Adding:', entry.amount, 'New balance:', newBalance);
           setFuelWallets(prev => prev.map(wallet => 
             wallet.name === walletName 
-              ? { ...wallet, balance: wallet.balance + entry.amount }
+              ? { ...wallet, balance: newBalance, updated_at: new Date().toISOString() }
               : wallet
           ));
+          
+          // Update wallet balance in backend
+          try {
+            const walletId = (existingWallet as any)._id || existingWallet.id;
+            if (walletId) {
+              apiService.updateFuelWallet(walletId, {
+                name: existingWallet.name,
+                balance: newBalance,
+                updated_at: new Date().toISOString()
+              }).then(() => {
+                console.log('✅ Fuel wallet balance updated in backend');
+              }).catch((error: any) => {
+                console.error('❌ Failed to update fuel wallet in backend:', error);
+              });
+            } else {
+              console.error('❌ No valid wallet ID found for update');
+            }
+          } catch (error) {
+            console.error('❌ Error updating fuel wallet:', error);
+          }
         } else {
-          setFuelWallets(prev => [...prev, { 
+          console.log('🔥 Creating new fuel wallet:', walletName, 'Initial balance:', entry.amount);
+          // Create new fuel wallet
+          const newWallet = { 
             id: `wallet-${Date.now()}`,
             name: walletName, 
             balance: entry.amount,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
-          }]);
+          };
+          setFuelWallets(prev => {
+            console.log('🔥 Adding new wallet to state:', newWallet);
+            return [...prev, newWallet];
+          });
+          
+          // Also create wallet in backend
+          try {
+            apiService.createFuelWallet(newWallet).then(() => {
+              console.log('✅ Fuel wallet created in backend:', newWallet);
+            }).catch(error => {
+              console.error('❌ Failed to create fuel wallet in backend:', error);
+            });
+          } catch (error) {
+            console.error('❌ Error creating fuel wallet:', error);
+          }
         }
+        
+        // Create fuel transaction in backend
+        try {
+          apiService.createFuelTransaction(fuelTransaction).then(() => {
+            console.log('✅ Fuel transaction created in backend:', fuelTransaction);
+          }).catch(error => {
+            console.error('❌ Failed to create fuel transaction in backend:', error);
+          });
+        } catch (error) {
+          console.error('❌ Error creating fuel transaction:', error);
+        }
+        
+        // Trigger data sync to refresh fuel management
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        
         return;
       }
       
@@ -1122,9 +1261,12 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Create person ledger entry - BRC perspective
         const personLedgerEntry: LedgerEntry = {
           id: `${entry.id}-person-ledger`,
-          ledger_type: 'general',
+          referenceId: entry.id,
           reference_id: entry.id,
+          ledger_type: 'general',
           reference_name: personName,
+          source_type: 'banking',
+          type: entry.type === 'debit' ? 'payment' : 'payment',
           date: entry.date,
           description: `${entry.type === 'debit' ? 'Payment to' : 'Receipt from'} ${personName} - ${entry.narration || entry.category}`,
           debit: entry.type === 'debit' ? entry.amount : 0,
@@ -1132,7 +1274,6 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           balance: 0,
           created_at: new Date().toISOString(),
           vehicle_no: entry.vehicle_no,
-          source_type: 'banking',
         };
         
         setLedgerEntries(prev => [personLedgerEntry, ...prev]);
@@ -1140,19 +1281,48 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Create general ledger entry for other banking transactions (without person names)
         const ledgerEntry: LedgerEntry = {
           id: `${entry.id}-ledger`,
-          ledger_type: 'general',
+          referenceId: entry.id,
           reference_id: entry.id,
+          ledger_type: 'general',
           reference_name: entry.category,
+          source_type: 'banking',
+          type: entry.type === 'debit' ? 'payment' : 'payment',
           date: entry.date,
           description: entry.narration || entry.category,
           debit: entry.type === 'debit' ? entry.amount : 0,
           credit: entry.type === 'credit' ? entry.amount : 0,
           balance: 0,
-          source_type: 'banking',
           created_at: new Date().toISOString(),
         };
         
         setLedgerEntries(prev => [ledgerEntry, ...prev]);
+      }
+      
+      // Create party commission ledger entry for commission payments
+      if (entry.category === 'party_commission' && entry.reference_name) {
+        // Find the party ID for the reference
+        const selectedParty = parties.find(p => p.name === entry.reference_name);
+        const partyId = selectedParty ? selectedParty.id : entry.reference_name;
+        
+        const commissionLedgerEntry: LedgerEntry = {
+          id: `${entry.id}-commission-ledger`,
+          referenceId: partyId,
+          reference_id: entry.id,
+          ledger_type: 'commission',
+          reference_name: selectedParty ? selectedParty.name : entry.reference_name,
+          source_type: 'banking',
+          type: 'commission',
+          date: entry.date,
+          description: `Commission Payment – Bank Transfer`,
+          narration: `Commission Payment – Bank Transfer`,
+          debit: entry.amount,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          partyId: partyId
+        };
+        
+        setLedgerEntries(prev => [commissionLedgerEntry, ...prev]);
       }
     },
     deleteBankingEntry: (id) => {
@@ -1270,10 +1440,34 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
     },
     updateCashbookEntry: (entry) => {
+      const oldEntry = cashbookEntries.find(e => e.id === entry.id);
       setCashbookEntries(prev => prev.map(e => e.id === entry.id ? entry : e));
       
-      // Remove old ledger entries and recreate them
-      setLedgerEntries(prev => prev.filter(l => l.reference_id !== entry.id || l.source_type !== 'cashbook'));
+      // Remove old related entries first
+      if (oldEntry) {
+        // Remove old ledger entries
+        setLedgerEntries(prev => prev.filter(l => l.reference_id !== entry.id || l.source_type !== 'cashbook'));
+        
+        // Reverse old fuel wallet effects if applicable
+        if (oldEntry.type === 'debit' && oldEntry.category === 'fuel_wallet') {
+          const walletName = oldEntry.reference_name || oldEntry.narration || 'BPCL';
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: wallet.balance - oldEntry.amount }
+              : wallet
+          ));
+          setFuelTransactions(prev => prev.filter(ft => ft.id !== `${oldEntry.id}-fuel-tx`));
+        }
+        
+        // Remove old party commission ledger entries if applicable
+        if (oldEntry.category === 'party_commission' && oldEntry.reference_name) {
+          setLedgerEntries(prev => prev.filter(l => !(
+            l.ledger_type === 'commission' && 
+            l.reference_name === oldEntry.reference_name && 
+            l.source_type === 'cashbook'
+          )));
+        }
+      }
       
       // Handle vehicle expenses for own vehicles
       if (entry.vehicle_no && entry.category === 'vehicle_expense') {
@@ -1345,6 +1539,78 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         
         setLedgerEntries(prev => [ledgerEntry, ...prev]);
       }
+      
+      // Create fuel wallet credit entry for fuel company debits
+      if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
+        const walletName = entry.reference_name || entry.narration || 'BPCL';
+        
+        const fuelTransaction: FuelTransaction = {
+          id: `${entry.id}-fuel-tx`,
+          wallet_name: walletName,
+          type: 'wallet_credit',
+          amount: entry.amount,
+          date: entry.date,
+          narration: `Cash debit for fuel - ${walletName}`,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+        };
+        
+        setFuelTransactions(prev => [fuelTransaction, ...prev]);
+        
+        // Update fuel wallet balance
+        const existingWallet = fuelWallets.find(w => w.name === walletName);
+        if (existingWallet) {
+          const newBalance = existingWallet.balance + entry.amount;
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: newBalance, updated_at: new Date().toISOString() }
+              : wallet
+          ));
+          
+          // Update wallet balance in backend
+          try {
+            const walletId = (existingWallet as any)._id || existingWallet.id;
+            if (walletId) {
+              apiService.updateFuelWallet(walletId, {
+                name: existingWallet.name,
+                balance: newBalance,
+                updated_at: new Date().toISOString()
+              });
+            }
+          } catch (error) {
+            console.error('❌ Error updating fuel wallet:', error);
+          }
+        }
+        
+        return;
+      }
+      
+      // Create party commission ledger entry for commission payments
+      if (entry.category === 'party_commission' && entry.reference_name) {
+        // Find the party ID for the reference
+        const selectedParty = parties.find(p => p.name === entry.reference_name);
+        const partyId = selectedParty ? selectedParty.id : entry.reference_name;
+        
+        const commissionLedgerEntry: LedgerEntry = {
+          id: `${entry.id}-commission-ledger`,
+          referenceId: partyId,
+          reference_id: entry.id,
+          ledger_type: 'commission',
+          reference_name: selectedParty ? selectedParty.name : entry.reference_name,
+          source_type: 'cashbook',
+          type: 'commission',
+          date: entry.date,
+          description: `Commission Payment – Cash`,
+          narration: `Commission Payment – Cash`,
+          debit: entry.amount,
+          credit: 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          partyId: partyId
+        };
+        
+        setLedgerEntries(prev => [commissionLedgerEntry, ...prev]);
+      }
     },
     deleteCashbookEntry: (id) => {
       setCashbookEntries(prev => prev.filter(e => e.id !== id));
@@ -1362,6 +1628,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setVehicles: (vehicles) => setVehicles(vehicles),
     addFuelWallet: (wallet) => setFuelWallets(prev => [wallet, ...prev]),
     setFuelWallets: (wallets) => setFuelWallets(wallets),
+    setFuelTransactions: (transactions) => setFuelTransactions(transactions),
     getFuelWalletBalance: (walletName) => {
       const wallet = fuelWallets.find(w => w.name === walletName);
       return wallet ? wallet.balance : 0;
@@ -1379,7 +1646,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     getPODFiles: () => {
       return podFiles;
     },
-    allocateFuelToVehicle: async (vehicleNo, walletName, amount, date, narration, fuelQuantity, ratePerLiter, odometerReading) => {
+    allocateFuelToVehicle: async (vehicleNo, walletName, amount, date, narration, fuelQuantity, ratePerLiter, odometerReading, fuelType, allocatedBy) => {
       try {
         // Call backend API to allocate fuel
         const response = await apiService.allocateFuel({
@@ -1390,7 +1657,9 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           narration: narration || `Fuel allocation from ${walletName}`,
           fuel_quantity: fuelQuantity,
           rate_per_liter: ratePerLiter,
-          odometer_reading: odometerReading
+          odometer_reading: odometerReading,
+          fuel_type: fuelType || 'Diesel',
+          allocated_by: allocatedBy || 'System'
         });
 
         console.log('✅ Fuel allocated successfully via backend:', response);

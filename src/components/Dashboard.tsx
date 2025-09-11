@@ -3,7 +3,11 @@ import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt } from 'lucide-
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
 
-const Dashboard: React.FC = () => {
+interface DashboardProps {
+  onNavigate?: (page: string, params?: any) => void;
+}
+
+const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { memos, bills, bankingEntries, loadingSlips, vehicles } = useDataStore();
   
   console.log('🔍 Dashboard data:', {
@@ -202,12 +206,35 @@ const Dashboard: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
+          const isClickable = stat.title === 'Party Balance' || stat.title === 'Supplier Balance';
+          
+          const handleClick = () => {
+            if (!onNavigate) return;
+            
+            if (stat.title === 'Party Balance') {
+              onNavigate('parties');
+            } else if (stat.title === 'Supplier Balance') {
+              onNavigate('suppliers');
+            }
+          };
+          
           return (
-            <div key={`stat-${stat.title}-${index}`} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div 
+              key={`stat-${stat.title}-${index}`} 
+              className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-all duration-200 ${
+                isClickable 
+                  ? 'cursor-pointer hover:shadow-md hover:border-blue-300 hover:bg-blue-50' 
+                  : ''
+              }`}
+              onClick={isClickable ? handleClick : undefined}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">{stat.title}</p>
                   <p className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</p>
+                  {isClickable && (
+                    <p className="text-xs text-blue-600 mt-1">Click to view details →</p>
+                  )}
                 </div>
                 <div className={`w-12 h-12 rounded-lg ${stat.iconBg} flex items-center justify-center`}>
                   <Icon className={`w-6 h-6 ${stat.color.split(' ')[1]}`} />

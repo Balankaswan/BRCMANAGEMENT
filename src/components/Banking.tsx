@@ -21,8 +21,15 @@ const BankingComponent: React.FC = () => {
   const handleCreateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       const response = await apiService.createBankingEntry(entryData);
-      addBankingEntry(response.bankingEntry);
-      console.log('Banking entry created and synced:', response.bankingEntry);
+      const backendEntry = {
+        ...response.bankingEntry,
+        id: response.bankingEntry._id || response.bankingEntry.id
+      };
+      addBankingEntry(backendEntry);
+      console.log('Banking entry created and synced:', backendEntry);
+      
+      // Trigger data sync to refresh all components
+      window.dispatchEvent(new CustomEvent('data-sync-required'));
     } catch (error) {
       console.error('Failed to create banking entry:', error);
       const newEntry: BankingEntry = {
@@ -37,12 +44,22 @@ const BankingComponent: React.FC = () => {
   };
 
   const handleUpdateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at'>) => {
-    if (!editingEntry) return;
+    if (!editingEntry || !editingEntry.id) {
+      console.error('No editing entry or ID provided for update');
+      return;
+    }
     
     try {
       const response = await apiService.updateBankingEntry(editingEntry.id, entryData);
-      updateBankingEntry(editingEntry.id, response.bankingEntry);
-      console.log('Banking entry updated and synced:', response.bankingEntry);
+      const backendEntry = {
+        ...response.bankingEntry,
+        id: response.bankingEntry._id || response.bankingEntry.id
+      };
+      updateBankingEntry(editingEntry.id, backendEntry);
+      console.log('Banking entry updated and synced:', backendEntry);
+      
+      // Trigger data sync to refresh all components
+      window.dispatchEvent(new CustomEvent('data-sync-required'));
     } catch (error) {
       console.error('Failed to update banking entry:', error);
       const updatedEntry: BankingEntry = {
@@ -457,7 +474,7 @@ const BankingComponent: React.FC = () => {
                       }
                       
                       return (
-                        <div key={`${entry.id}-${entryIndex}`} className="px-6 py-4 hover:bg-gray-50">
+                        <div key={`${entry._id || entry.id}-${entryIndex}`} className="px-6 py-4 hover:bg-gray-50">
                           <div className="flex items-center justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-3">
@@ -500,7 +517,7 @@ const BankingComponent: React.FC = () => {
                               </span>
                               <div className="flex items-center space-x-2">
                                 <button
-                                  onClick={() => handleEditEntry(entry)}
+                                  onClick={() => handleEditEntry({...entry, id: entry._id || entry.id})}
                                   className="inline-flex items-center px-2 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded"
                                   title="Edit entry"
                                 >
@@ -571,7 +588,7 @@ const BankingComponent: React.FC = () => {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredEntries.map((entry) => (
-                  <tr key={entry.id} className="hover:bg-gray-50">
+                  <tr key={entry._id || entry.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex items-center space-x-2">
                         <Calendar className="w-4 h-4 text-gray-400" />
@@ -609,14 +626,14 @@ const BankingComponent: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex items-center space-x-2">
                         <button
-                          onClick={() => handleEditEntry(entry)}
+                          onClick={() => handleEditEntry({...entry, id: entry._id || entry.id})}
                           className="inline-flex items-center px-2 py-1 text-xs text-white bg-blue-600 hover:bg-blue-700 rounded"
                           title="Edit entry"
                         >
                           <Edit className="w-3 h-3 mr-1" /> Edit
                         </button>
                         <button
-                          onClick={() => handleDeleteEntry(entry.id)}
+                          onClick={() => handleDeleteEntry(entry._id || entry.id)}
                           className="inline-flex items-center px-2 py-1 text-xs text-white bg-red-600 hover:bg-red-700 rounded"
                           title="Delete entry"
                         >

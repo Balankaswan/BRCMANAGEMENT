@@ -322,7 +322,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
         </div>
       ) : (
         <div className="space-y-4">
-          {memos.map((memo: Memo, index: number) => {
+          {filteredMemos.map((memo: Memo, index: number) => {
             // Handle both cases: loading_slip_id as string or populated object
             const loadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null 
               ? memo.loading_slip_id 

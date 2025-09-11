@@ -1,9 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { apiService } from '../lib/api';
 import { useDataStore } from '../lib/store';
 
 export const useApiSync = () => {
   const store = useDataStore();
+  const [isRealTimeConnected, setIsRealTimeConnected] = useState(false);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
     const syncData = async () => {
@@ -61,14 +63,25 @@ export const useApiSync = () => {
           const fetchedMemos = memosResponse.value.memos || [];
           // Clear and replace with fresh data
           store.setMemos(fetchedMemos);
-          console.log('Memos synced:', fetchedMemos.length);
+          console.log('📋 Memos synced:', fetchedMemos.length);
+          console.log('📋 Sample memo:', fetchedMemos[0] ? {
+            memo_number: fetchedMemos[0].memo_number,
+            loading_slip_id: fetchedMemos[0].loading_slip_id,
+            freight: fetchedMemos[0].freight,
+            supplier: fetchedMemos[0].supplier
+          } : 'No memos');
         }
 
         if (loadingSlipsResponse.status === 'fulfilled') {
           const fetchedSlips = loadingSlipsResponse.value.loadingSlips || [];
           // Clear and replace with fresh data
           store.setLoadingSlips(fetchedSlips);
-          console.log('Loading slips synced:', fetchedSlips.length);
+          console.log('🚛 Loading slips synced:', fetchedSlips.length);
+          console.log('🚛 Sample loading slip:', fetchedSlips[0] ? {
+            id: fetchedSlips[0].id,
+            _id: (fetchedSlips[0] as any)._id,
+            vehicle_no: fetchedSlips[0].vehicle_no
+          } : 'No loading slips');
         }
 
         if (bankingResponse.status === 'fulfilled') {
@@ -107,6 +120,7 @@ export const useApiSync = () => {
         if (fuelWalletsResponse.status === 'fulfilled') {
           const fetchedWallets = fuelWalletsResponse.value.wallets || [];
           console.log('⛽ Fuel wallets synced from backend:', fetchedWallets.length);
+          console.log('⛽ Wallet details:', fetchedWallets.map(w => `${w.name}: ${w.balance}`));
           // Update fuel wallets in store
           store.setFuelWallets(fetchedWallets);
         }
@@ -120,8 +134,10 @@ export const useApiSync = () => {
         }
 
         if (fuelTransactionsResponse.status === 'fulfilled') {
-          // Note: Fuel transactions sync handled separately due to different store structure
-          console.log('Fuel transactions fetched:', fuelTransactionsResponse.value.transactions?.length);
+          const fetchedTransactions = fuelTransactionsResponse.value.transactions || [];
+          console.log('⛽ Fuel transactions synced from backend:', fetchedTransactions.length);
+          // Update fuel transactions in store
+          store.setFuelTransactions(fetchedTransactions);
         }
 
         console.log('Complete data synchronization finished - all modules synced including ledger entries');
@@ -130,11 +146,61 @@ export const useApiSync = () => {
       }
     };
 
+    // Real-time sync connection
+    const connectToRealTimeSync = () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? window.location.origin 
+        : 'http://localhost:5001';
+      
+      const eventSource = new EventSource(`${baseUrl}/api/sync/events`);
+      eventSourceRef.current = eventSource;
+
+      eventSource.onopen = () => {
+        console.log('✅ Real-time sync connected');
+        setIsRealTimeConnected(true);
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const syncEvent = JSON.parse(event.data);
+          
+          if (syncEvent.type === 'data_change') {
+            console.log(`📡 Real-time change detected in ${syncEvent.collection}`);
+            // Trigger data sync when changes are detected
+            setTimeout(() => syncData(), 500);
+          }
+        } catch (error) {
+          console.error('Error parsing sync event:', error);
+        }
+      };
+
+      eventSource.onerror = () => {
+        console.error('❌ Real-time sync error');
+        setIsRealTimeConnected(false);
+        
+        // Attempt to reconnect after 5 seconds
+        setTimeout(() => {
+          if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
+            connectToRealTimeSync();
+          }
+        }, 5000);
+      };
+    };
+
     syncData();
+    connectToRealTimeSync();
     
-    // Cleanup event listener
+    // Cleanup event listener and EventSource
     return () => {
       window.removeEventListener('data-sync-required', () => {});
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
     };
   }, []);
 
@@ -313,6 +379,7 @@ export const useApiSync = () => {
     syncAfterCreate,
     syncAfterUpdate,
     syncAfterDelete,
-    retrySync
+    retrySync,
+    isRealTimeConnected
   };
 };

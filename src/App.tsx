@@ -17,8 +17,10 @@ import PartyLedger from './components/PartyLedger';
 import SupplierLedger from './components/SupplierLedger';
 import GeneralLedger from './components/GeneralLedger';
 import PartyCommissionLedger from './components/PartyCommissionLedger';
-// import PartyMaster from './components/PartyMaster';
-// import SupplierMaster from './components/SupplierMaster';
+import Parties from './components/Parties';
+import PartyDetail from './components/PartyDetail';
+import Suppliers from './components/Suppliers';
+import SupplierDetail from './components/SupplierDetail';
 import FuelManagement from './components/FuelManagement';
 import VehicleLedger from './components/VehicleLedger';
 import VehicleOwnershipManager from './components/VehicleOwnershipManager';
@@ -27,10 +29,16 @@ import { SyncErrorHandler } from './components/SyncErrorHandler';
 const AppContent: React.FC = () => {
   const { user, isLoading } = useAuth();
   const [currentPage, setCurrentPage] = useState('dashboard');
+  const [navigationParams, setNavigationParams] = useState<any>(null);
   const [showLedgerDetail, setShowLedgerDetail] = useState<{
     name: string;
     type: 'party' | 'supplier' | 'general';
   } | null>(null);
+
+  const handleNavigation = (page: string, params?: any) => {
+    setCurrentPage(page);
+    setNavigationParams(params);
+  };
   
   // Initialize API sync when user is authenticated
   useApiSync();
@@ -53,7 +61,7 @@ const AppContent: React.FC = () => {
   const renderCurrentPage = () => {
     switch (currentPage) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard onNavigate={handleNavigation} />;
       case 'loading-slip':
         return <LoadingSlip />;
       case 'memo':
@@ -65,9 +73,21 @@ const AppContent: React.FC = () => {
       case 'received-bills':
         return <Bills showOnlyFullyReceived />;
       case 'parties':
-        return <div className="p-6 bg-white rounded-lg shadow"><h2 className="text-xl font-semibold">Parties</h2><p className="text-gray-600 mt-2">Party management component temporarily disabled due to missing form dependencies.</p></div>;
-      case 'supplier-master':
-        return <div className="p-6 bg-white rounded-lg shadow"><h2 className="text-xl font-semibold">Suppliers</h2><p className="text-gray-600 mt-2">Supplier management component temporarily disabled due to missing form dependencies.</p></div>;
+        return <Parties onNavigate={handleNavigation} />;
+      case 'party-detail':
+        return <PartyDetail 
+          partyId={navigationParams?.partyId} 
+          partyName={navigationParams?.partyName} 
+          onNavigate={handleNavigation} 
+        />;
+      case 'suppliers':
+        return <Suppliers onNavigate={handleNavigation} />;
+      case 'supplier-detail':
+        return <SupplierDetail 
+          supplierId={navigationParams?.supplierId} 
+          supplierName={navigationParams?.supplierName} 
+          onNavigate={handleNavigation} 
+        />;
       case 'party-ledger':
         return <PartyLedger />;
       case 'supplier-ledger':
@@ -91,7 +111,7 @@ const AppContent: React.FC = () => {
       case 'pod':
         return <POD />;
       default:
-        return <Dashboard />;
+        return <Dashboard onNavigate={handleNavigation} />;
     }
   };
 

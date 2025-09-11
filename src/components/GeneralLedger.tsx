@@ -142,8 +142,8 @@ const GeneralLedger: React.FC<GeneralLedgerProps> = ({ selectedPerson }) => {
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="">Select Person/Vendor</option>
-              {persons.map(person => (
-                <option key={person} value={person}>{person}</option>
+              {persons.map((person, index) => (
+                <option key={`${person}-${index}`} value={person}>{person}</option>
               ))}
             </select>
           </div>

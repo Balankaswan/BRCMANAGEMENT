@@ -47,6 +47,22 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Delete all ledger entries (bulk delete)
+router.delete('/all', async (req, res) => {
+  try {
+    const deleteResult = await LedgerEntry.deleteMany({});
+    console.log(`🗑️ Bulk deleted ${deleteResult.deletedCount} ledger entries`);
+    
+    res.json({
+      message: `Successfully deleted ${deleteResult.deletedCount} ledger entries`,
+      deletedCount: deleteResult.deletedCount
+    });
+  } catch (error) {
+    console.error('Bulk delete ledger entries error:', error);
+    res.status(500).json({ message: 'Failed to delete ledger entries', error: error.message });
+  }
+});
+
 // Get ledger summary by reference name
 router.get('/summary/:referenceName', async (req, res) => {
   try {

@@ -15,7 +15,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
   const { memos, bills, ledgerEntries, parties, vehicles } = useDataStore();
   const [formData, setFormData] = useState({
     type: editingEntry?.type || 'credit' as 'credit' | 'debit',
-    category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'other',
+    category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'other',
     amount: editingEntry?.amount || 0,
     date: editingEntry?.date || new Date().toISOString().split('T')[0],
     reference_id: editingEntry?.reference_id || '',
@@ -71,6 +71,38 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
       }
     }
     
+    // Create party commission ledger entry for commission payments
+    if (formData.category === 'party_commission' && formData.reference_name) {
+      // Find the party ID for the reference
+      const selectedParty = parties.find(p => p.name === formData.reference_name);
+      const partyId = selectedParty ? selectedParty.id : formData.reference_name;
+      
+      const commissionLedgerEntry = {
+        referenceId: partyId,
+        ledger_type: 'commission',
+        reference_name: selectedParty ? selectedParty.name : formData.reference_name,
+        type: 'commission',
+        date: formData.date,
+        description: `Commission Payment – Bank Transfer`,
+        narration: `Commission Payment – Bank Transfer`,
+        debit: formData.amount,
+        credit: 0,
+        balance: 0,
+        source_type: 'banking',
+        partyId: partyId
+      };
+      
+      console.log('🔍 Commission ledger entry to create:', commissionLedgerEntry);
+      console.log('🔍 Party ID found:', partyId);
+      
+      try {
+        await apiService.createLedgerEntry(commissionLedgerEntry);
+        console.log('✅ Party commission ledger entry created:', commissionLedgerEntry);
+      } catch (error) {
+        console.error('❌ Failed to create party commission ledger entry:', error);
+      }
+    }
+    
     onSubmit(formData);
   };
 
@@ -108,13 +140,14 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
         { value: 'expense', label: 'General Expense' },
         { value: 'vehicle_expense', label: 'Vehicle Expense' },
         { value: 'fuel_wallet', label: 'Fuel Wallet Credit' },
+        { value: 'party_commission', label: 'Party Commission Payment' },
         { value: 'other', label: 'Other Expense' },
       ];
     }
   };
 
   const needsReference = () => {
-    return ['bill_advance', 'bill_payment', 'memo_advance', 'memo_payment'].includes(formData.category);
+    return ['bill_advance', 'bill_payment', 'memo_advance', 'memo_payment', 'party_commission'].includes(formData.category);
   };
 
   const needsVehicle = () => {
@@ -130,6 +163,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
       return existingBills;
     } else if (formData.category.includes('memo')) {
       return existingMemos;
+    } else if (formData.category === 'party_commission') {
+      return parties.map(p => p.name).filter(Boolean);
     }
     return [];
   };
@@ -143,6 +178,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
       } else if (prev.category.includes('memo')) {
         const memo = memos.find(m => m.memo_number === value);
         reference_name = memo?.supplier || '';
+      } else if (prev.category === 'party_commission') {
+        reference_name = value; // Party name is the reference_name for commission payments
       }
       return {
         ...prev,

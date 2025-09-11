@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Receipt, FileText, CheckCircle, Trash2, Clock } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Receipt, FileText, CheckCircle, Trash2, Clock, Search } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 import { formatCurrency } from '../utils/numberGenerator';
@@ -8,11 +8,37 @@ import type { Memo, Bill } from '../types';
 const MemosAndBills: React.FC = () => {
   const { memos, bills, deleteMemo, deleteBill, markMemoAsPaid, markBillAsReceived } = useDataStore();
   const [activeTab, setActiveTab] = useState<'memos' | 'bills'>('memos');
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const pendingMemos = memos.filter(m => m.status === 'pending');
-  const paidMemos = memos.filter(m => m.status === 'paid');
-  const pendingBills = bills.filter(b => b.status === 'pending');
-  const receivedBills = bills.filter(b => b.status === 'received');
+  // Filter memos and bills based on search term
+  const filteredMemos = useMemo(() => {
+    if (!searchTerm.trim()) return memos;
+    
+    const searchLower = searchTerm.toLowerCase();
+    return memos.filter(memo => 
+      memo.memo_number.toLowerCase().includes(searchLower) ||
+      memo.supplier.toLowerCase().includes(searchLower) ||
+      memo.date.includes(searchTerm) ||
+      memo.net_amount.toString().includes(searchTerm)
+    );
+  }, [memos, searchTerm]);
+
+  const filteredBills = useMemo(() => {
+    if (!searchTerm.trim()) return bills;
+    
+    const searchLower = searchTerm.toLowerCase();
+    return bills.filter(bill => 
+      bill.bill_number.toLowerCase().includes(searchLower) ||
+      bill.party.toLowerCase().includes(searchLower) ||
+      bill.date.includes(searchTerm) ||
+      bill.net_amount.toString().includes(searchTerm)
+    );
+  }, [bills, searchTerm]);
+
+  const pendingMemos = filteredMemos.filter(m => m.status === 'pending');
+  const paidMemos = filteredMemos.filter(m => m.status === 'paid');
+  const pendingBills = filteredBills.filter(b => b.status === 'pending');
+  const receivedBills = filteredBills.filter(b => b.status === 'received');
 
   const handleMarkMemoAsPaid = (memo: Memo) => {
     const paidDate = new Date().toISOString().split('T')[0];
@@ -190,27 +216,42 @@ const MemosAndBills: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Memos & Bills</h1>
-        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
-          <button
-            onClick={() => setActiveTab('memos')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'memos'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Memos
-          </button>
-          <button
-            onClick={() => setActiveTab('bills')}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'bills'
-                ? 'bg-white text-gray-900 shadow-sm'
-                : 'text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            Bills
-          </button>
+        <div className="flex items-center space-x-4">
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input
+              type="text"
+              placeholder={`Search ${activeTab}...`}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+            />
+          </div>
+          
+          {/* Tab Switcher */}
+          <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveTab('memos')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'memos'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Memos
+            </button>
+            <button
+              onClick={() => setActiveTab('bills')}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === 'bills'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              Bills
+            </button>
+          </div>
         </div>
       </div>
 

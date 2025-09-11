@@ -21,7 +21,6 @@ router.get('/', async (req, res) => {
     if (vehicle_no) filter.vehicle_no = new RegExp(vehicle_no, 'i');
 
     const memos = await Memo.find(filter)
-      .populate({ path: 'loading_slip_id', model: 'LoadingSlip' })
       .sort({ createdAt: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
@@ -114,8 +113,11 @@ router.post('/', async (req, res) => {
 // Update memo
 router.put('/:id', async (req, res) => {
   try {
+    console.log(`🔄 Updating memo ${req.params.id}`);
+    
     // Delete existing ledger entries for this memo
-    await LedgerEntry.deleteMany({ referenceId: req.params.id });
+    const deleteResult = await LedgerEntry.deleteMany({ referenceId: req.params.id });
+    console.log(`🗑️ Deleted ${deleteResult.deletedCount} existing ledger entries for memo ${req.params.id}`);
     
     const memo = await Memo.findByIdAndUpdate(
       req.params.id,
@@ -127,7 +129,11 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ message: 'Memo not found' });
     }
 
+    // Wait a moment to ensure deletion is complete
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     // Create new ledger entries with updated memo data
+    console.log(`✨ Creating new ledger entries for updated memo ${memo.memo_number}`);
     await createMemoLedgerEntries(memo);
 
     const memoObj = memo.toObject();
