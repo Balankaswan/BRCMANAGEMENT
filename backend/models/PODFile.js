@@ -35,4 +35,7 @@ const podFileSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Add index to improve query performance and avoid sort memory issues
+podFileSchema.index({ uploadDate: -1 });
+
 export default mongoose.model('PODFile', podFileSchema);

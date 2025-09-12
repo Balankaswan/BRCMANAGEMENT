@@ -12,7 +12,7 @@ interface BankingFormProps {
 }
 
 const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEntry }) => {
-  const { memos, bills, ledgerEntries, parties, vehicles } = useDataStore();
+  const { memos, bills, ledgerEntries, parties, vehicles, loadingSlips } = useDataStore();
   const [formData, setFormData] = useState({
     type: editingEntry?.type || 'credit' as 'credit' | 'debit',
     category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'other',
@@ -294,56 +294,133 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
           </div>
 
           {needsReference() && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="relative">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {formData.category.includes('bill') ? 'Bill Number' : 'Memo Number'}
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    name="reference_id"
-                    value={formData.reference_id}
-                    onChange={handleInputChange}
-                    onFocus={() => setShowReferenceDropdown(true)}
-                    className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder={formData.category.includes('bill') ? 'Select Bill Number' : 'Select Memo Number'}
-                    required
-                  />
-                  <ChevronDown 
-                    className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 cursor-pointer"
-                    onClick={() => setShowReferenceDropdown(!showReferenceDropdown)}
-                  />
-                  {showReferenceDropdown && (
-                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                      {getReferenceOptions().map((option, index) => (
-                        <div
-                          key={index}
-                          className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
-                          onClick={() => handleReferenceSelect(option)}
-                        >
-                          {option}
-                        </div>
+            <>
+              {/* Party Selection for Bill Advance and Bill Payment */}
+              {(formData.category === 'bill_advance' || formData.category === 'bill_payment') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Party
+                  </label>
+                  <div className="relative">
+                    <select
+                      name="reference_name"
+                      value={formData.reference_name}
+                      onChange={(e) => {
+                        const selectedParty = e.target.value;
+                        setFormData(prev => ({
+                          ...prev,
+                          reference_name: selectedParty,
+                          reference_id: '' // Clear bill selection when party changes
+                        }));
+                      }}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">Select Party</option>
+                      {parties.map((party) => (
+                        <option key={party.id} value={party.name}>
+                          {party.name}
+                        </option>
                       ))}
-                    </div>
-                  )}
+                    </select>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  {formData.category.includes('bill') ? 'Party Name' : 'Supplier Name'}
-                </label>
-                <input
-                  type="text"
-                  name="reference_name"
-                  value={formData.reference_name}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder={formData.category.includes('bill') ? 'Enter Party Name' : 'Enter Supplier Name'}
-                  required
-                />
-              </div>
-            </div>
+              )}
+
+              {/* Bill Selection for Bill Advance and Bill Payment */}
+              {(formData.category === 'bill_advance' || formData.category === 'bill_payment') && formData.reference_name && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Bill for {formData.reference_name}
+                  </label>
+                  <div className="relative">
+                    <select
+                      name="reference_id"
+                      value={formData.reference_id}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      required
+                    >
+                      <option value="">Select Bill</option>
+                      {bills
+                        .filter(bill => bill.party === formData.reference_name)
+                        .map((bill, index) => {
+                          // Calculate balance without party commission for banking transactions
+                          const balanceAmount = bill.bill_amount - (bill.party_commission_cut || 0);
+                          
+                          // Get vehicle number from loading slip (bill has populated loading_slip_id object)
+                          const vehicleNo = (bill.loading_slip_id as any)?.vehicle_no || 
+                                          loadingSlips.find(ls => ls.id === bill.loading_slip_id)?.vehicle_no || 
+                                          'N/A';
+                          
+                          return (
+                            <option key={`${bill.id}-${bill.bill_number}-${index}`} value={bill.bill_number}>
+                              {bill.bill_number} - {vehicleNo} - Balance: ₹{formatCurrency(balanceAmount)} ({bill.status})
+                            </option>
+                          );
+                        })}
+                    </select>
+                    {bills.filter(bill => bill.party === formData.reference_name).length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">No bills found for {formData.reference_name}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Reference fields for other categories */}
+              {formData.category !== 'bill_advance' && formData.category !== 'bill_payment' && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {formData.category.includes('bill') ? 'Bill Number' : 'Memo Number'}
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        name="reference_id"
+                        value={formData.reference_id}
+                        onChange={handleInputChange}
+                        onFocus={() => setShowReferenceDropdown(true)}
+                        className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        placeholder={formData.category.includes('bill') ? 'Select Bill Number' : 'Select Memo Number'}
+                        required
+                      />
+                      <ChevronDown 
+                        className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 cursor-pointer"
+                        onClick={() => setShowReferenceDropdown(!showReferenceDropdown)}
+                      />
+                      {showReferenceDropdown && (
+                        <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                          {getReferenceOptions().map((option, index) => (
+                            <div
+                              key={index}
+                              className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
+                              onClick={() => handleReferenceSelect(option)}
+                            >
+                              {option}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      {formData.category.includes('bill') ? 'Party Name' : 'Supplier Name'}
+                    </label>
+                    <input
+                      type="text"
+                      name="reference_name"
+                      value={formData.reference_name}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder={formData.category.includes('bill') ? 'Enter Party Name' : 'Enter Supplier Name'}
+                      required
+                    />
+                  </div>
+                </div>
+              )}
+            </>
           )}
 
           {needsVehicle() && (

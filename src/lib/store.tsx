@@ -773,10 +773,17 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ));
     },
     addBankingEntry: (entry) => {
+      console.log('🔥 Processing banking entry:', entry);
+      
+      // Check if entry already exists to avoid duplicates
+      const exists = bankingEntries.some(e => e.id === entry.id || e._id === entry._id);
+      if (exists) {
+        console.log('🔄 Banking entry already exists, skipping ALL processing:', entry.id || entry._id);
+        return;
+      }
+      
       setBankingEntries(prev => {
-        // Check if entry already exists to avoid duplicates
-        const exists = prev.some(e => e.id === entry.id);
-        if (exists) return prev;
+        console.log('🔥 Adding new banking entry:', entry);
         return [entry, ...prev];
       });
       
@@ -838,6 +845,48 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return;
       }
       
+      // Handle general expense category - create ledger entry with expense name
+      if (entry.category === 'expense' && entry.reference_name && entry.reference_name.trim()) {
+        const expenseName = entry.reference_name.trim();
+        
+        const expenseLedgerEntry: LedgerEntry = {
+          id: `${entry.id}-expense-ledger`,
+          referenceId: entry.id,
+          reference_id: entry.id,
+          ledger_type: 'general',
+          reference_name: expenseName,
+          source_type: 'banking',
+          type: 'expense',
+          date: entry.date,
+          description: `${entry.type === 'debit' ? 'Expense' : 'Income'} - ${expenseName} - ${entry.narration || ''}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          balance: 0,
+          created_at: new Date().toISOString(),
+          vehicle_no: entry.vehicle_no,
+        };
+        
+        setLedgerEntries(prev => [expenseLedgerEntry, ...prev]);
+        
+        // Save expense ledger entry to backend
+        try {
+          const backendLedgerEntry = {
+            ...expenseLedgerEntry,
+            referenceId: expenseLedgerEntry.reference_id || expenseLedgerEntry.id,
+            type: expenseLedgerEntry.type || 'expense'
+          };
+          apiService.createLedgerEntry(backendLedgerEntry).then(() => {
+            console.log('✅ Expense ledger entry saved to backend:', backendLedgerEntry);
+          }).catch(error => {
+            console.error('❌ Failed to save expense ledger entry:', error);
+          });
+        } catch (error) {
+          console.error('❌ Error saving expense ledger entry:', error);
+        }
+        
+        return; // Don't create additional general ledger entry
+      }
+      
       // Handle vehicle expenses for own vehicles - create vehicle ledger debit entry
       if (entry.vehicle_no && entry.category === 'vehicle_expense') {
         const vehicle = vehicles.find(v => v.vehicle_no === entry.vehicle_no);
@@ -868,8 +917,9 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       // Create fuel wallet credit entry for fuel company debits
       if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
+        console.log('🔥 FUEL WALLET PROCESSING - Entry:', entry);
         const walletName = entry.reference_name || entry.narration || 'BPCL';
-        console.log('🔥 Creating fuel wallet credit for:', walletName, 'Amount:', entry.amount);
+        console.log('🔥 FUEL WALLET - Wallet Name:', walletName, 'Amount:', entry.amount);
         
         const fuelTransaction: FuelTransaction = {
           id: `${entry.id}-fuel-tx`,
@@ -886,18 +936,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           console.log('🔥 Adding fuel transaction:', fuelTransaction);
           return [fuelTransaction, ...prev];
         });
-
-        // Create fuel transaction in backend
-        try {
-          apiService.createFuelTransaction(fuelTransaction).then(() => {
-            console.log('✅ Fuel transaction created in backend');
-          }).catch((error: any) => {
-            console.error('❌ Failed to create fuel transaction in backend:', error);
-          });
-        } catch (error) {
-          console.error('❌ Error creating fuel transaction:', error);
-        }
-
+        
         // Update fuel wallet balance
         const existingWallet = fuelWallets.find(w => w.name === walletName);
         if (existingWallet) {
@@ -919,8 +958,6 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
                 updated_at: new Date().toISOString()
               }).then(() => {
                 console.log('✅ Fuel wallet balance updated in backend');
-                // Trigger data sync to refresh UI
-                window.dispatchEvent(new CustomEvent('data-sync-required'));
               }).catch((error: any) => {
                 console.error('❌ Failed to update fuel wallet in backend:', error);
               });
@@ -949,8 +986,6 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           try {
             apiService.createFuelWallet(newWallet).then(() => {
               console.log('✅ Fuel wallet created in backend:', newWallet);
-              // Trigger data sync to refresh UI
-              window.dispatchEvent(new CustomEvent('data-sync-required'));
             }).catch((error: any) => {
               console.error('❌ Failed to create fuel wallet in backend:', error);
             });
@@ -958,6 +993,19 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             console.error('❌ Error creating fuel wallet:', error);
           }
         }
+        
+        // Create fuel transaction in backend
+        try {
+          apiService.createFuelTransaction(fuelTransaction).then(() => {
+            console.log('✅ Fuel transaction created in backend:', fuelTransaction);
+          }).catch((error: any) => {
+            console.error('❌ Failed to create fuel transaction in backend:', error);
+          });
+        } catch (error) {
+          console.error('❌ Error creating fuel transaction:', error);
+        }
+        
+        return; // Don't create general ledger entry for fuel wallet credits
       }
       
       // Create person-specific ledger entry if reference_name contains a person's name
@@ -1161,95 +1209,9 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         }
       }
       
-      // Create fuel wallet credit entry for fuel company debits
+      // Fuel wallet credits are handled in addBankingEntry to avoid duplication
       if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
-        const walletName = entry.reference_name || entry.narration || 'BPCL';
-        
-        const fuelTransaction: FuelTransaction = {
-          id: `${entry.id}-fuel-tx`,
-          wallet_name: walletName,
-          type: 'wallet_credit',
-          amount: entry.amount,
-          date: entry.date,
-          narration: `Bank debit for fuel - ${walletName}`,
-          created_at: new Date().toISOString(),
-          vehicle_no: entry.vehicle_no,
-        };
-        
-        setFuelTransactions(prev => [fuelTransaction, ...prev]);
-        
-        // Update fuel wallet balance
-        const existingWallet = fuelWallets.find(w => w.name === walletName);
-        if (existingWallet) {
-          const newBalance = existingWallet.balance + entry.amount;
-          console.log('🔥 Updating existing wallet:', walletName, 'Current balance:', existingWallet.balance, 'Adding:', entry.amount, 'New balance:', newBalance);
-          setFuelWallets(prev => prev.map(wallet => 
-            wallet.name === walletName 
-              ? { ...wallet, balance: newBalance, updated_at: new Date().toISOString() }
-              : wallet
-          ));
-          
-          // Update wallet balance in backend
-          try {
-            const walletId = (existingWallet as any)._id || existingWallet.id;
-            if (walletId) {
-              apiService.updateFuelWallet(walletId, {
-                name: existingWallet.name,
-                balance: newBalance,
-                updated_at: new Date().toISOString()
-              }).then(() => {
-                console.log('✅ Fuel wallet balance updated in backend');
-              }).catch((error: any) => {
-                console.error('❌ Failed to update fuel wallet in backend:', error);
-              });
-            } else {
-              console.error('❌ No valid wallet ID found for update');
-            }
-          } catch (error) {
-            console.error('❌ Error updating fuel wallet:', error);
-          }
-        } else {
-          console.log('🔥 Creating new fuel wallet:', walletName, 'Initial balance:', entry.amount);
-          // Create new fuel wallet
-          const newWallet = { 
-            id: `wallet-${Date.now()}`,
-            name: walletName, 
-            balance: entry.amount,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          setFuelWallets(prev => {
-            console.log('🔥 Adding new wallet to state:', newWallet);
-            return [...prev, newWallet];
-          });
-          
-          // Also create wallet in backend
-          try {
-            apiService.createFuelWallet(newWallet).then(() => {
-              console.log('✅ Fuel wallet created in backend:', newWallet);
-            }).catch(error => {
-              console.error('❌ Failed to create fuel wallet in backend:', error);
-            });
-          } catch (error) {
-            console.error('❌ Error creating fuel wallet:', error);
-          }
-        }
-        
-        // Create fuel transaction in backend
-        try {
-          apiService.createFuelTransaction(fuelTransaction).then(() => {
-            console.log('✅ Fuel transaction created in backend:', fuelTransaction);
-          }).catch(error => {
-            console.error('❌ Failed to create fuel transaction in backend:', error);
-          });
-        } catch (error) {
-          console.error('❌ Error creating fuel transaction:', error);
-        }
-        
-        // Trigger data sync to refresh fuel management
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-        
-        return;
+        return; // Don't create general ledger entry for fuel wallet credits
       }
       
       // Create person-specific ledger entry if reference_name contains a person's name
@@ -1540,49 +1502,9 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         setLedgerEntries(prev => [ledgerEntry, ...prev]);
       }
       
-      // Create fuel wallet credit entry for fuel company debits
+      // Fuel wallet processing is handled in addBankingEntry only
       if (entry.type === 'debit' && entry.category === 'fuel_wallet') {
-        const walletName = entry.reference_name || entry.narration || 'BPCL';
-        
-        const fuelTransaction: FuelTransaction = {
-          id: `${entry.id}-fuel-tx`,
-          wallet_name: walletName,
-          type: 'wallet_credit',
-          amount: entry.amount,
-          date: entry.date,
-          narration: `Cash debit for fuel - ${walletName}`,
-          created_at: new Date().toISOString(),
-          vehicle_no: entry.vehicle_no,
-        };
-        
-        setFuelTransactions(prev => [fuelTransaction, ...prev]);
-        
-        // Update fuel wallet balance
-        const existingWallet = fuelWallets.find(w => w.name === walletName);
-        if (existingWallet) {
-          const newBalance = existingWallet.balance + entry.amount;
-          setFuelWallets(prev => prev.map(wallet => 
-            wallet.name === walletName 
-              ? { ...wallet, balance: newBalance, updated_at: new Date().toISOString() }
-              : wallet
-          ));
-          
-          // Update wallet balance in backend
-          try {
-            const walletId = (existingWallet as any)._id || existingWallet.id;
-            if (walletId) {
-              apiService.updateFuelWallet(walletId, {
-                name: existingWallet.name,
-                balance: newBalance,
-                updated_at: new Date().toISOString()
-              });
-            }
-          } catch (error) {
-            console.error('❌ Error updating fuel wallet:', error);
-          }
-        }
-        
-        return;
+        return; // Skip fuel wallet processing in addCashbookEntry
       }
       
       // Create party commission ledger entry for commission payments

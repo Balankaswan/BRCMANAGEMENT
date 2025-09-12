@@ -32,9 +32,8 @@ export const useApiSync = () => {
           vehiclesResponse,
           memosResponse,
           loadingSlipsResponse,
-          bankingResponse,
-          ledgerResponse,
-          podFilesResponse,
+          bankingEntriesResponse,
+          ledgerEntriesResponse,
           fuelWalletsResponse,
           fuelTransactionsResponse
         ] = await Promise.allSettled([
@@ -46,7 +45,7 @@ export const useApiSync = () => {
           apiService.getLoadingSlips(),
           apiService.getBankingEntries(),
           apiService.getLedgerEntries(),
-          apiService.getPODFiles(),
+          // apiService.getPODFiles(), // Disabled to avoid MongoDB memory issues
           apiService.getFuelWallets(),
           apiService.getFuelTransactions()
         ]);
@@ -84,8 +83,8 @@ export const useApiSync = () => {
           } : 'No loading slips');
         }
 
-        if (bankingResponse.status === 'fulfilled') {
-          store.setBankingEntries(bankingResponse.value.bankingEntries || []);
+        if (bankingEntriesResponse.status === 'fulfilled') {
+          store.setBankingEntries(bankingEntriesResponse.value.bankingEntries || []);
         }
 
         if (partiesResponse.status === 'fulfilled') {
@@ -112,10 +111,11 @@ export const useApiSync = () => {
           store.setVehicles(fetchedVehicles);
         }
 
-        if (podFilesResponse.status === 'fulfilled') {
-          store.podFiles.forEach(file => store.deletePODFile(file.id));
-          podFilesResponse.value.podFiles?.forEach(file => store.addPODFile(file));
-        }
+        // POD files disabled to avoid MongoDB memory issues
+        // if (podFilesResponse.status === 'fulfilled') {
+        //   store.podFiles.forEach(file => store.deletePODFile(file.id));
+        //   podFilesResponse.value.podFiles?.forEach(file => store.addPODFile(file));
+        // }
 
         if (fuelWalletsResponse.status === 'fulfilled') {
           const fetchedWallets = fuelWalletsResponse.value.wallets || [];
@@ -125,10 +125,10 @@ export const useApiSync = () => {
           store.setFuelWallets(fetchedWallets);
         }
 
-        if (ledgerResponse.status === 'fulfilled') {
-          const fetchedLedgerEntries = ledgerResponse.value.ledgerEntries || [];
+        if (ledgerEntriesResponse.status === 'fulfilled') {
+          const fetchedLedgerEntries = ledgerEntriesResponse.value.ledgerEntries || [];
           console.log('📊 Ledger entries synced from backend:', fetchedLedgerEntries.length,
-            'Vehicle income entries:', fetchedLedgerEntries.filter(e => e.ledger_type === 'vehicle_income').length);
+            'Vehicle income entries:', fetchedLedgerEntries.filter((e: any) => e.ledger_type === 'vehicle_income').length);
           // Replace with fresh data from backend
           store.setLedgerEntries(fetchedLedgerEntries);
         }
@@ -245,9 +245,9 @@ export const useApiSync = () => {
           window.dispatchEvent(new CustomEvent('data-sync-required'));
           break;
         case 'bankingEntry':
-          const bankingResponse = await apiService.createBankingEntry(data);
-          store.addBankingEntry(bankingResponse.bankingEntry);
-          window.dispatchEvent(new CustomEvent('data-sync-required'));
+          // Banking entries are handled directly by Banking component
+          // This case should not be used to avoid double processing
+          console.log('⚠️ useApiSync bankingEntry case called - should be handled by component');
           break;
         default:
           console.warn('Unknown sync type:', type);

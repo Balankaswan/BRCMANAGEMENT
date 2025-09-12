@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Plus, CreditCard, TrendingUp, TrendingDown, Calendar, Trash, Edit } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import BankingForm from './forms/BankingForm';
@@ -6,8 +6,16 @@ import type { BankingEntry } from '../types';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 
-const CashbookComponent: React.FC = () => {
-  const { cashbookEntries: entries, updateCashbookEntry, setCashbookEntries, parties } = useDataStore();
+export default function Cashbook() {
+  const { 
+    cashbookEntries: entries, 
+    setCashbookEntries, 
+    addCashbookEntry,
+    updateCashbookEntry, 
+    parties,
+    bills,
+    loadingSlips
+  } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BankingEntry | null>(null);
 
@@ -51,8 +59,8 @@ const CashbookComponent: React.FC = () => {
         const response = await apiService.createCashbookEntry(entryToCreate);
         const savedEntry = response.cashbookEntry;
         
-        // Add to local store
-        setCashbookEntries([savedEntry, ...entries]);
+        // Add to local store using addCashbookEntry to ensure proper processing
+        addCashbookEntry(savedEntry);
         
         // Create party commission ledger entry for commission payments
         if (entryToCreate.category === 'party_commission' && entryToCreate.reference_name) {
@@ -382,4 +390,4 @@ const CashbookComponent: React.FC = () => {
   );
 };
 
-export default CashbookComponent;
+// Export removed - using default export above

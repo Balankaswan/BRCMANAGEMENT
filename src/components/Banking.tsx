@@ -21,12 +21,14 @@ const BankingComponent: React.FC = () => {
   const handleCreateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       const response = await apiService.createBankingEntry(entryData);
+      console.log('Banking entry created in backend:', response.bankingEntry);
+      
+      // Process the entry directly to ensure fuel wallet logic runs once
       const backendEntry = {
         ...response.bankingEntry,
         id: response.bankingEntry._id || response.bankingEntry.id
       };
       addBankingEntry(backendEntry);
-      console.log('Banking entry created and synced:', backendEntry);
       
       // Trigger data sync to refresh all components
       window.dispatchEvent(new CustomEvent('data-sync-required'));

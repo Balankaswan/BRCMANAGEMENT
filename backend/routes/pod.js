@@ -18,7 +18,6 @@ router.get('/', async (req, res) => {
     if (party) filter.party = new RegExp(party, 'i');
 
     const podFiles = await PODFile.find(filter)
-      .sort({ uploadDate: -1 })
       .limit(limit * 1)
       .skip((page - 1) * limit);
 
