@@ -806,8 +806,44 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return;
       }
       
-      // Skip ledger entries for memo/bill payment categories to avoid duplicates
-      if (['memo_payment', 'bill_payment'].includes(entry.category)) {
+      // Handle bill payment - mark bill as paid and update payment details
+      if (entry.category === 'bill_payment' && entry.reference_id) {
+        setBills(prev => prev.map(bill => 
+          bill.bill_number === entry.reference_id 
+            ? { 
+                ...bill, 
+                status: 'received',
+                received_date: entry.date,
+                received_amount: (bill.received_amount || 0) + entry.amount
+              }
+            : bill
+        ));
+        
+        // Save bill payment to backend
+        try {
+          const billToUpdate = bills.find(b => b.bill_number === entry.reference_id);
+          if (billToUpdate) {
+            const updatedBill = {
+              ...billToUpdate,
+              status: 'received',
+              received_date: entry.date,
+              received_amount: (billToUpdate.received_amount || 0) + entry.amount
+            };
+            
+            apiService.updateBill(billToUpdate.id, updatedBill).then(() => {
+              console.log('✅ Bill payment updated in backend:', updatedBill);
+            }).catch(error => {
+              console.error('❌ Failed to update bill payment in backend:', error);
+            });
+          }
+        } catch (error) {
+          console.error('❌ Error updating bill payment:', error);
+        }
+        return;
+      }
+      
+      // Skip ledger entries for memo payment category to avoid duplicates
+      if (entry.category === 'memo_payment') {
         return;
       }
       
@@ -1142,8 +1178,44 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return;
       }
       
-      // Skip ledger entries for memo/bill payment categories to avoid duplicates
-      if (['memo_payment', 'bill_payment'].includes(entry.category)) {
+      // Handle bill payment - mark bill as paid and update payment details
+      if (entry.category === 'bill_payment' && entry.reference_id) {
+        setBills(prev => prev.map(bill => 
+          bill.bill_number === entry.reference_id 
+            ? { 
+                ...bill, 
+                status: 'received',
+                received_date: entry.date,
+                received_amount: (bill.received_amount || 0) + entry.amount
+              }
+            : bill
+        ));
+        
+        // Save bill payment to backend
+        try {
+          const billToUpdate = bills.find(b => b.bill_number === entry.reference_id);
+          if (billToUpdate) {
+            const updatedBill = {
+              ...billToUpdate,
+              status: 'received',
+              received_date: entry.date,
+              received_amount: (billToUpdate.received_amount || 0) + entry.amount
+            };
+            
+            apiService.updateBill(billToUpdate.id, updatedBill).then(() => {
+              console.log('✅ Bill payment updated in backend:', updatedBill);
+            }).catch(error => {
+              console.error('❌ Failed to update bill payment in backend:', error);
+            });
+          }
+        } catch (error) {
+          console.error('❌ Error updating bill payment:', error);
+        }
+        return;
+      }
+      
+      // Skip ledger entries for memo payment category to avoid duplicates
+      if (entry.category === 'memo_payment') {
         return;
       }
       

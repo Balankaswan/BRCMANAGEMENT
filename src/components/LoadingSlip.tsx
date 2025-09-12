@@ -103,7 +103,27 @@ const LoadingSlipComponent: React.FC = () => {
     }
   };
 
-  const filteredSlips = loadingSlips.filter((slip) => {
+  // Sort loading slips by document number (numeric part) in descending order, then by date
+  const sortedSlips = [...loadingSlips].sort((a, b) => {
+    // Extract numeric part from slip numbers for proper sorting
+    const getNumericPart = (slipNumber: string) => {
+      const match = slipNumber.match(/(\d+)$/);
+      return match ? parseInt(match[1], 10) : 0;
+    };
+    
+    const aNum = getNumericPart(a.slip_number);
+    const bNum = getNumericPart(b.slip_number);
+    
+    // Primary sort: by numeric part of slip number (descending)
+    if (aNum !== bNum) {
+      return bNum - aNum;
+    }
+    
+    // Secondary sort: by date (descending - latest first)
+    return new Date(b.date).getTime() - new Date(a.date).getTime();
+  });
+
+  const filteredSlips = sortedSlips.filter((slip) => {
     if (!search.trim()) return true;
     const memoNumber = memos.find(m => m.loading_slip_id === slip.id)?.memo_number || '';
     const billNumber = bills.find(b => b.loading_slip_id === slip.id)?.bill_number || '';

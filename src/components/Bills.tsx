@@ -202,6 +202,27 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   const filteredBills = useMemo(() => {
     // Main list shows only pending; Received Bills view shows only received
     let base = showOnlyFullyReceived ? bills.filter((b: any) => b.status === 'received') : bills.filter((b: any) => b.status !== 'received');
+    
+    // Sort bills by document number (numeric part) in descending order, then by date
+    base = [...base].sort((a, b) => {
+      // Extract numeric part from bill numbers for proper sorting
+      const getNumericPart = (billNumber: string) => {
+        const match = billNumber.match(/(\d+)$/);
+        return match ? parseInt(match[1], 10) : 0;
+      };
+      
+      const aNum = getNumericPart(a.bill_number);
+      const bNum = getNumericPart(b.bill_number);
+      
+      // Primary sort: by numeric part of bill number (descending)
+      if (aNum !== bNum) {
+        return bNum - aNum;
+      }
+      
+      // Secondary sort: by date (descending - latest first)
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+    
     // Optional strict settlement check (kept)
     if (showOnlyFullyReceived) {
       base = base.filter(b => {

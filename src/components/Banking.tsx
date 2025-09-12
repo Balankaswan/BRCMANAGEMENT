@@ -169,7 +169,8 @@ const BankingComponent: React.FC = () => {
       });
     }
 
-    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Latest first
+    // Sort banking entries by date (descending - latest first) for better transaction visibility
+    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [entries, search, dateFilter, customDateRange]);
 
   // Calculate balances for bank entries only (exclude cash)

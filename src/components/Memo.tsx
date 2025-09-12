@@ -233,6 +233,27 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
   const filteredMemos = useMemo(() => {
     // Main list shows only pending; Paid Memo view shows only paid
     let base = showOnlyFullyPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
+    
+    // Sort memos by document number (numeric part) in descending order, then by date
+    base = [...base].sort((a, b) => {
+      // Extract numeric part from memo numbers for proper sorting
+      const getNumericPart = (memoNumber: string) => {
+        const match = memoNumber.match(/(\d+)$/);
+        return match ? parseInt(match[1], 10) : 0;
+      };
+      
+      const aNum = getNumericPart(a.memo_number);
+      const bNum = getNumericPart(b.memo_number);
+      
+      // Primary sort: by numeric part of memo number (descending)
+      if (aNum !== bNum) {
+        return bNum - aNum;
+      }
+      
+      // Secondary sort: by date (descending - latest first)
+      return new Date(b.date).getTime() - new Date(a.date).getTime();
+    });
+    
     // Optional strict settlement check (kept, in case amounts changed)
     if (showOnlyFullyPaid) {
       base = base.filter(m => {
