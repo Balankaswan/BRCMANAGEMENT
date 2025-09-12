@@ -65,7 +65,7 @@ export interface Bill {
   status: 'pending' | 'received';
   received_date?: string;
   received_amount?: number;
-  pod_image?: string;
+  // pod_image removed to optimize storage
   advance_payments?: AdvancePayment[];
   narration?: string;
   created_at: string;

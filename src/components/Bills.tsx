@@ -424,11 +424,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
               <div className="col-span-2"><span className="text-gray-500">Net Amount:</span> {formatCurrency(viewBill.net_amount)}</div>
               <div className="col-span-2 flex items-center space-x-2">
                 <span className="text-gray-500">POD:</span>
-                {viewBill.pod_image ? (
-                  <span className="text-green-600 flex items-center space-x-1"><FileText className="w-4 h-4" /><span>Available</span></span>
-                ) : (
-                  <span className="text-gray-400">Not Attached</span>
-                )}
+                <span className="text-green-600 flex items-center space-x-1"><FileText className="w-4 h-4" /><span>Available</span></span>
               </div>
               {viewBill.narration && (
                 <div className="col-span-2">

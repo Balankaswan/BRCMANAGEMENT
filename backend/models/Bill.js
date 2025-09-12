@@ -99,9 +99,7 @@ const billSchema = new mongoose.Schema({
     type: Number,
     min: 0
   },
-  pod_image: {
-    type: String // Base64 encoded image
-  },
+  // pod_image removed to optimize storage
   advance_payments: [advancePaymentSchema],
   narration: {
     type: String,

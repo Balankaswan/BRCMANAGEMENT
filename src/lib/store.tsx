@@ -368,21 +368,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       const ls = loadingSlips.find(s => s.id === bill.loading_slip_id);
       
-      // Add POD file if present
-      if (bill.pod_image) {
-        const podFile = {
-          id: `${bill.id}-pod`,
-          filename: `POD_${bill.bill_number}.jpg`,
-          fileData: bill.pod_image,
-          fileType: 'image/jpeg',
-          billNo: bill.bill_number,
-          vehicleNo: ls?.vehicle_no,
-          party: bill.party,
-          uploadDate: new Date().toISOString(),
-          created_at: new Date().toISOString()
-        };
-        setPodFiles(prev => [podFile, ...prev]);
-      }
+      // POD system removed to optimize storage
       
       // Create professional party ledger entries for bill
       const ledgerEntries: LedgerEntry[] = [];
@@ -560,27 +546,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       
       const ls = loadingSlips.find(s => s.id === bill.loading_slip_id);
       
-      // Update or add POD file if present
-      if (bill.pod_image) {
-        const existingPodIndex = podFiles.findIndex(p => p.id === `${bill.id}-pod`);
-        const podFile = {
-          id: `${bill.id}-pod`,
-          filename: `POD_${bill.bill_number}.jpg`,
-          fileData: bill.pod_image,
-          fileType: 'image/jpeg',
-          billNo: bill.bill_number,
-          vehicleNo: ls?.vehicle_no,
-          party: bill.party,
-          uploadDate: new Date().toISOString(),
-          created_at: new Date().toISOString()
-        };
-        
-        if (existingPodIndex >= 0) {
-          setPodFiles(prev => prev.map((p, i) => i === existingPodIndex ? podFile : p));
-        } else {
-          setPodFiles(prev => [podFile, ...prev]);
-        }
-      }
+      // POD system removed to optimize storage
       
       // Remove old ledger entries for this bill
       setLedgerEntries(prev => prev.filter(entry => 

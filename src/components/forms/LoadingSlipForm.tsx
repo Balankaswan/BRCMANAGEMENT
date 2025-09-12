@@ -31,8 +31,22 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
     narration: '',
   });
 
-  // Sample data for autocomplete - in real app, this would come from database
-  const [locations] = useState(['HAZIRA', 'HYD', 'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Ahmedabad']);
+  // Indian cities and locations for autocomplete
+  const [locations] = useState([
+    'HAZIRA', 'HYD', 'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Ahmedabad', 'Kolkata', 'Jaipur',
+    'Lucknow', 'Kanpur', 'Nagpur', 'Indore', 'Thane', 'Bhopal', 'Visakhapatnam', 'Pimpri-Chinchwad',
+    'Patna', 'Vadodara', 'Ghaziabad', 'Ludhiana', 'Agra', 'Nashik', 'Faridabad', 'Meerut', 'Rajkot',
+    'Kalyan-Dombivali', 'Vasai-Virar', 'Varanasi', 'Srinagar', 'Aurangabad', 'Dhanbad', 'Amritsar',
+    'Navi Mumbai', 'Allahabad', 'Ranchi', 'Howrah', 'Coimbatore', 'Jabalpur', 'Gwalior', 'Vijayawada',
+    'Jodhpur', 'Madurai', 'Raipur', 'Kota', 'Guwahati', 'Chandigarh', 'Solapur', 'Hubli-Dharwad',
+    'Bareilly', 'Moradabad', 'Mysore', 'Gurgaon', 'Aligarh', 'Jalandhar', 'Tiruchirappalli', 'Bhubaneswar',
+    'Salem', 'Mira-Bhayandar', 'Warangal', 'Thiruvananthapuram', 'Guntur', 'Bhiwandi', 'Saharanpur',
+    'Gorakhpur', 'Bikaner', 'Amravati', 'Noida', 'Jamshedpur', 'Bhilai', 'Cuttack', 'Firozabad',
+    'Kochi', 'Nellore', 'Bhavnagar', 'Dehradun', 'Durgapur', 'Asansol', 'Rourkela', 'Nanded',
+    'Kolhapur', 'Ajmer', 'Akola', 'Gulbarga', 'Jamnagar', 'Ujjain', 'Loni', 'Siliguri', 'Jhansi',
+    'Ulhasnagar', 'Jammu', 'Sangli-Miraj & Kupwad', 'Mangalore', 'Erode', 'Belgaum', 'Ambattur',
+    'Tirunelveli', 'Malegaon', 'Gaya', 'Jalgaon', 'Udaipur', 'Maheshtala'
+  ]);
   const [showNewPartyForm, setShowNewPartyForm] = useState(false);
   const [showNewSupplierForm, setShowNewSupplierForm] = useState(false);
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false);
@@ -248,14 +262,22 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
   };
 
   const filterOptions = (options: any[], searchTerm: string) => {
-    // Remove duplicates by vehicle_no first, then filter by search term
+    // Remove duplicates first, then filter by search term
     const uniqueOptions = options.reduce((acc: any[], option: any) => {
-      const vehicleNo = typeof option === 'string' ? option : option.vehicle_no;
-      if (!acc.find((item: any) => (typeof item === 'string' ? item : item.vehicle_no) === vehicleNo)) {
+      const optionValue = typeof option === 'string' ? option : option.vehicle_no || option.name || '';
+      if (!acc.find((item: any) => {
+        const itemValue = typeof item === 'string' ? item : item.vehicle_no || item.name || '';
+        return itemValue === optionValue;
+      })) {
         acc.push(option);
       }
       return acc;
     }, []);
+    
+    // If no search term, return all unique options
+    if (!searchTerm || searchTerm.trim() === '') {
+      return uniqueOptions;
+    }
     
     return uniqueOptions.filter((option: any) => {
       const optionText = typeof option === 'string' ? option : option.vehicle_no || option.name || '';
@@ -326,7 +348,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                 />
                 {showPartyDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {[...new Set(parties.map(party => party.name))].map((partyName) => (
+                    {filterOptions(parties.map(party => party.name), formData.party).map((partyName) => (
                       <div
                         key={partyName}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
@@ -434,7 +456,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                 />
                 {showSupplierDropdown && (
                   <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                    {[...new Set(suppliers.map(supplier => supplier.name))].map((supplierName) => (
+                    {filterOptions(suppliers.map(supplier => supplier.name), formData.supplier).map((supplierName) => (
                       <div
                         key={supplierName}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
