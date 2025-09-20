@@ -50,25 +50,71 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     console.log('Total bills:', bills.length);
     console.log('Total banking entries:', bankingEntries.length);
     
+    let totalBillAmount = 0;
+    let totalPayments = 0;
+    
     const balance = bills.reduce((sum, bill) => {
+      // Calculate total bill amount (what party owes)
+      const billAmount = bill.bill_amount || 0;
+      const detention = bill.detention || 0;
+      const extra = bill.extra || 0;
+      const rto = bill.rto || 0;
+      const mamool = bill.mamool || 0;
+      const tds = bill.tds || 0;
+      const penalties = bill.penalties || 0;
+      
+      // Net amount party owes = Bill Amount + Extras - Deductions
+      const partyOwes = billAmount + detention + extra + rto - mamool - tds - penalties;
+      
+      // Find all payments for this bill
       const billPayments = bankingEntries
         .filter(entry => {
           const matchesReference = entry.reference_id === bill.bill_number;
           const isCredit = entry.type === 'credit';
-          const isBillPayment = entry.category === 'bill_payment' || entry.category === 'party_on_account';
-          return matchesReference && isCredit && isBillPayment;
+          // Include all credit entries that reference this bill
+          return matchesReference && isCredit;
         })
-        .reduce((total, entry) => total + entry.amount, 0);
+        .reduce((total, entry) => {
+          console.log(`  Payment found: ${entry.category} - ₹${entry.amount}`);
+          return total + entry.amount;
+        }, 0);
       
-      const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
       const billBalance = partyOwes - billPayments;
       
-      console.log(`Bill ${bill.bill_number}: Owes ₹${partyOwes}, Paid ₹${billPayments}, Balance ₹${billBalance}`);
+      // Only include positive balances (pending amounts)
+      const pendingAmount = Math.max(0, billBalance);
       
-      return sum + billBalance;
+      totalBillAmount += partyOwes;
+      totalPayments += billPayments;
+      
+      console.log(`Bill ${bill.bill_number}:`);
+      console.log(`  Bill Amount: ₹${billAmount}, Detention: ₹${detention}, Extra: ₹${extra}, RTO: ₹${rto}`);
+      console.log(`  Mamool: ₹${mamool}, TDS: ₹${tds}, Penalties: ₹${penalties}`);
+      console.log(`  Party Owes: ₹${partyOwes}, Paid: ₹${billPayments}, Pending: ₹${pendingAmount}`);
+      
+      return sum + pendingAmount;
     }, 0);
     
-    console.log('💰 Total Party Balance:', balance);
+    console.log('📊 Party Balance Summary:');
+    console.log(`  Total Bill Amount: ₹${totalBillAmount}`);
+    console.log(`  Total Payments: ₹${totalPayments}`);
+    console.log(`  💰 Total Pending (Party Balance): ₹${balance}`);
+    
+    // Verification: Simple calculation
+    const simpleTotalBills = bills.reduce((sum, bill) => {
+      const netAmount = (bill.bill_amount || 0) + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+      return sum + netAmount;
+    }, 0);
+    
+    const simpleTotalPayments = bankingEntries
+      .filter(entry => entry.type === 'credit' && bills.some(bill => bill.bill_number === entry.reference_id))
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    console.log('🔍 Verification:');
+    console.log(`  Simple Total Bills: ₹${simpleTotalBills}`);
+    console.log(`  Simple Total Payments: ₹${simpleTotalPayments}`);
+    console.log(`  Simple Balance: ₹${Math.max(0, simpleTotalBills - simpleTotalPayments)}`);
+    
     return balance;
   }, [bills, bankingEntries]);
 

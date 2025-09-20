@@ -24,7 +24,9 @@ export const useApiSync = () => {
         
         window.addEventListener('data-sync-required', handleSyncEvent);
         
-        // Fetch all data from API and update local store
+        // Fetch ALL data from API with high limits to ensure complete import
+        console.log('🔄 Starting COMPLETE MongoDB data import...');
+        console.log('🎯 Target: Import ALL bills, memos, and loading slips from MongoDB');
         const [
           billsResponse,
           partiesResponse,
@@ -38,51 +40,197 @@ export const useApiSync = () => {
           fuelWalletsResponse,
           fuelTransactionsResponse
         ] = await Promise.allSettled([
-          apiService.getBills(),
-          apiService.getParties(),
-          apiService.getSuppliers(),
-          apiService.getVehicles(),
-          apiService.getMemos(),
-          apiService.getLoadingSlips(),
+          apiService.getBills({ limit: 1000 }), // Get ALL bills
+          apiService.getParties({ limit: 1000 }), // Get ALL parties  
+          apiService.getSuppliers({ limit: 1000 }), // Get ALL suppliers
+          apiService.getVehicles({ limit: 1000 }), // Get ALL vehicles
+          apiService.getMemos({ limit: 1000 }), // Get ALL memos
+          apiService.getLoadingSlips({ limit: 1000 }), // Get ALL loading slips
           apiService.getBankingEntries(),
           apiService.getCashbookEntries(),
-          apiService.getLedgerEntries(),
-          // apiService.getPODFiles(), // Disabled to avoid MongoDB memory issues
+          apiService.getLedgerEntries({ limit: 1000 }), // Get ALL ledger entries
           apiService.getFuelWallets(),
-          apiService.getFuelTransactions()
+          apiService.getFuelTransactions({ limit: 1000 }) // Get ALL fuel transactions
         ]);
 
-        // Update store with fetched data - improved sync accuracy
+        // BULLETPROOF BILLS IMPORT AND SYNC
         if (billsResponse.status === 'fulfilled') {
           const fetchedBills = billsResponse.value.bills || [];
-          // Clear and replace with fresh data
-          store.setBills(fetchedBills);
-          console.log('Bills synced:', fetchedBills.length);
+          const currentBills = store.bills;
+          
+          console.log('💾 BILLS SYNC START');
+          console.log('📊 MongoDB Bills Available:', fetchedBills.length);
+          console.log('🏪 Current Store Bills:', currentBills.length);
+          
+          if (fetchedBills.length === 0) {
+            console.error('❌ NO BILLS FETCHED FROM MONGODB! Check API response.');
+            console.log('API Response:', billsResponse.value);
+          }
+          
+          // ALWAYS ENSURE COMPLETE MONGODB DATA IS IMPORTED
+          if (fetchedBills.length > 0) {
+            // Create comprehensive ID mapping for both current and fetched bills
+            const allBillsMap = new Map();
+            
+            // First, add all current bills to preserve them
+            currentBills.forEach(bill => {
+              const billId = bill.id || (bill as any)._id || bill.bill_number;
+              if (billId) {
+                allBillsMap.set(billId, bill);
+              }
+            });
+            
+            // Then, add/update with MongoDB bills (this ensures MongoDB data is authoritative)
+            fetchedBills.forEach(fetchedBill => {
+              const billId = fetchedBill.id || (fetchedBill as any)._id || fetchedBill.bill_number;
+              if (billId) {
+                // Ensure bill has proper ID field for frontend compatibility
+                const billWithId = {
+                  ...fetchedBill,
+                  id: fetchedBill.id || (fetchedBill as any)._id
+                };
+                allBillsMap.set(billId, billWithId);
+              }
+            });
+            
+            // Convert map back to array, sorted by creation date (newest first)
+            const completeBills = Array.from(allBillsMap.values()).sort((a, b) => {
+              const dateA = new Date(a.created_at || a.date || 0).getTime();
+              const dateB = new Date(b.created_at || b.date || 0).getTime();
+              return dateB - dateA;
+            });
+            
+            // Update store with complete dataset
+            store.setBills(completeBills);
+            
+            console.log('✅ BILLS FULLY SYNCED');
+            console.log('📈 Total Bills in Store:', completeBills.length);
+            console.log('🔄 MongoDB Import Complete');
+          } else {
+            console.log('⚠️ No bills fetched from MongoDB');
+          }
         }
 
+        // BULLETPROOF MEMOS IMPORT AND SYNC
         if (memosResponse.status === 'fulfilled') {
           const fetchedMemos = memosResponse.value.memos || [];
-          // Clear and replace with fresh data
-          store.setMemos(fetchedMemos);
-          console.log('📋 Memos synced:', fetchedMemos.length);
-          console.log('📋 Sample memo:', fetchedMemos[0] ? {
-            memo_number: fetchedMemos[0].memo_number,
-            loading_slip_id: fetchedMemos[0].loading_slip_id,
-            freight: fetchedMemos[0].freight,
-            supplier: fetchedMemos[0].supplier
-          } : 'No memos');
+          const currentMemos = store.memos;
+          
+          console.log('💾 MEMOS SYNC START');
+          console.log('📊 MongoDB Memos Available:', fetchedMemos.length);
+          console.log('🏪 Current Store Memos:', currentMemos.length);
+          
+          if (fetchedMemos.length === 0) {
+            console.error('❌ NO MEMOS FETCHED FROM MONGODB! Check API response.');
+            console.log('API Response:', memosResponse.value);
+          }
+          
+          // ALWAYS ENSURE COMPLETE MONGODB DATA IS IMPORTED
+          if (fetchedMemos.length > 0) {
+            // Create comprehensive ID mapping for both current and fetched memos
+            const allMemosMap = new Map();
+            
+            // First, add all current memos to preserve them
+            currentMemos.forEach(memo => {
+              const memoId = memo.id || (memo as any)._id || memo.memo_number;
+              if (memoId) {
+                allMemosMap.set(memoId, memo);
+              }
+            });
+            
+            // Then, add/update with MongoDB memos (this ensures MongoDB data is authoritative)
+            fetchedMemos.forEach(fetchedMemo => {
+              const memoId = fetchedMemo.id || (fetchedMemo as any)._id || fetchedMemo.memo_number;
+              if (memoId) {
+                // Ensure memo has proper ID field for frontend compatibility
+                const memoWithId = {
+                  ...fetchedMemo,
+                  id: fetchedMemo.id || (fetchedMemo as any)._id
+                };
+                allMemosMap.set(memoId, memoWithId);
+              }
+            });
+            
+            // Convert map back to array, sorted by creation date (newest first)
+            const completeMemos = Array.from(allMemosMap.values()).sort((a, b) => {
+              const dateA = new Date(a.created_at || a.date || 0).getTime();
+              const dateB = new Date(b.created_at || b.date || 0).getTime();
+              return dateB - dateA;
+            });
+            
+            // Update store with complete dataset
+            store.setMemos(completeMemos);
+            
+            console.log('✅ MEMOS FULLY SYNCED');
+            console.log('📈 Total Memos in Store:', completeMemos.length);
+            console.log('🔄 MongoDB Import Complete');
+            console.log('📋 Sample memo:', completeMemos[0] ? {
+              memo_number: completeMemos[0].memo_number,
+              loading_slip_id: completeMemos[0].loading_slip_id,
+              freight: completeMemos[0].freight,
+              supplier: completeMemos[0].supplier
+            } : 'No memos');
+          } else {
+            console.log('⚠️ No memos fetched from MongoDB');
+          }
         }
 
+        // BULLETPROOF LOADING SLIPS IMPORT AND SYNC
         if (loadingSlipsResponse.status === 'fulfilled') {
           const fetchedSlips = loadingSlipsResponse.value.loadingSlips || [];
-          // Clear and replace with fresh data
-          store.setLoadingSlips(fetchedSlips);
-          console.log('🚛 Loading slips synced:', fetchedSlips.length);
-          console.log('🚛 Sample loading slip:', fetchedSlips[0] ? {
-            id: fetchedSlips[0].id,
-            _id: (fetchedSlips[0] as any)._id,
-            vehicle_no: fetchedSlips[0].vehicle_no
-          } : 'No loading slips');
+          const currentSlips = store.loadingSlips;
+          
+          console.log('💾 LOADING SLIPS SYNC START');
+          console.log('📊 MongoDB Loading Slips Available:', fetchedSlips.length);
+          console.log('🏪 Current Store Loading Slips:', currentSlips.length);
+          
+          if (fetchedSlips.length === 0) {
+            console.error('❌ NO LOADING SLIPS FETCHED FROM MONGODB! Check API response.');
+            console.log('API Response:', loadingSlipsResponse.value);
+          }
+          
+          // ALWAYS ENSURE COMPLETE MONGODB DATA IS IMPORTED
+          if (fetchedSlips.length > 0) {
+            // Create comprehensive ID mapping for both current and fetched slips
+            const allSlipsMap = new Map();
+            
+            // First, add all current slips to preserve them
+            currentSlips.forEach(slip => {
+              const slipId = slip.id || (slip as any)._id || slip.slip_number;
+              if (slipId) {
+                allSlipsMap.set(slipId, slip);
+              }
+            });
+            
+            // Then, add/update with MongoDB slips (this ensures MongoDB data is authoritative)
+            fetchedSlips.forEach(fetchedSlip => {
+              const slipId = fetchedSlip.id || (fetchedSlip as any)._id || fetchedSlip.slip_number;
+              if (slipId) {
+                // Ensure slip has proper ID field for frontend compatibility
+                const slipWithId = {
+                  ...fetchedSlip,
+                  id: fetchedSlip.id || (fetchedSlip as any)._id
+                };
+                allSlipsMap.set(slipId, slipWithId);
+              }
+            });
+            
+            // Convert map back to array, sorted by creation date (newest first)
+            const completeSlips = Array.from(allSlipsMap.values()).sort((a, b) => {
+              const dateA = new Date(a.created_at || a.date || 0).getTime();
+              const dateB = new Date(b.created_at || b.date || 0).getTime();
+              return dateB - dateA;
+            });
+            
+            // Update store with complete dataset
+            store.setLoadingSlips(completeSlips);
+            
+            console.log('✅ LOADING SLIPS FULLY SYNCED');
+            console.log('📈 Total Loading Slips in Store:', completeSlips.length);
+            console.log('🔄 MongoDB Import Complete');
+          } else {
+            console.log('⚠️ No loading slips fetched from MongoDB');
+          }
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
@@ -217,6 +365,8 @@ export const useApiSync = () => {
     try {
       switch (type) {
         case 'bill':
+          // Mark bill creation timestamp to prevent immediate sync overwrite
+          localStorage.setItem('lastBillCreation', Date.now().toString());
           const billResponse = await apiService.createBill(data);
           store.addBill(billResponse.bill);
           // Trigger sync event for other components
@@ -228,6 +378,8 @@ export const useApiSync = () => {
             console.error('ERROR: loading_slip_id is missing from memo data!');
             throw new Error('loading_slip_id is required for memo creation');
           }
+          // Mark memo creation timestamp to prevent immediate sync overwrite
+          localStorage.setItem('lastMemoCreation', Date.now().toString());
           const memoResponse = await apiService.createMemo(data);
           store.addMemo(memoResponse.memo);
           window.dispatchEvent(new CustomEvent('data-sync-required'));

@@ -440,6 +440,9 @@ const LoadingSlipComponent: React.FC = () => {
                 throw new Error('Loading slip ID is missing - cannot create memo');
               }
               
+              // Mark memo creation timestamp to prevent immediate sync overwrite
+              localStorage.setItem('lastMemoCreation', Date.now().toString());
+              
               // Create memo directly via API service to bypass sync issues
               const response = await apiService.createMemo(memoDataWithSlipId);
               console.log('Memo created successfully:', response);
@@ -490,6 +493,9 @@ const LoadingSlipComponent: React.FC = () => {
               if (!billDataWithSlipId.loading_slip_id) {
                 throw new Error('Loading slip ID is missing - cannot create bill');
               }
+              
+              // Mark bill creation timestamp to prevent immediate sync overwrite
+              localStorage.setItem('lastBillCreation', Date.now().toString());
               
               // Create bill directly via API service to bypass sync issues
               const response = await apiService.createBill(billDataWithSlipId);
