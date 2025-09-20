@@ -46,20 +46,40 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
   // Calculate party balance (bills due from parties) - OVERALL, not filtered by month
   const partyBalance = useMemo(() => {
-    return bills.reduce((sum, bill) => {
+    console.log('🔄 Calculating Party Balance...');
+    console.log('Total bills:', bills.length);
+    console.log('Total banking entries:', bankingEntries.length);
+    
+    const balance = bills.reduce((sum, bill) => {
       const billPayments = bankingEntries
-        .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
+        .filter(entry => {
+          const matchesReference = entry.reference_id === bill.bill_number;
+          const isCredit = entry.type === 'credit';
+          const isBillPayment = entry.category === 'bill_payment' || entry.category === 'party_on_account';
+          return matchesReference && isCredit && isBillPayment;
+        })
         .reduce((total, entry) => total + entry.amount, 0);
       
       const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+      const billBalance = partyOwes - billPayments;
       
-      return sum + (partyOwes - billPayments);
+      console.log(`Bill ${bill.bill_number}: Owes ₹${partyOwes}, Paid ₹${billPayments}, Balance ₹${billBalance}`);
+      
+      return sum + billBalance;
     }, 0);
+    
+    console.log('💰 Total Party Balance:', balance);
+    return balance;
   }, [bills, bankingEntries]);
 
   // Calculate supplier balance (memos due to suppliers - ONLY market vehicles) - OVERALL, not filtered by month
   const supplierBalance = useMemo(() => {
-    return memos.reduce((sum, memo) => {
+    console.log('🔄 Calculating Supplier Balance...');
+    console.log('Total memos:', memos.length);
+    console.log('Total loading slips:', loadingSlips.length);
+    console.log('Total vehicles:', vehicles.length);
+    
+    const balance = memos.reduce((sum, memo) => {
       // Handle both string loading_slip_id and populated object
       let loadingSlipId: string;
       if (typeof memo.loading_slip_id === 'string') {
@@ -67,6 +87,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       } else if (memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
         loadingSlipId = (memo.loading_slip_id as any)._id || (memo.loading_slip_id as any).id;
       } else {
+        console.log(`Memo ${memo.memo_number}: No loading slip ID`);
         return sum;
       }
       
@@ -78,16 +99,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         return idMatch || objectIdMatch || objectIdStringMatch;
       });
       
-      const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
-      
-      // Only include market vehicles in supplier balance
-      if (vehicle?.ownership_type !== 'market') {
+      if (!ls) {
+        console.log(`Memo ${memo.memo_number}: Loading slip not found for ID ${loadingSlipId}`);
         return sum;
       }
       
-      return sum + memo.net_amount;
+      const vehicle = vehicles.find(v => v.vehicle_no === ls.vehicle_no);
+      
+      if (!vehicle) {
+        console.log(`Memo ${memo.memo_number}: Vehicle not found for ${ls.vehicle_no}`);
+        return sum;
+      }
+      
+      console.log(`Memo ${memo.memo_number}: Vehicle ${ls.vehicle_no}, Ownership: ${vehicle.ownership_type}, Amount: ₹${memo.net_amount}`);
+      
+      // Only include market vehicles in supplier balance
+      if (vehicle.ownership_type !== 'market') {
+        console.log(`Skipping memo ${memo.memo_number} - not market vehicle (${vehicle.ownership_type})`);
+        return sum;
+      }
+      
+      // Check if memo has been paid (subtract payments from banking entries)
+      const memoPayments = bankingEntries
+        .filter(entry => {
+          const matchesReference = entry.reference_id === memo.memo_number;
+          const isDebit = entry.type === 'debit';
+          const isMemoPayment = entry.category === 'memo_payment' || entry.category === 'supplier_payment';
+          return matchesReference && isDebit && isMemoPayment;
+        })
+        .reduce((total, entry) => total + entry.amount, 0);
+      
+      const memoBalance = memo.net_amount - memoPayments;
+      console.log(`Memo ${memo.memo_number}: Owes ₹${memo.net_amount}, Paid ₹${memoPayments}, Balance ₹${memoBalance}`);
+      
+      return sum + memoBalance;
     }, 0);
-  }, [memos, loadingSlips, vehicles]);
+    
+    console.log('💰 Total Supplier Balance:', balance);
+    return balance;
+  }, [memos, loadingSlips, vehicles, bankingEntries]);
 
   // Calculate monthly revenue (total bill amounts)
   const monthlyRevenue = useMemo(() => {

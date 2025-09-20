@@ -1,5 +1,28 @@
 import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 import { formatCurrency } from './numberGenerator';
+
+// Test function to verify libraries are working
+export const testLibraries = () => {
+  try {
+    console.log('🧪 Testing jsPDF...');
+    const testDoc = new jsPDF();
+    console.log('✅ jsPDF working:', typeof testDoc);
+    
+    console.log('🧪 Testing XLSX...');
+    const testWB = XLSX.utils.book_new();
+    console.log('✅ XLSX working:', typeof testWB);
+    
+    console.log('🧪 Testing formatCurrency...');
+    const testCurrency = formatCurrency(12345);
+    console.log('✅ formatCurrency working:', testCurrency);
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Library test failed:', error);
+    return false;
+  }
+};
 
 interface LedgerEntry {
   date: string;
@@ -35,6 +58,14 @@ interface LedgerOptions {
 
 export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
   try {
+    console.log('🔄 Starting PDF generation...');
+    console.log('Options received:', { 
+      type: options.type, 
+      name: options.name, 
+      entriesCount: options.entries.length,
+      totals: options.totals 
+    });
+    
     // Create a new PDF document
     const doc = new jsPDF('l', 'mm', 'a4'); // Landscape for better table fit
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -221,16 +252,23 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     doc.save(filename);
     
     return doc;
-  } catch (error) {
-    console.error('Error generating PDF:', error);
-    throw error;
+  } catch (error: any) {
+    console.error('❌ PDF Generation Error Details:');
+    console.error('Error object:', error);
+    console.error('Error message:', error?.message || 'No message available');
+    console.error('Error stack:', error?.stack || 'No stack trace available');
+    console.error('Error name:', error?.name || 'Unknown error type');
+    
+    // Throw a more descriptive error
+    const errorMessage = error?.message || `PDF generation failed: ${error?.toString() || 'Unknown error'}`;
+    throw new Error(`PDF Export Failed: ${errorMessage}`);
   }
 };
 
 // Export to Excel function
 export const exportLedgerToExcel = async (options: LedgerOptions) => {
   try {
-    const XLSX = (await import('xlsx')).default;
+    console.log('🔄 Starting Excel export with static import...');
     
     // Prepare data for Excel
     const worksheetData = [
@@ -295,8 +333,15 @@ export const exportLedgerToExcel = async (options: LedgerOptions) => {
     
     // Save the file
     XLSX.writeFile(wb, filename);
-  } catch (error) {
-    console.error('Error exporting to Excel:', error);
-    throw error;
+  } catch (error: any) {
+    console.error('❌ Excel Export Error Details:');
+    console.error('Error object:', error);
+    console.error('Error message:', error?.message || 'No message available');
+    console.error('Error stack:', error?.stack || 'No stack trace available');
+    console.error('Error name:', error?.name || 'Unknown error type');
+    
+    // Throw a more descriptive error
+    const errorMessage = error?.message || `Excel export failed: ${error?.toString() || 'Unknown error'}`;
+    throw new Error(`Excel Export Failed: ${errorMessage}`);
   }
 };

@@ -213,7 +213,14 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     try {
       console.log('🔄 Starting Professional Supplier Ledger PDF export...');
       
-      const { generateProfessionalLedgerPDF } = await import('../utils/simpleProfessionalLedgerPdf');
+      const { generateProfessionalLedgerPDF, testLibraries } = await import('../utils/simpleProfessionalLedgerPdf');
+      
+      // Test libraries first
+      console.log('🧪 Testing libraries before PDF generation...');
+      const librariesWork = testLibraries();
+      if (!librariesWork) {
+        throw new Error('Required libraries (jsPDF, XLSX) are not working properly');
+      }
       
       // Calculate current balance (last entry's running balance)
       const currentBalance = filteredEntries.length > 0 
@@ -248,7 +255,14 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     try {
       console.log('🔄 Starting Supplier Ledger Excel export...');
       
-      const { exportLedgerToExcel } = await import('../utils/simpleProfessionalLedgerPdf');
+      const { exportLedgerToExcel, testLibraries } = await import('../utils/simpleProfessionalLedgerPdf');
+      
+      // Test libraries first
+      console.log('🧪 Testing libraries before Excel export...');
+      const librariesWork = testLibraries();
+      if (!librariesWork) {
+        throw new Error('Required libraries (jsPDF, XLSX) are not working properly');
+      }
       
       // Calculate current balance
       const currentBalance = filteredEntries.length > 0 
