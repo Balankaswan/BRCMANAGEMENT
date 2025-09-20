@@ -11,10 +11,7 @@ export default function Cashbook() {
     cashbookEntries: entries, 
     setCashbookEntries, 
     addCashbookEntry,
-    updateCashbookEntry, 
-    parties,
-    bills,
-    loadingSlips
+    updateCashbookEntry
   } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BankingEntry | null>(null);
@@ -62,54 +59,8 @@ export default function Cashbook() {
         // Add to local store using addCashbookEntry to ensure proper processing
         addCashbookEntry(savedEntry);
         
-        // Create party commission ledger entry for commission payments
-        if (entryToCreate.category === 'party_commission' && entryToCreate.reference_name) {
-          // Find the party ID for the reference
-          const party = parties.find(p => p.name === entryToCreate.reference_name);
-          const partyId = party ? party.id : entryToCreate.reference_name;
-          
-          const commissionLedgerEntry = {
-            referenceId: partyId,
-            ledger_type: 'commission',
-            reference_id: partyId,
-            reference_name: entryToCreate.reference_name,
-            type: 'commission',
-            date: entryToCreate.date,
-            description: `Commission Payment – Cash Payment`,
-            narration: `Commission Payment – Cash Payment`,
-            debit: entryToCreate.amount,
-            credit: 0,
-            balance: 0,
-            source_type: 'cashbook',
-          };
-          
-          try {
-            await apiService.createLedgerEntry(commissionLedgerEntry);
-            console.log('✅ Party commission ledger entry created from cashbook:', commissionLedgerEntry);
-          } catch (error) {
-            console.error('❌ Failed to create party commission ledger entry from cashbook:', error);
-          }
-        }
-        
-        // Create general ledger entry for other transactions
-        const ledgerEntry = {
-          referenceId: savedEntry._id,
-          reference_id: savedEntry._id,
-          ledger_type: entryToCreate.category === 'party_commission' ? 'commission' : 'general',
-          reference_name: savedEntry.reference_name || savedEntry.category || 'Cash Transaction',
-          source_type: 'cashbook',
-          type: 'expense',
-          date: savedEntry.date,
-          description: savedEntry.narration || savedEntry.category,
-          debit: savedEntry.type === 'debit' ? savedEntry.amount : 0,
-          credit: savedEntry.type === 'credit' ? savedEntry.amount : 0,
-          balance: 0,
-        };
-        
-        // Save ledger entry to backend (skip for party_commission as it's already created above)
-        if (entryToCreate.category !== 'party_commission') {
-          await apiService.createLedgerEntry(ledgerEntry);
-        }
+        // All ledger entries (including party commission) are now created automatically by the backend
+        // No need to create any ledger entries manually in the frontend
         
         // Trigger data sync
         window.dispatchEvent(new CustomEvent('data-sync-required'));

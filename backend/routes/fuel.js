@@ -157,7 +157,7 @@ router.post('/allocate', async (req, res) => {
 
     // Create fuel transaction record
     const fuelTransaction = new FuelTransaction({
-      type: 'debit',
+      type: 'fuel_allocation',
       wallet_name,
       amount,
       date: new Date(date),

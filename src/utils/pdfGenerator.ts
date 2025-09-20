@@ -57,7 +57,7 @@ export const formatDate = (dateString: string): string => {
 };
 
 // Generate Memo PDF - Portrait Format for single page fit
-export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bankingEntries?: any[]): Promise<void> => {
+export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bankingEntries?: any[], cashbookEntries?: any[]): Promise<void> => {
   const pdf = new jsPDF('p', 'mm', 'a4'); // Portrait orientation for better fit
   const pageWidth = pdf.internal.pageSize.getWidth(); // 210mm in portrait
   const pageHeight = pdf.internal.pageSize.getHeight(); // 297mm in portrait
@@ -165,11 +165,18 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
   const financialY = 140;
   pdf.setLineWidth(0.5);
 
-  // Calculate total advances from banking entries (actual advances paid)
-  const totalAdvances = bankingEntries 
+  // Calculate total advances from banking and cashbook entries (actual advances paid)
+  const bankingAdvances = bankingEntries 
     ? bankingEntries.filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
         .reduce((sum, e) => sum + e.amount, 0)
-    : memo.advance_payments?.reduce((sum, adv) => sum + adv.amount, 0) || 0;
+    : 0;
+  
+  const cashbookAdvances = cashbookEntries 
+    ? cashbookEntries.filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
+        .reduce((sum, e) => sum + e.amount, 0)
+    : 0;
+    
+  const totalAdvances = bankingAdvances + cashbookAdvances || memo.advance_payments?.reduce((sum, adv) => sum + adv.amount, 0) || 0;
 
   // Financial table - matching image style with proper borders
   const financialRows = [
@@ -215,20 +222,30 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
   
   let currentAdvanceY = advanceY;
   
-  // Get actual advance payments from banking entries
-  const actualAdvancePayments = bankingEntries 
+  // Get actual advance payments from both banking and cashbook entries
+  const bankingAdvancePayments = bankingEntries 
     ? bankingEntries.filter(e => 
         (e.category === 'memo_advance' || e.category === 'memo_payment') && 
         e.reference_id === memo.memo_number
-      )
+      ).map(e => ({ ...e, source: 'BANK' }))
+    : [];
+    
+  const cashbookAdvancePayments = cashbookEntries 
+    ? cashbookEntries.filter(e => 
+        (e.category === 'memo_advance' || e.category === 'memo_payment') && 
+        e.reference_id === memo.memo_number
+      ).map(e => ({ ...e, source: 'CASH' }))
     : [];
   
-  if (actualAdvancePayments && actualAdvancePayments.length > 0) {
-    pdf.setFont('helvetica', 'normal');
+  const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments]
+    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  
+  // Display advance payments if any exist
+  if (allAdvancePayments.length > 0) {
     pdf.setFontSize(8);
-    actualAdvancePayments.forEach((payment, index) => {
+    allAdvancePayments.forEach((payment, index) => {
       currentAdvanceY += 6;
-      const paymentMode = payment.mode || (payment.category === 'memo_advance' ? 'CASH' : 'BANK');
+      const paymentMode = payment.source || payment.mode || 'CASH';
       pdf.text(`${index + 1}. Date: ${formatDate(payment.date)} - Amount: ${formatCurrency(payment.amount)} - Mode: ${paymentMode.toUpperCase()}`, 15, currentAdvanceY);
     });
   } else {
@@ -481,7 +498,7 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
 };
 
 // Generate Professional Bill PDF - Exact format matching user's requirement
-export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip) => {
+export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bankingEntries?: any[], cashbookEntries?: any[]) => {
   const pdf = new jsPDF('l', 'mm', 'a4'); // Landscape orientation
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();

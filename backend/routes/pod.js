@@ -4,8 +4,8 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Apply authentication to all routes (disabled for debugging)
-// router.use(authenticateToken);
+// Apply authentication to all routes
+router.use(authenticateToken);
 
 // Get all POD files
 router.get('/', async (req, res) => {

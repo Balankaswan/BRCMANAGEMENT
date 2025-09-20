@@ -12,7 +12,7 @@ interface MemoListProps {
 }
 
 const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) => {
-  const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, addBankingEntry, markMemoAsPaid, setLedgerEntries, loadingSlips, vehicles } = useDataStore();
+  const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, cashbookEntries, addBankingEntry, markMemoAsPaid, setLedgerEntries, loadingSlips, vehicles } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingMemo, setEditingMemo] = useState<Memo | null>(null);
   const [viewMemo, setViewMemo] = useState<Memo | null>(null);
@@ -144,7 +144,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
         ? memo.loading_slip_id 
         : loadingSlips.find(slip => slip.id === memo.loading_slip_id);
       if (relatedLoadingSlip) {
-        await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries);
+        await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries, cashbookEntries);
       } else {
         console.error('Related loading slip not found for memo:', memo.id);
         alert('Related loading slip not found. Cannot generate PDF.');

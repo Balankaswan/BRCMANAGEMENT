@@ -1,5 +1,5 @@
 // API configuration and service layer for BRC backend
-const API_BASE_URL = 'http://localhost:5001/api';
+const API_BASE_URL = 'http://127.0.0.1:5001/api';
 
 // For LAN access, you can override this by setting VITE_API_URL environment variable
 const API_URL = import.meta.env.VITE_API_URL || API_BASE_URL;
@@ -222,8 +222,12 @@ class ApiService {
     return this.request('/banking');
   }
 
-  async getCashbookEntries(): Promise<{ cashbookEntries: any[]; total: number; totalPages: number }> {
+  async getCashbookEntries(): Promise<{ cashbookEntries: any[]; total: number; totalPages: number; currentBalance: number }> {
     return this.request('/cashbook');
+  }
+
+  async getCashbookBalance(): Promise<{ currentBalance: number; today: any; thisMonth: any }> {
+    return this.request('/cashbook/balance');
   }
 
   async createBankingEntry(data: any) {
@@ -329,7 +333,7 @@ class ApiService {
 
   // Ledgers
   async getLedgerEntries(params?: {ledger_type?: string, reference_name?: string, vehicle_no?: string, page?: number, limit?: number}) {
-    const queryString = params ? '?' + new URLSearchParams(params as any).toString() : '';
+    const queryString = params ? '?' + new URLSearchParams(params as any).toString() : '?limit=1000';
     return this.request<{ledgerEntries: any[], total: number, totalPages: number}>(`/ledgers${queryString}`);
   }
 

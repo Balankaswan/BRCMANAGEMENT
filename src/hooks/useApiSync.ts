@@ -33,6 +33,7 @@ export const useApiSync = () => {
           memosResponse,
           loadingSlipsResponse,
           bankingEntriesResponse,
+          cashbookEntriesResponse,
           ledgerEntriesResponse,
           fuelWalletsResponse,
           fuelTransactionsResponse
@@ -44,6 +45,7 @@ export const useApiSync = () => {
           apiService.getMemos(),
           apiService.getLoadingSlips(),
           apiService.getBankingEntries(),
+          apiService.getCashbookEntries(),
           apiService.getLedgerEntries(),
           // apiService.getPODFiles(), // Disabled to avoid MongoDB memory issues
           apiService.getFuelWallets(),
@@ -85,6 +87,12 @@ export const useApiSync = () => {
 
         if (bankingEntriesResponse.status === 'fulfilled') {
           store.setBankingEntries(bankingEntriesResponse.value.bankingEntries || []);
+        }
+
+        if (cashbookEntriesResponse.status === 'fulfilled') {
+          const fetchedCashbookEntries = cashbookEntriesResponse.value.cashbookEntries || [];
+          console.log('💰 Cashbook entries synced from backend:', fetchedCashbookEntries.length);
+          store.setCashbookEntries(fetchedCashbookEntries);
         }
 
         if (partiesResponse.status === 'fulfilled') {

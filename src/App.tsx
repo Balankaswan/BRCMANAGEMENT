@@ -68,10 +68,6 @@ const AppContent: React.FC = () => {
         return <Memo />;
       case 'bills':
         return <Bills />;
-      case 'paid-memo':
-        return <Memo showOnlyFullyPaid />;
-      case 'received-bills':
-        return <Bills showOnlyFullyReceived />;
       case 'parties':
         return <Parties onNavigate={handleNavigation} />;
       case 'party-detail':

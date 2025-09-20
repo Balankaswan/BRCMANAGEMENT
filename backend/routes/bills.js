@@ -6,7 +6,7 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Apply authentication to all routes except GET (for testing)
+// Apply authentication to all routes - temporarily disabled for debugging
 // router.use(authenticateToken);
 
 // Get all bills

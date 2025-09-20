@@ -1,37 +1,41 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { TrendingUp, TrendingDown, Download, Truck, FileText } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
 
 const VehicleLedger: React.FC = () => {
   const { ledgerEntries, vehicles, setLedgerEntries, memos } = useDataStore();
   
-  // Force refresh ledger data on component mount and every 3 seconds
-  React.useEffect(() => {
+  // Force refresh ledger data on component mount and periodically
+  useEffect(() => {
     const refreshLedgerData = async () => {
       try {
-        const response = await fetch('http://localhost:5001/api/ledgers');
-        const data = await response.json();
-        if (data.ledgerEntries) {
+        const data = await apiService.getLedgerEntries({ limit: 1000 });
+        if (data && data.ledgerEntries) {
           setLedgerEntries(data.ledgerEntries);
-          console.log('✅ Ledger data refreshed:', data.ledgerEntries.length, 'entries');
-          console.log('Vehicle entries found:', data.ledgerEntries.filter((e: any) => e.vehicle_no).length);
-          console.log('GJ27TG9764 entries:', data.ledgerEntries.filter((e: any) => e.vehicle_no === 'GJ27TG9764').length);
-          console.log('GJ27TD2674 entries:', data.ledgerEntries.filter((e: any) => e.vehicle_no === 'GJ27TD2674').length);
+          console.log('💰 Ledger data refreshed:', data.ledgerEntries.length, 'entries');
+          
+          // Debug vehicle expense entries
+          const vehicleExpenseEntries = data.ledgerEntries.filter((e: any) => e.ledger_type === 'vehicle_expense');
+          console.log('🚛 Vehicle Expense Entries:', vehicleExpenseEntries.length);
+          console.log('GJ27TG9764 vehicle expenses:', vehicleExpenseEntries.filter((e: any) => e.vehicle_no === 'GJ27TG9764').length);
         }
       } catch (error) {
         console.error('Failed to refresh ledger data:', error);
+        // Fallback: try to get data from store
+        console.log('Using existing ledger data from store:', ledgerEntries.length, 'entries');
       }
     };
     
     // Initial refresh
     refreshLedgerData();
     
-    // Auto-refresh every 3 seconds
-    const interval = setInterval(refreshLedgerData, 3000);
+    // Auto-refresh every 10 seconds (less frequent to reduce errors)
+    const interval = setInterval(refreshLedgerData, 10000);
     
     return () => clearInterval(interval);
-  }, [setLedgerEntries]);
+  }, [setLedgerEntries, ledgerEntries.length]);
   const [selectedVehicle, setSelectedVehicle] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -39,13 +43,13 @@ const VehicleLedger: React.FC = () => {
   // Filter own vehicles only
   const ownVehicles = vehicles.filter(v => v.ownership_type === 'own');
   
-  // Set default vehicle to GJ27TG9764 if available
-  React.useEffect(() => {
-    if (!selectedVehicle) {
+  // Set default vehicle to GJ27TG9764 if available (vehicle with test expenses)
+  useEffect(() => {
+    if (!selectedVehicle && ownVehicles.length > 0) {
       const targetVehicle = ownVehicles.find(v => v.vehicle_no === 'GJ27TG9764') || ownVehicles[0];
       if (targetVehicle) {
         setSelectedVehicle(targetVehicle.vehicle_no);
-        console.log('🎯 Auto-selected vehicle:', targetVehicle.vehicle_no);
+        console.log('🎯 Auto-selected vehicle for testing:', targetVehicle.vehicle_no);
       }
     }
   }, [ownVehicles, selectedVehicle]);
@@ -53,11 +57,24 @@ const VehicleLedger: React.FC = () => {
   const filteredData = useMemo(() => {
     if (!selectedVehicle) return [];
 
-    // Get only ledger entries for the selected vehicle
-    const vehicleLedgerEntries = ledgerEntries.filter(entry => 
-      (entry.vehicleNo === selectedVehicle || entry.vehicle_no === selectedVehicle) &&
-      (!dateFrom || entry.date >= dateFrom) && (!dateTo || entry.date <= dateTo)
-    );
+    // Get vehicle expense entries and vehicle-specific entries
+    const vehicleLedgerEntries = ledgerEntries.filter(entry => {
+      // Check if it's a vehicle expense entry for this vehicle
+      const isVehicleExpense = entry.ledger_type === 'vehicle_expense' && 
+                               (entry.vehicle_no === selectedVehicle || entry.vehicleNo === selectedVehicle);
+      
+      // Check if it's a vehicle income entry for this vehicle
+      const isVehicleIncome = entry.ledger_type === 'vehicle_income' && 
+                             (entry.vehicle_no === selectedVehicle || entry.vehicleNo === selectedVehicle);
+      
+      // Check if it's any entry with this vehicle number
+      const hasVehicleNumber = entry.vehicle_no === selectedVehicle || entry.vehicleNo === selectedVehicle;
+      
+      // Date filter
+      const dateMatch = (!dateFrom || entry.date >= dateFrom) && (!dateTo || entry.date <= dateTo);
+      
+      return (isVehicleExpense || isVehicleIncome || hasVehicleNumber) && dateMatch;
+    });
     
     console.log('🚛 Vehicle Ledger Debug:', {
       selectedVehicle,
@@ -66,6 +83,16 @@ const VehicleLedger: React.FC = () => {
       vehicleIncomeEntries: vehicleLedgerEntries.filter(e => e.ledger_type === 'vehicle_income').length,
       vehicleExpenseEntries: vehicleLedgerEntries.filter(e => e.ledger_type === 'vehicle_expense').length,
       fuelExpenseEntries: vehicleLedgerEntries.filter(e => e.source_type === 'fuel').length,
+      bankingExpenseEntries: vehicleLedgerEntries.filter(e => e.source_type === 'banking').length,
+      cashbookExpenseEntries: vehicleLedgerEntries.filter(e => e.source_type === 'cashbook').length,
+      allVehicleExpenses: vehicleLedgerEntries.filter(e => e.ledger_type === 'vehicle_expense').map(e => ({
+        source: e.source_type,
+        vehicle: e.vehicle_no,
+        debit: e.debit,
+        description: e.description,
+        date: e.date,
+        id: e.id
+      })),
       dateFilter: { from: dateFrom, to: dateTo },
       allLedgerEntries: ledgerEntries.map(e => ({
         type: e.ledger_type,
@@ -123,11 +150,23 @@ const VehicleLedger: React.FC = () => {
   }, [selectedVehicle, dateFrom, dateTo, ledgerEntries]);
 
   const calculateVehicleSummary = (vehicleNo: string) => {
-    const vehicleLedgerEntries = ledgerEntries.filter(entry => 
-      (entry.vehicle_no === vehicleNo || entry.vehicleNo === vehicleNo) &&
-      (!dateFrom || entry.date >= dateFrom) &&
-      (!dateTo || entry.date <= dateTo)
-    );
+    const vehicleLedgerEntries = ledgerEntries.filter(entry => {
+      // Include vehicle expense entries
+      const isVehicleExpense = entry.ledger_type === 'vehicle_expense' && 
+                               (entry.vehicle_no === vehicleNo || entry.vehicleNo === vehicleNo);
+      
+      // Include vehicle income entries
+      const isVehicleIncome = entry.ledger_type === 'vehicle_income' && 
+                             (entry.vehicle_no === vehicleNo || entry.vehicleNo === vehicleNo);
+      
+      // Include any entry with this vehicle number
+      const hasVehicleNumber = entry.vehicle_no === vehicleNo || entry.vehicleNo === vehicleNo;
+      
+      // Date filter
+      const dateMatch = (!dateFrom || entry.date >= dateFrom) && (!dateTo || entry.date <= dateTo);
+      
+      return (isVehicleExpense || isVehicleIncome || hasVehicleNumber) && dateMatch;
+    });
 
 
     // Total income from all credit entries (freight, detention, extra charges)

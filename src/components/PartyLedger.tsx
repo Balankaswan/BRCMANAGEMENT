@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { Filter, Download, FileText, Table, FileDown } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
-import { generatePartyLedgerPDF } from '../utils/ledgerPdfGenerator';
 
 interface PartyLedgerEntry {
   id: string;
@@ -44,17 +43,25 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
       .filter(bill => bill.party === partyFilter)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // Get all banking entries for the party's bills
+    // Get all banking entries for the party (bills and on account)
     const partyBankingEntries = bankingEntries
-      .filter(entry => 
-        (entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
-        partyBills.some(bill => bill.bill_number === entry.reference_id)
-      )
+      .filter(entry => {
+        // Include bill payments and advances linked to party bills
+        if ((entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
+            partyBills.some(bill => bill.bill_number === entry.reference_id)) {
+          return true;
+        }
+        // Include party on account transactions
+        if (entry.category === 'party_on_account' && entry.reference_name === partyFilter) {
+          return true;
+        }
+        return false;
+      })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Combine and sort all entries by date
     const allEntries: Array<{
-      type: 'bill' | 'payment' | 'advance';
+      type: 'bill' | 'payment' | 'advance' | 'on_account';
       date: string;
       data: any;
     }> = [];
@@ -71,8 +78,15 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
 
     // Add banking entries
     partyBankingEntries.forEach(entry => {
+      let entryType: 'payment' | 'advance' | 'on_account' = 'payment';
+      if (entry.category === 'bill_advance') {
+        entryType = 'advance';
+      } else if (entry.category === 'party_on_account') {
+        entryType = 'on_account';
+      }
+      
       allEntries.push({
-        type: entry.category === 'bill_advance' ? 'advance' : 'payment',
+        type: entryType,
         date: entry.date,
         data: entry
       });
@@ -115,10 +129,14 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
       } else if (entry.type === 'advance') {
         // Advance is already accounted for in bill creation
         return;
+      } else if (entry.type === 'on_account') {
+        debitPayment = entry.data.amount;
+        runningBalance -= debitPayment;
+        remarks = 'On Account Payment Received';
       }
 
       entries.push({
-        id: entry.data.id || `${entry.type}-${entry.date}`,
+        id: entry.data.id || `${entry.type}-${entry.date}-${Date.now()}-${Math.random()}`,
         date: entry.date,
         billNo: bill?.bill_number || '',
         tripDetails,
@@ -186,26 +204,74 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
     window.URL.revokeObjectURL(url);
   };
 
-  const exportToPDF = () => {
-    if (!filteredEntries.length || !partyFilter) return;
+  const exportToPDF = async () => {
+    if (!filteredEntries.length || !partyFilter) {
+      alert('Please select a party and ensure there are entries to export.');
+      return;
+    }
 
-    const pdfEntries = filteredEntries.map(entry => ({
-      date: entry.date,
-      reference: entry.billNo,
-      tripDetails: entry.tripDetails,
-      credit: entry.credit,
-      debitPayment: entry.debitPayment,
-      debitAdvance: entry.debitAdvance,
-      runningBalance: entry.runningBalance,
-      remarks: entry.remarks
-    }));
+    try {
+      console.log('🔄 Starting Professional Party Ledger PDF export...');
+      
+      const { generateProfessionalLedgerPDF } = await import('../utils/simpleProfessionalLedgerPdf');
+      
+      // Calculate current balance (last entry's running balance)
+      const currentBalance = filteredEntries.length > 0 
+        ? filteredEntries[filteredEntries.length - 1].runningBalance 
+        : 0;
+      
+      await generateProfessionalLedgerPDF({
+        type: 'PARTY',
+        name: partyFilter,
+        entries: filteredEntries,
+        totals: totals,
+        dateRange: {
+          from: dateFrom,
+          to: dateTo
+        },
+        currentBalance: currentBalance
+      });
+      
+      console.log('✅ Professional Party Ledger PDF generated successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to generate Party Ledger PDF:', error);
+      alert(`Failed to generate PDF: ${error?.message || 'Unknown error'}. Please check the console for details.`);
+    }
+  };
+  
+  const exportToExcel = async () => {
+    if (!filteredEntries.length || !partyFilter) {
+      alert('Please select a party and ensure there are entries to export.');
+      return;
+    }
 
-    generatePartyLedgerPDF(
-      partyFilter,
-      pdfEntries,
-      totals,
-      { from: dateFrom, to: dateTo }
-    );
+    try {
+      console.log('🔄 Starting Party Ledger Excel export...');
+      
+      const { exportLedgerToExcel } = await import('../utils/simpleProfessionalLedgerPdf');
+      
+      // Calculate current balance
+      const currentBalance = filteredEntries.length > 0 
+        ? filteredEntries[filteredEntries.length - 1].runningBalance 
+        : 0;
+      
+      await exportLedgerToExcel({
+        type: 'PARTY',
+        name: partyFilter,
+        entries: filteredEntries,
+        totals: totals,
+        dateRange: {
+          from: dateFrom,
+          to: dateTo
+        },
+        currentBalance: currentBalance
+      });
+      
+      console.log('✅ Party Ledger Excel exported successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to export Excel:', error);
+      alert(`Failed to export Excel: ${error?.message || 'Unknown error'}`);
+    }
   };
 
   return (
@@ -276,7 +342,7 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Download className="w-4 h-4" />
-              <span>Export CSV</span>
+              <span>CSV</span>
             </button>
             <button
               onClick={exportToPDF}
@@ -284,7 +350,15 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty }) => {
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <FileDown className="w-4 h-4" />
-              <span>Export PDF</span>
+              <span>PDF</span>
+            </button>
+            <button
+              onClick={exportToExcel}
+              disabled={!filteredEntries.length}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              <Table className="w-4 h-4" />
+              <span>Excel</span>
             </button>
           </div>
         </div>

@@ -1,8 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Filter, Download, Table, Truck, FileDown } from 'lucide-react';
+import { Truck, Filter, Download, FileText, Table, FileDown } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
-import { generateSupplierLedgerPDF } from '../utils/ledgerPdfGenerator';
 
 interface SupplierLedgerEntry {
   id: string;
@@ -205,28 +204,74 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     window.URL.revokeObjectURL(url);
   };
 
-  const exportToPDF = () => {
-    if (!filteredEntries.length || !supplierFilter) return;
+  const exportToPDF = async () => {
+    if (!filteredEntries.length || !supplierFilter) {
+      alert('Please select a supplier and ensure there are entries to export.');
+      return;
+    }
 
-    const pdfEntries = filteredEntries.map(entry => ({
-      date: entry.date,
-      reference: entry.memoNo,
-      tripDetails: entry.tripDetails,
-      detention: entry.detention,
-      extraWeight: entry.extraWeight,
-      credit: entry.credit,
-      debitPayment: entry.debitPayment,
-      debitAdvance: entry.debitAdvance,
-      runningBalance: entry.runningBalance,
-      remarks: entry.remarks
-    }));
+    try {
+      console.log('🔄 Starting Professional Supplier Ledger PDF export...');
+      
+      const { generateProfessionalLedgerPDF } = await import('../utils/simpleProfessionalLedgerPdf');
+      
+      // Calculate current balance (last entry's running balance)
+      const currentBalance = filteredEntries.length > 0 
+        ? filteredEntries[filteredEntries.length - 1].runningBalance 
+        : 0;
+      
+      await generateProfessionalLedgerPDF({
+        type: 'SUPPLIER',
+        name: supplierFilter,
+        entries: filteredEntries,
+        totals: totals,
+        dateRange: {
+          from: dateFrom,
+          to: dateTo
+        },
+        currentBalance: currentBalance
+      });
+      
+      console.log('✅ Professional Supplier Ledger PDF generated successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to generate Supplier Ledger PDF:', error);
+      alert(`Failed to generate PDF: ${error?.message || 'Unknown error'}. Please check the console for details.`);
+    }
+  };
+  
+  const exportToExcel = async () => {
+    if (!filteredEntries.length || !supplierFilter) {
+      alert('Please select a supplier and ensure there are entries to export.');
+      return;
+    }
 
-    generateSupplierLedgerPDF(
-      supplierFilter,
-      pdfEntries,
-      totals,
-      { from: dateFrom, to: dateTo }
-    );
+    try {
+      console.log('🔄 Starting Supplier Ledger Excel export...');
+      
+      const { exportLedgerToExcel } = await import('../utils/simpleProfessionalLedgerPdf');
+      
+      // Calculate current balance
+      const currentBalance = filteredEntries.length > 0 
+        ? filteredEntries[filteredEntries.length - 1].runningBalance 
+        : 0;
+      
+      await exportLedgerToExcel({
+        type: 'SUPPLIER',
+        name: supplierFilter,
+        entries: filteredEntries,
+        totals: totals,
+        dateRange: {
+          from: dateFrom,
+          to: dateTo
+        },
+        currentBalance: currentBalance
+      });
+      
+      console.log('✅ Supplier Ledger Excel exported successfully');
+    } catch (error: any) {
+      console.error('❌ Failed to export Excel:', error);
+      alert(`Failed to export Excel: ${error?.message || 'Unknown error'}`);
+    }
   };
 
   return (
@@ -297,7 +342,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <Download className="w-4 h-4" />
-              <span>Export CSV</span>
+              <span>CSV</span>
             </button>
             <button
               onClick={exportToPDF}
@@ -305,7 +350,15 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
               className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
             >
               <FileDown className="w-4 h-4" />
-              <span>Export PDF</span>
+              <span>PDF</span>
+            </button>
+            <button
+              onClick={exportToExcel}
+              disabled={!filteredEntries.length}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
+            >
+              <Table className="w-4 h-4" />
+              <span>Excel</span>
             </button>
           </div>
         </div>

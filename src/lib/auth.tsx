@@ -25,14 +25,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      apiService.setToken(token);
-      fetchUserProfile();
-    } else {
-      setIsLoading(false);
-    }
+    // Force logout to show login page - clear any cached tokens
+    localStorage.removeItem('auth_token');
+    apiService.clearToken();
+    setUser(null);
+    setIsLoading(false);
   }, []);
 
   const fetchUserProfile = async () => {

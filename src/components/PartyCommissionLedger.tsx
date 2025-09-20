@@ -28,7 +28,7 @@ interface Filters {
 }
 
 const PartyCommissionLedger: React.FC = () => {
-  const { ledgerEntries, parties } = useDataStore();
+  const { parties } = useDataStore();
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [partyCommissionEntries, setPartyCommissionEntries] = useState<any[]>([]);
@@ -59,15 +59,9 @@ const PartyCommissionLedger: React.FC = () => {
     fetchPartyCommissionEntries();
   }, []);
 
-  // Combine both PartyCommissionLedger entries and general ledger commission entries
+  // Use only PartyCommissionLedger entries - avoid duplicates from general ledger
   const commissionEntries = useMemo(() => {
-    console.log('🔍 PartyCommissionLedger - Total ledger entries:', ledgerEntries.length);
     console.log('🔍 PartyCommissionLedger - PartyCommissionLedger entries:', partyCommissionEntries.length);
-    
-    // Get commission entries from general ledger
-    const generalLedgerCommission = ledgerEntries.filter(entry => 
-      entry.ledger_type === 'commission'
-    );
     
     // Convert PartyCommissionLedger entries to match the expected format
     const convertedPartyCommissionEntries = partyCommissionEntries.map(entry => ({
@@ -82,19 +76,14 @@ const PartyCommissionLedger: React.FC = () => {
       debit: entry.entry_type === 'debit' ? entry.amount : 0,
       credit: entry.entry_type === 'credit' ? entry.amount : 0,
       balance: 0,
-      source_type: 'bill'
+      source_type: entry.reference_type || 'bill'
     }));
     
-    // Combine both arrays
-    const allCommissionEntries = [...generalLedgerCommission, ...convertedPartyCommissionEntries];
-    
-    console.log('🔍 General ledger commission entries:', generalLedgerCommission.length);
     console.log('🔍 Converted party commission entries:', convertedPartyCommissionEntries.length);
-    console.log('🔍 Total combined commission entries:', allCommissionEntries.length);
-    console.log('🔍 Sample entries:', allCommissionEntries.slice(0, 3));
+    console.log('🔍 Sample entries:', convertedPartyCommissionEntries.slice(0, 3));
     
-    return allCommissionEntries;
-  }, [ledgerEntries, partyCommissionEntries]);
+    return convertedPartyCommissionEntries;
+  }, [partyCommissionEntries]);
 
   // Apply filters to entries
   const filteredEntries = useMemo(() => {
@@ -256,9 +245,56 @@ const PartyCommissionLedger: React.FC = () => {
     window.URL.revokeObjectURL(url);
   };
 
-  // Export to PDF (placeholder for future implementation)
-  const exportToPDF = () => {
-    alert('PDF export functionality will be implemented soon.');
+  // Export to PDF
+  const exportToPDF = async () => {
+    if (!filteredEntries.length) {
+      alert('No entries to export. Please ensure there are commission entries to export.');
+      return;
+    }
+
+    try {
+      console.log('🔄 Starting Party Commission PDF export...');
+      
+      // Try simple jsPDF first
+      console.log('Testing jsPDF import...');
+      const jsPDF = (await import('jspdf')).default;
+      console.log('jsPDF imported successfully');
+      
+      // Create a simple PDF as fallback
+      const doc = new jsPDF();
+      doc.setFontSize(20);
+      doc.text('BHAVISHYA ROAD CARRIERS', 105, 20, { align: 'center' });
+      doc.setFontSize(16);
+      doc.text('Party Commission Ledger', 105, 40, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN')}`, 20, 60);
+      doc.text(`Total Entries: ${filteredEntries.length}`, 20, 70);
+      doc.text(`Total Commission Payments: ₹${formatCurrency(summary.totalDebits)}`, 20, 80);
+      
+      if (selectedParty) {
+        doc.text(`Party: ${selectedParty.name}`, 20, 90);
+      }
+      
+      // Add some entries
+      let yPos = 110;
+      doc.text('Recent Commission Payments:', 20, yPos);
+      yPos += 10;
+      
+      filteredEntries.slice(0, 15).forEach((entry, index) => {
+        if (yPos > 280) return; // Avoid page overflow
+        doc.text(`${index + 1}. ${entry.date} - ${entry.reference_name} - ₹${formatCurrency(entry.debit)}`, 20, yPos);
+        yPos += 6;
+      });
+      
+      const partyName = selectedParty ? selectedParty.name.replace(/[^a-zA-Z0-9]/g, '_') : 'All_Parties';
+      const filename = `party-commission-ledger-${partyName}-${new Date().toISOString().split('T')[0]}.pdf`;
+      doc.save(filename);
+      
+      console.log('✅ Party Commission PDF generated successfully');
+    } catch (error) {
+      console.error('❌ Failed to generate Party Commission PDF:', error);
+      alert('Failed to generate PDF. Please check the console for details.');
+    }
   };
 
 

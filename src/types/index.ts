@@ -90,7 +90,7 @@ export interface BankingEntry {
   id: string;
   _id?: string; // MongoDB ObjectId
   type: 'credit' | 'debit';
-  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_payment' | 'supplier_payment' | 'party_commission' | 'other';
+  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_payment' | 'supplier_payment' | 'party_commission' | 'party_on_account' | 'other';
   amount: number;
   date: string;
   reference_id?: string; // bill_number or memo_number
@@ -103,6 +103,30 @@ export interface BankingEntry {
   bill_advance_id?: string;
   bank_account?: string;
   payment_mode?: 'cash' | 'bank' | 'cheque' | 'bank_transfer' | 'upi';
+}
+
+export interface CashbookEntry {
+  id: string;
+  _id?: string; // MongoDB ObjectId
+  type: 'credit' | 'debit';
+  category: 'vehicle_expense' | 'office_expense' | 'fuel_expense' | 'maintenance' | 'salary' | 'party_on_account' | 'party_commission' | 'supplier_payment' | 'other';
+  amount: number;
+  date: string;
+  reference_id?: string;
+  reference_name?: string;
+  narration: string;
+  vehicle_no?: string;
+  party_id?: string;
+  party_name?: string;
+  supplier_id?: string;
+  supplier_name?: string;
+  memo_id?: string;
+  bill_id?: string;
+  trip_id?: string;
+  payment_mode: 'cash';
+  running_balance: number;
+  created_at: string;
+  updated_at?: string;
 }
 
 export interface Party {
@@ -171,18 +195,6 @@ export interface LedgerEntry {
   vehicle_no?: string;
 }
 
-export interface CashbookEntry {
-  id: string;
-  type: 'credit' | 'debit';
-  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'party_commission' | 'other';
-  amount: number;
-  date: string;
-  reference_id?: string;
-  reference_name?: string;
-  narration: string;
-  vehicle_no?: string;
-  created_at: string;
-}
 
 // Fuel Accounting Types
 export interface FuelWallet {

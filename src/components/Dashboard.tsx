@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
@@ -10,134 +10,89 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { memos, bills, bankingEntries, loadingSlips, vehicles } = useDataStore();
   
-  console.log('🔍 Dashboard data:', {
-    memos: memos.length,
-    loadingSlips: loadingSlips.length, 
-    vehicles: vehicles.length,
-    bankingEntries: bankingEntries.length
+  // Month filter state
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  
-  console.log('🔍 Sample memo data:', memos[0] ? {
-    memo_number: memos[0].memo_number,
-    loading_slip_id: memos[0].loading_slip_id,
-    freight: memos[0].freight
-  } : 'No memos in frontend');
-  
-  console.log('🔍 Sample loading slip data:', loadingSlips[0] ? {
-    id: loadingSlips[0].id,
-    _id: (loadingSlips[0] as any)._id,
-    vehicle_no: loadingSlips[0].vehicle_no
-  } : 'No loading slips in frontend');
-  
-  console.log('🔍 All loading slip IDs:', loadingSlips.map(ls => ({
-    id: ls.id,
-    _id: (ls as any)._id,
-    _id_string: String((ls as any)._id),
-    vehicle: ls.vehicle_no
-  })));
-  
-  console.log('🔍 All memo loading slip IDs:', memos.map(m => ({
-    memo: m.memo_number,
-    loading_slip_id: m.loading_slip_id,
-    loading_slip_id_string: String(m.loading_slip_id)
-  })));
-  
-  // Test direct matching
-  if (memos.length > 0 && loadingSlips.length > 0) {
-    const testMemo = memos[0];
-    const matchingSlip = loadingSlips.find(s => 
-      s.id === testMemo.loading_slip_id || 
-      (s as any)._id === testMemo.loading_slip_id ||
-      String((s as any)._id) === String(testMemo.loading_slip_id)
-    );
-    console.log('🧪 Test match:', {
-      memo: testMemo.memo_number,
-      memo_loading_slip_id: testMemo.loading_slip_id,
-      found_slip: matchingSlip ? matchingSlip.slip_number : 'NOT FOUND'
+
+  // Helper function to filter data by selected month
+  const filterByMonth = (items: any[], dateField: string = 'date') => {
+    if (!selectedMonth || selectedMonth === 'overall') return items;
+    
+    return items.filter(item => {
+      const itemDate = new Date(item[dateField]);
+      const itemMonth = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}`;
+      return itemMonth === selectedMonth;
     });
-  }
+  };
+
+  // Filter data by selected month (only for profit and revenue calculations)
+  const filteredBills = useMemo(() => filterByMonth(bills), [bills, selectedMonth]);
+  const filteredMemos = useMemo(() => filterByMonth(memos), [memos, selectedMonth]);
+  
 
   // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
-  // TDS is excluded as it's returnable and not a real deduction for profit calculation
-  // Party Commission Cut is excluded as it's not part of the actual profit calculation
-  const totalProfit = (() => {
-    const totalBillNetAmount = bills.reduce((sum, bill) => {
-      // Bill amount + detention + extra + rto - mamool - penalties - party_commission_cut (excluding TDS)
+  const totalProfit = useMemo(() => {
+    const totalBillNetAmount = filteredBills.reduce((sum, bill) => {
       const billNetAmountExcludingTDS = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0);
       return sum + billNetAmountExcludingTDS;
     }, 0);
-    const totalMemoNetAmount = memos.reduce((sum, memo) => sum + memo.net_amount, 0);
+    
+    const totalMemoNetAmount = filteredMemos.reduce((sum, memo) => sum + memo.net_amount, 0);
+    
     return totalBillNetAmount - totalMemoNetAmount;
-  })();
+  }, [filteredBills, filteredMemos]);
 
-  // Calculate party balance (bills due from parties)
-  // Party should pay: bill_amount + detention + extra + rto - mamool - tds - penalties
-  // (excluding party_commission_cut which is our internal deduction)
-  const partyBalance = bills.reduce((sum, bill) => {
-    const billPayments = bankingEntries
-      .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
-      .reduce((total, entry) => total + entry.amount, 0);
-    
-    // Calculate what party owes (excluding party commission cut)
-    const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
-    
-    console.log(`💰 Bill ${bill.bill_number}: Party owes ₹${partyOwes}, Paid ₹${billPayments}, Balance ₹${partyOwes - billPayments}`);
-    
-    return sum + (partyOwes - billPayments);
-  }, 0);
-
-  // Calculate supplier balance (memos due to suppliers - ONLY market vehicles)
-  const supplierBalance = memos.reduce((sum, memo) => {
-    console.log('🔍 Processing memo:', memo.memo_number, 'Loading slip ID:', memo.loading_slip_id);
-    
-    // Handle both string loading_slip_id and populated object
-    let loadingSlipId: string;
-    if (typeof memo.loading_slip_id === 'string') {
-      loadingSlipId = memo.loading_slip_id;
-    } else if (memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
-      loadingSlipId = (memo.loading_slip_id as any)._id || (memo.loading_slip_id as any).id;
-    } else {
-      console.log('🔍 Invalid loading_slip_id format:', memo.loading_slip_id);
-      return sum;
-    }
-    
-    // Find the loading slip and vehicle to check ownership
-    const ls = loadingSlips.find(s => {
-      const idMatch = s.id === loadingSlipId;
-      const objectIdMatch = (s as any)._id === loadingSlipId;
-      const objectIdStringMatch = String((s as any)._id) === String(loadingSlipId);
+  // Calculate party balance (bills due from parties) - OVERALL, not filtered by month
+  const partyBalance = useMemo(() => {
+    return bills.reduce((sum, bill) => {
+      const billPayments = bankingEntries
+        .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
+        .reduce((total, entry) => total + entry.amount, 0);
       
-      if (idMatch || objectIdMatch || objectIdStringMatch) {
-        console.log('✅ MATCH FOUND:', {
-          slip: s.slip_number,
-          vehicle: s.vehicle_no,
-          matchType: idMatch ? 'id' : objectIdMatch ? '_id' : '_id_string'
-        });
+      const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+      
+      return sum + (partyOwes - billPayments);
+    }, 0);
+  }, [bills, bankingEntries]);
+
+  // Calculate supplier balance (memos due to suppliers - ONLY market vehicles) - OVERALL, not filtered by month
+  const supplierBalance = useMemo(() => {
+    return memos.reduce((sum, memo) => {
+      // Handle both string loading_slip_id and populated object
+      let loadingSlipId: string;
+      if (typeof memo.loading_slip_id === 'string') {
+        loadingSlipId = memo.loading_slip_id;
+      } else if (memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
+        loadingSlipId = (memo.loading_slip_id as any)._id || (memo.loading_slip_id as any).id;
+      } else {
+        return sum;
       }
       
-      return idMatch || objectIdMatch || objectIdStringMatch;
-    });
-    console.log('🔍 Found loading slip:', ls ? `Vehicle: ${ls.vehicle_no}` : 'NOT FOUND');
-    
-    const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
-    console.log('🔍 Found vehicle:', vehicle ? `${vehicle.vehicle_no} (${vehicle.ownership_type})` : 'NOT FOUND');
-    
-    // Only include market vehicles in supplier balance
-    if (vehicle?.ownership_type !== 'market') {
-      console.log('🔍 Skipping - not market vehicle');
-      return sum;
-    }
-    
-    console.log('🔍 Adding to supplier balance:', memo.net_amount);
-    console.log('🔍 Running total:', sum + memo.net_amount);
-    return sum + memo.net_amount;
-  }, 0);
-  
-  console.log('🔍 Total supplier balance calculated:', supplierBalance);
-  console.log('💰 Total party balance calculated:', partyBalance);
+      // Find the loading slip and vehicle to check ownership
+      const ls = loadingSlips.find(s => {
+        const idMatch = s.id === loadingSlipId;
+        const objectIdMatch = (s as any)._id === loadingSlipId;
+        const objectIdStringMatch = String((s as any)._id) === String(loadingSlipId);
+        return idMatch || objectIdMatch || objectIdStringMatch;
+      });
+      
+      const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
+      
+      // Only include market vehicles in supplier balance
+      if (vehicle?.ownership_type !== 'market') {
+        return sum;
+      }
+      
+      return sum + memo.net_amount;
+    }, 0);
+  }, [memos, loadingSlips, vehicles]);
 
   // Calculate monthly revenue (total bill amounts)
-  const monthlyRevenue = bills.reduce((sum, bill) => sum + bill.bill_amount, 0);
+  const monthlyRevenue = useMemo(() => {
+    return filteredBills.reduce((sum, bill) => sum + bill.bill_amount, 0);
+  }, [filteredBills]);
 
   const stats = [
     {
@@ -162,7 +117,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       iconBg: 'bg-orange-100',
     },
     {
-      title: 'Monthly Revenue',
+      title: selectedMonth === 'overall' ? 'Total Revenue' : 'Monthly Revenue',
       value: formatCurrency(monthlyRevenue),
       icon: DollarSign,
       color: 'bg-purple-50 text-purple-700',
@@ -170,8 +125,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     },
   ];
 
-  // Get recent bills and memos from actual data
-  const recentBills = bills.slice(0, 5).map((bill, index) => ({
+  // Get recent bills and memos from filtered data
+  const recentBills = filteredBills.slice(0, 5).map((bill, index) => ({
     id: bill.id || `bill-${index}-${Date.now()}`,
     bill_number: bill.bill_number,
     party: bill.party,
@@ -180,7 +135,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     status: 'Pending' // TODO: Add status tracking
   }));
 
-  const recentMemos = memos.slice(0, 5).map((memo, index) => ({
+  const recentMemos = filteredMemos.slice(0, 5).map((memo, index) => ({
     id: memo.id || `memo-${index}-${Date.now()}`,
     memo_number: memo.memo_number,
     supplier: memo.supplier,
@@ -194,11 +149,28 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="flex items-center space-x-4">
-          <input
-            type="month"
-            defaultValue="2025-08"
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+          >
+            <option value="overall">Overall</option>
+            <option value={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`}>
+              Current Month ({new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })})
+            </option>
+            {/* Generate last 12 months */}
+            {Array.from({ length: 12 }, (_, i) => {
+              const date = new Date();
+              date.setMonth(date.getMonth() - i - 1);
+              const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+              const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+              return (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
         </div>
       </div>
 

@@ -61,22 +61,19 @@ router.get('/:id', async (req, res) => {
 
 // Helper function to create party commission ledger entry for payments
 const createPartyCommissionPaymentEntry = async (bankingEntry) => {
-  if (bankingEntry.category === 'party_commission_payment' && bankingEntry.amount > 0) {
-    // Extract party info from narration or use provided party details
+  if (bankingEntry.category === 'party_commission' && bankingEntry.type === 'debit' && bankingEntry.amount > 0) {
+    // Extract party info from reference_name or narration
     let partyId = bankingEntry.party_id;
-    let partyName = bankingEntry.party_name || bankingEntry.narration;
+    let partyName = bankingEntry.reference_name || bankingEntry.party_name || bankingEntry.narration;
     
     // If party info not provided, try to extract from narration
-    if (!partyId && bankingEntry.narration) {
-      // Try to find party by name in narration
+    if (!partyId && partyName) {
+      // Try to find party by name
       const Party = (await import('../models/Party.js')).default;
-      const parties = await Party.find({});
-      const foundParty = parties.find(p => 
-        bankingEntry.narration.toLowerCase().includes(p.name.toLowerCase())
-      );
-      if (foundParty) {
-        partyId = foundParty._id;
-        partyName = foundParty.name;
+      const party = await Party.findOne({ name: partyName });
+      if (party) {
+        partyId = party._id;
+        partyName = party.name;
       }
     }
     
@@ -86,11 +83,12 @@ const createPartyCommissionPaymentEntry = async (bankingEntry) => {
         party_name: partyName,
         date: bankingEntry.date,
         bill_number: '',
-        reference_id: bankingEntry.reference_id || bankingEntry._id.toString(),
+        reference_id: bankingEntry._id.toString(),
         entry_type: 'debit',
         amount: bankingEntry.amount,
-        narration: `Commission Payment – Bank Ref #${bankingEntry.reference_id || bankingEntry._id.toString().slice(-6)}`,
-        banking_id: bankingEntry._id
+        narration: `Commission Payment – Bank Ref #${bankingEntry._id.toString().slice(-6)}`,
+        banking_entry_id: bankingEntry._id,
+        reference_type: 'banking'
       });
       
       await commissionEntry.save();
@@ -128,8 +126,98 @@ router.post('/', async (req, res) => {
       console.log('✅ Created vehicle ledger entry for banking expense:', vehicleExpenseEntry._id);
     }
 
+    // Create party on account ledger entry for on account payments
+    if (bankingEntry.category === 'party_on_account' && bankingEntry.reference_name) {
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const Party = (await import('../models/Party.js')).default;
+      
+      // Find the party by name
+      const party = await Party.findOne({ name: bankingEntry.reference_name });
+      const partyId = party ? party._id : bankingEntry.reference_name;
+      
+      const onAccountLedgerEntry = new LedgerEntry({
+        referenceId: partyId,
+        reference_id: bankingEntry._id.toString(),
+        ledger_type: 'party',
+        reference_name: bankingEntry.reference_name,
+        source_type: 'banking',
+        type: 'party',
+        date: bankingEntry.date,
+        description: `On Account Payment – Bank Transfer`,
+        narration: `On Account Payment – Bank Transfer`,
+        debit: 0,
+        credit: bankingEntry.amount,
+        balance: 0,
+        partyId: partyId
+      });
+      
+      await onAccountLedgerEntry.save();
+      console.log('✅ Created party on account ledger entry:', onAccountLedgerEntry._id);
+    }
+
     // Create party commission ledger entry for commission payments
     await createPartyCommissionPaymentEntry(bankingEntry);
+
+    // Handle fuel wallet credits for banking transactions
+    if (bankingEntry.category === 'fuel_wallet' && bankingEntry.reference_name && bankingEntry.type === 'debit') {
+      const FuelWallet = (await import('../models/FuelWallet.js')).default;
+      const FuelTransaction = (await import('../models/FuelTransaction.js')).default;
+      
+      // Find or create the fuel wallet
+      let wallet = await FuelWallet.findOne({ name: bankingEntry.reference_name });
+      if (!wallet) {
+        wallet = new FuelWallet({
+          name: bankingEntry.reference_name,
+          balance: 0
+        });
+      }
+      
+      // Credit the wallet
+      wallet.balance += bankingEntry.amount;
+      await wallet.save();
+      
+      // Create fuel transaction record
+      const fuelTransaction = new FuelTransaction({
+        type: 'wallet_credit',
+        wallet_name: bankingEntry.reference_name,
+        amount: bankingEntry.amount,
+        date: bankingEntry.date,
+        narration: bankingEntry.narration || `Bank debit for fuel - ${bankingEntry.reference_name}`,
+        fuel_type: 'Diesel'
+      });
+      
+      await fuelTransaction.save();
+      console.log('✅ Credited fuel wallet from banking:', bankingEntry.reference_name, 'Amount:', bankingEntry.amount);
+    }
+
+    // Create general ledger entry for all banking transactions
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    
+    // Determine ledger type based on category
+    let ledgerType = 'general';
+    if (bankingEntry.category === 'party_commission') {
+      ledgerType = 'commission';
+    } else if (bankingEntry.category === 'vehicle_expense') {
+      ledgerType = 'vehicle_expense';
+    }
+    
+    const generalLedgerEntry = new LedgerEntry({
+      referenceId: bankingEntry._id,
+      reference_id: bankingEntry._id.toString(),
+      ledger_type: ledgerType,
+      reference_name: bankingEntry.reference_name || bankingEntry.category || 'Bank Transaction',
+      source_type: 'banking',
+      type: bankingEntry.type === 'debit' ? 'expense' : 'payment',
+      date: bankingEntry.date,
+      description: bankingEntry.narration || `Bank ${bankingEntry.type} - ${bankingEntry.category}`,
+      debit: bankingEntry.type === 'debit' ? bankingEntry.amount : 0,
+      credit: bankingEntry.type === 'credit' ? bankingEntry.amount : 0,
+      balance: 0,
+      vehicle_no: bankingEntry.vehicle_no || undefined,
+    });
+    
+    await generalLedgerEntry.save();
+    console.log('✅ Created general ledger entry for banking transaction:', generalLedgerEntry._id);
 
     res.status(201).json({
       message: 'Banking entry created successfully',
@@ -144,15 +232,44 @@ router.post('/', async (req, res) => {
 // Update banking entry
 router.put('/:id', async (req, res) => {
   try {
+    const oldBankingEntry = await BankingEntry.findById(req.params.id);
+    if (!oldBankingEntry) {
+      return res.status(404).json({ message: 'Banking entry not found' });
+    }
+
     const bankingEntry = await BankingEntry.findByIdAndUpdate(
       req.params.id,
       req.body,
       { new: true, runValidators: true }
     );
 
-    if (!bankingEntry) {
-      return res.status(404).json({ message: 'Banking entry not found' });
+    // Update corresponding ledger entries
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    
+    // Determine ledger type based on category
+    let ledgerType = 'general';
+    if (bankingEntry.category === 'party_commission') {
+      ledgerType = 'commission';
+    } else if (bankingEntry.category === 'vehicle_expense') {
+      ledgerType = 'vehicle_expense';
     }
+    
+    // Update all ledger entries with this referenceId (in case of duplicates)
+    const updateResult = await LedgerEntry.updateMany(
+      { referenceId: bankingEntry._id },
+      {
+        ledger_type: ledgerType,
+        reference_name: bankingEntry.reference_name || bankingEntry.category || 'Bank Transaction',
+        type: bankingEntry.type === 'debit' ? 'expense' : 'payment',
+        date: bankingEntry.date,
+        description: bankingEntry.narration || `Bank ${bankingEntry.type} - ${bankingEntry.category}`,
+        debit: bankingEntry.type === 'debit' ? bankingEntry.amount : 0,
+        credit: bankingEntry.type === 'credit' ? bankingEntry.amount : 0,
+        vehicle_no: bankingEntry.vehicle_no || undefined,
+      }
+    );
+    
+    console.log('✅ Updated', updateResult.modifiedCount, 'ledger entries for banking entry:', req.params.id);
 
     res.json({
       message: 'Banking entry updated successfully',
@@ -179,6 +296,14 @@ router.delete('/:id', async (req, res) => {
       banking_entry_id: bankingEntry._id,
       reference_type: 'banking'
     });
+
+    // Delete associated general ledger entries
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    await LedgerEntry.deleteMany({
+      referenceId: bankingEntry._id,
+      source_type: 'banking'
+    });
+    console.log('✅ Deleted associated ledger entries for banking entry:', req.params.id);
 
     // Delete the banking entry
     await BankingEntry.findByIdAndDelete(req.params.id);

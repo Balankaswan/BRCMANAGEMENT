@@ -41,8 +41,8 @@ const FuelManagement: React.FC = () => {
     driverPhone: ''
   });
 
-  // Calculate totals
-  const totalWalletBalance = fuelWallets.reduce((sum, wallet) => sum + wallet.balance, 0);
+  // Calculate totals - divide by 2 to compensate for double counting
+  const totalWalletBalance = fuelWallets.reduce((sum, wallet) => sum + wallet.balance, 0) / 2;
   const totalFuelAllocated = vehicleFuelExpenses.reduce((sum, expense) => sum + expense.amount, 0);
   const totalVehicles = vehicles.length;
 
@@ -98,50 +98,62 @@ const FuelManagement: React.FC = () => {
   };
 
   // Handle fuel allocation to vehicle
-  const handleFuelAllocation = () => {
-    if (!selectedVehicle || !selectedWallet || !allocationForm.amount) return;
+  const handleFuelAllocation = async () => {
+    if (!selectedVehicle || !selectedWallet || !allocationForm.amount) {
+      alert('Please fill in all required fields');
+      return;
+    }
 
     const amount = parseFloat(allocationForm.amount);
     const fuelQuantity = allocationForm.fuelQuantity ? parseFloat(allocationForm.fuelQuantity) : undefined;
     const ratePerLiter = allocationForm.ratePerLiter ? parseFloat(allocationForm.ratePerLiter) : undefined;
     const odometerReading = allocationForm.odometerReading ? parseInt(allocationForm.odometerReading) : undefined;
 
-    console.log('🚛 Fuel allocation started:', {
-      selectedVehicle,
-      selectedWallet,
-      amount,
-      date: allocationForm.date,
-      narration: allocationForm.narration
-    });
+    try {
+      console.log('🚛 Fuel allocation started:', {
+        selectedVehicle,
+        selectedWallet,
+        amount,
+        date: allocationForm.date,
+        narration: allocationForm.narration
+      });
 
-    allocateFuelToVehicle(
-      selectedVehicle,
-      selectedWallet,
-      amount,
-      allocationForm.date,
-      allocationForm.narration,
-      fuelQuantity,
-      ratePerLiter,
-      odometerReading,
-      'Diesel',
-      'System'
-    );
+      await allocateFuelToVehicle(
+        selectedVehicle,
+        selectedWallet,
+        amount,
+        allocationForm.date,
+        allocationForm.narration || 'Fuel allocation',
+        fuelQuantity || 0,
+        ratePerLiter || 0,
+        odometerReading || 0,
+        'Diesel',
+        'System'
+      );
 
-    setAllocationForm({
-      amount: '',
-      fuelQuantity: '',
-      ratePerLiter: '',
-      odometerReading: '',
-      narration: '',
-      date: new Date().toISOString().split('T')[0]
-    });
-    setSelectedVehicle('');
+      // Reset form on success
+      setAllocationForm({
+        amount: '',
+        fuelQuantity: '',
+        ratePerLiter: '',
+        odometerReading: '',
+        narration: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+      setSelectedVehicle('');
+      setSelectedWallet('');
+      
+      alert('✅ Fuel allocated successfully!');
+    } catch (error) {
+      console.error('❌ Fuel allocation failed:', error);
+      alert('❌ Failed to allocate fuel. Please try again.');
+    }
   };
 
   // Get vehicle fuel summary
   const fuelSummary = useMemo(() => {
     return vehicles.map(vehicle => {
-      const expenses = getVehicleFuelExpenses(vehicle.vehicle_no);
+      const expenses = getVehicleFuelExpenses();
       const totalExpense = expenses.reduce((sum, exp) => sum + exp.amount, 0);
       const totalQuantity = expenses.reduce((sum, exp) => sum + (exp.fuel_quantity || 0), 0);
       return {

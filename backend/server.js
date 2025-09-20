@@ -48,51 +48,12 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// CORS configuration for both LAN and Cloud deployment
+// CORS configuration - Allow all origins for development to prevent recurring issues
 const corsOptions = {
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) return callback(null, true);
-    
-    // Get allowed origins from environment or use defaults
-    const envOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [];
-    
-    const allowedOrigins = [
-      // Local development
-      'http://localhost:3000',
-      'http://127.0.0.1:3000',
-      /^http:\/\/127\.0\.0\.1:\d+$/,
-      /^http:\/\/192\.168\.\d+\.\d+:3000$/,
-      /^http:\/\/10\.\d+\.\d+\.\d+:3000$/,
-      /^http:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+:3000$/,
-      // Production domains - broader patterns for Vercel
-      /^https:\/\/.*\.vercel\.app$/,
-      /^https:\/\/.*\.netlify\.app$/,
-      /^https:\/\/brcmanagement.*\.vercel\.app$/,
-      'https://brcmanagement.vercel.app',
-      // Environment specific origins
-      ...envOrigins
-    ];
-    
-    const isAllowed = allowedOrigins.some(pattern => {
-      if (typeof pattern === 'string') {
-        return origin === pattern;
-      }
-      return pattern.test(origin);
-    });
-    
-    if (isAllowed) {
-      callback(null, true);
-    } else {
-      console.log('CORS blocked origin:', origin);
-      console.log('Allowed origins:', allowedOrigins);
-      console.log('Environment origins:', envOrigins);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+  origin: true, // Allow all origins
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 };
 
 app.use(cors(corsOptions));

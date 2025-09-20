@@ -6,7 +6,7 @@ import Bill from '../models/Bill.js';
 
 const router = express.Router();
 
-// Apply authentication to all routes except GET (for testing)
+// Apply authentication to all routes - temporarily disabled for debugging
 // router.use(authenticateToken);
 
 // Get all loading slips
@@ -32,23 +32,28 @@ router.get('/', async (req, res) => {
         const slipObj = slip.toObject();
 
         // Find memo and bill associated with this loading slip
-        // Try both string and ObjectId formats to handle different data types
-        const memo = await Memo.findOne({ 
-          $or: [
-            { loading_slip_id: slip._id },
-            { loading_slip_id: slip._id.toString() }
-          ]
-        });
-        
-        const bill = await Bill.findOne({ 
-          $or: [
-            { loading_slip_id: slip._id },
-            { loading_slip_id: slip._id.toString() }
-          ]
-        });
+        try {
+          const memo = await Memo.findOne({ 
+            $or: [
+              { loading_slip_id: slip._id },
+              { loading_slip_id: slip._id.toString() }
+            ]
+          });
+          
+          const bill = await Bill.findOne({ 
+            $or: [
+              { loading_slip_id: slip._id },
+              { loading_slip_id: slip._id.toString() }
+            ]
+          });
 
-        slipObj.memo_number = memo ? memo.memo_number : null;
-        slipObj.bill_number = bill ? bill.bill_number : null;
+          slipObj.memo_number = memo ? memo.memo_number : null;
+          slipObj.bill_number = bill ? bill.bill_number : null;
+        } catch (error) {
+          console.error('Error finding memo/bill for slip:', slip._id, error);
+          slipObj.memo_number = null;
+          slipObj.bill_number = null;
+        }
         
         // Ensure id field is present for frontend compatibility
         slipObj.id = slipObj._id.toString();

@@ -14,8 +14,6 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
     { id: 'loading-slip', label: 'Loading Slip', icon: FileText },
     { id: 'memo', label: 'Memo', icon: Receipt },
     { id: 'bills', label: 'Bills', icon: Receipt },
-    { id: 'paid-memo', label: 'Paid Memo', icon: Receipt },
-    { id: 'received-bills', label: 'Received Bills', icon: Receipt },
     { id: 'banking', label: 'Banking', icon: CreditCard },
     { id: 'cashbook', label: 'Cashbook', icon: CreditCard },
     { id: 'party-ledger', label: 'Party Ledgers', icon: FileText },

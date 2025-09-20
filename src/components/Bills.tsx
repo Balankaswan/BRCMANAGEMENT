@@ -12,7 +12,7 @@ interface BillsListProps {
 }
 
 const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = false }) => {
-  const { bills, addBill, updateBill, deleteBill, bankingEntries, addBankingEntry, loadingSlips, markBillAsReceived } = useDataStore();
+  const { bills, addBill, updateBill, deleteBill, bankingEntries, cashbookEntries, addBankingEntry, loadingSlips, markBillAsReceived } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
@@ -111,7 +111,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
       }
       
       if (relatedLoadingSlip) {
-        await generateBillPDF(enhancedBill, relatedLoadingSlip);
+        await generateBillPDF(enhancedBill, relatedLoadingSlip, bankingEntries, cashbookEntries);
       } else {
         console.error('Related loading slip not found for bill:', bill.id, 'loading_slip_id:', bill.loading_slip_id);
         alert('Related loading slip not found. Cannot generate PDF.');

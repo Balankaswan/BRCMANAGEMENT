@@ -31,20 +31,22 @@ const GeneralLedger: React.FC<GeneralLedgerProps> = ({ selectedPerson }) => {
     return Array.from(personSet).sort();
   }, [ledgerEntries]);
 
-  // Generate ledger entries for selected person
+  // Generate ledger entries for selected person or all entries
   const personLedgerEntries = useMemo(() => {
-    if (!personFilter) return [];
-
     const entries: GeneralLedgerEntry[] = [];
     let runningBalance = 0;
 
-    // Get all general ledger entries for the person
-    const personEntries = ledgerEntries
-      .filter(entry => entry.ledger_type === 'general' && entry.reference_name === personFilter)
+    // Get all general ledger entries (filtered by person if selected)
+    const filteredEntries = ledgerEntries
+      .filter(entry => {
+        if (entry.ledger_type !== 'general') return false;
+        if (personFilter && entry.reference_name !== personFilter) return false;
+        return true;
+      })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Generate ledger entries with running balance
-    personEntries.forEach(entry => {
+    filteredEntries.forEach((entry: any) => {
       runningBalance += entry.debit - entry.credit;
 
       entries.push({
@@ -141,7 +143,7 @@ const GeneralLedger: React.FC<GeneralLedgerProps> = ({ selectedPerson }) => {
               onChange={(e) => setPersonFilter(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="">Select Person/Vendor</option>
+              <option value="">All Transactions</option>
               {persons.map((person, index) => (
                 <option key={`${person}-${index}`} value={person}>{person}</option>
               ))}

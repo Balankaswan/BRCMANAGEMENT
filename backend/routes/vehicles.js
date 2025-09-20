@@ -4,8 +4,11 @@ import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Temporarily disable authentication for testing
-// router.use(authenticateToken);
+// Disable authentication for debugging
+router.use((req, res, next) => {
+  console.log(`Vehicles route: ${req.method} ${req.path}`);
+  next(); // Skip authentication completely
+});
 
 // Get all vehicles
 router.get('/', async (req, res) => {

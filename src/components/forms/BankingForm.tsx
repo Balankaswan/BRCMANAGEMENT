@@ -15,7 +15,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
   const { memos, bills, ledgerEntries, parties, vehicles, loadingSlips } = useDataStore();
   const [formData, setFormData] = useState({
     type: editingEntry?.type || 'credit' as 'credit' | 'debit',
-    category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'other',
+    category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'party_on_account' | 'other',
     amount: editingEntry?.amount || 0,
     date: editingEntry?.date || new Date().toISOString().split('T')[0],
     reference_id: editingEntry?.reference_id || '',
@@ -49,27 +49,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Create vehicle ledger entry for vehicle expenses
-    if (formData.category === 'vehicle_expense' && formData.vehicle_no) {
-      const vehicleLedgerEntry = {
-        ledger_type: 'vehicle_expense',
-        reference_id: formData.reference_id || `BANK-${Date.now()}`,
-        reference_name: `Vehicle ${formData.vehicle_no} - ${formData.narration || 'Banking Expense'}`,
-        date: formData.date,
-        description: formData.narration || 'Vehicle expense from banking',
-        debit: formData.amount,
-        credit: 0,
-        balance: 0,
-        vehicle_no: formData.vehicle_no,
-      };
-      
-      try {
-        await apiService.createLedgerEntry(vehicleLedgerEntry);
-        console.log('✅ Vehicle expense ledger entry created:', vehicleLedgerEntry);
-      } catch (error) {
-        console.error('❌ Failed to create vehicle expense ledger entry:', error);
-      }
-    }
+    // Note: Vehicle ledger entries are now automatically created by the backend banking route
     
     // Create party commission ledger entry for commission payments
     if (formData.category === 'party_commission' && formData.reference_name) {
@@ -78,18 +58,18 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
       const partyId = selectedParty ? selectedParty.id : formData.reference_name;
       
       const commissionLedgerEntry = {
-        referenceId: partyId,
+        referenceId: partyId || selectedParty?.id || 'unknown',
+        reference_id: `banking-${Date.now()}`,
         ledger_type: 'commission',
         reference_name: selectedParty ? selectedParty.name : formData.reference_name,
         type: 'commission',
         date: formData.date,
         description: `Commission Payment – Bank Transfer`,
-        narration: `Commission Payment – Bank Transfer`,
         debit: formData.amount,
         credit: 0,
         balance: 0,
         source_type: 'banking',
-        partyId: partyId
+        partyId: partyId || selectedParty?.id
       };
       
       console.log('🔍 Commission ledger entry to create:', commissionLedgerEntry);
@@ -102,6 +82,9 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
         console.error('❌ Failed to create party commission ledger entry:', error);
       }
     }
+    
+    // Party on account ledger entries are now created automatically by the backend
+    // No need to create them manually in the frontend
     
     onSubmit(formData);
   };
@@ -130,6 +113,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
       return [
         { value: 'bill_advance', label: 'Bill Advance' },
         { value: 'bill_payment', label: 'Bill Payment' },
+        { value: 'party_on_account', label: 'Party On Account' },
         { value: 'vehicle_credit_note', label: 'Vehicle Credit Note (Insurance/Cashback)' },
         { value: 'other', label: 'Other Income' },
       ];
@@ -141,6 +125,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
         { value: 'vehicle_expense', label: 'Vehicle Expense' },
         { value: 'fuel_wallet', label: 'Fuel Wallet Credit' },
         { value: 'party_commission', label: 'Party Commission Payment' },
+        { value: 'party_on_account', label: 'Party On Account Payment' },
         { value: 'other', label: 'Other Expense' },
       ];
     }
@@ -149,6 +134,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
   const needsReference = () => {
     return ['bill_advance', 'bill_payment', 'memo_advance', 'memo_payment', 'party_commission'].includes(formData.category);
   };
+
 
   const needsVehicle = () => {
     return formData.category === 'vehicle_expense' || formData.category === 'vehicle_credit_note';
@@ -163,7 +149,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
       return existingBills;
     } else if (formData.category.includes('memo')) {
       return existingMemos;
-    } else if (formData.category === 'party_commission') {
+    } else if (formData.category === 'party_commission' || formData.category === 'party_on_account') {
       return parties.map(p => p.name).filter(Boolean);
     }
     return [];
@@ -178,8 +164,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
       } else if (prev.category.includes('memo')) {
         const memo = memos.find(m => m.memo_number === value);
         reference_name = memo?.supplier || '';
-      } else if (prev.category === 'party_commission') {
-        reference_name = value; // Party name is the reference_name for commission payments
+      } else if (prev.category === 'party_commission' || prev.category === 'party_on_account') {
+        reference_name = value; // Party name is the reference_name for commission/on account payments
       }
       return {
         ...prev,
@@ -290,13 +276,35 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
+              {/* Party On Account - Special handling */}
+              {formData.category === 'party_on_account' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Party
+                  </label>
+                  <select
+                    name="reference_name"
+                    value={formData.reference_name}
+                    onChange={handleInputChange}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option key="select-party-commission" value="">Select Party</option>
+                    {parties.map((party) => (
+                      <option key={party.id} value={party.name}>
+                        {party.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
           {needsReference() && (
             <>
-              {/* Party Selection for Bill Advance and Bill Payment */}
-              {(formData.category === 'bill_advance' || formData.category === 'bill_payment') && (
+              {/* Party Selection for Bill Advance, Bill Payment, and Party Commission */}
+              {(formData.category === 'bill_advance' || formData.category === 'bill_payment' || formData.category === 'party_commission' || formData.category === 'party_on_account') && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Select Party
@@ -316,7 +324,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     >
-                      <option value="">Select Party</option>
+                      <option key="select-party" value="">Select Party</option>
                       {parties.map((party) => (
                         <option key={party.id} value={party.name}>
                           {party.name}
@@ -341,7 +349,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       required
                     >
-                      <option value="">Select Bill</option>
+                      <option key="select-bill" value="">Select Bill</option>
                       {bills
                         .filter(bill => bill.party === formData.reference_name)
                         .map((bill, index) => {
@@ -367,8 +375,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                 </div>
               )}
 
-              {/* Reference fields for other categories */}
-              {formData.category !== 'bill_advance' && formData.category !== 'bill_payment' && (
+              {/* Reference fields for other categories (excluding party_on_account and party_commission) */}
+              {formData.category !== 'bill_advance' && formData.category !== 'bill_payment' && formData.category !== 'party_on_account' && formData.category !== 'party_commission' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -435,7 +443,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               >
-                <option value="">Select Vehicle</option>
+                <option key="select-vehicle" value="">Select Vehicle</option>
                 {getOwnVehicles().map((vehicle) => (
                   <option key={vehicle.id} value={vehicle.vehicle_no}>
                     {vehicle.vehicle_no} ({vehicle.vehicle_type})
@@ -461,12 +469,12 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
-                  <option value="">Select Fuel Wallet</option>
-                  <option value="BPCL">BPCL</option>
-                  <option value="HPCL">HPCL</option>
-                  <option value="IOCL">IOCL</option>
-                  <option value="Shell">Shell</option>
-                  <option value="Essar">Essar</option>
+                  <option key="select-fuel" value="">Select Fuel Wallet</option>
+                  <option key="BPCL" value="BPCL">BPCL</option>
+                  <option key="HPCL" value="HPCL">HPCL</option>
+                  <option key="IOCL" value="IOCL">IOCL</option>
+                  <option key="Shell" value="Shell">Shell</option>
+                  <option key="Essar" value="Essar">Essar</option>
                 </select>
               ) : ((formData.type === 'debit' && (formData.category === 'expense' || formData.category === 'other')) || 
                      (formData.type === 'credit' && formData.category === 'other')) ? (
@@ -617,10 +625,10 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   required
                 >
-                  <option value="expense">Expense Account</option>
-                  <option value="income">Income Account</option>
-                  <option value="asset">Asset Account</option>
-                  <option value="liability">Liability Account</option>
+                  <option key="expense" value="expense">Expense Account</option>
+                  <option key="income" value="income">Income Account</option>
+                  <option key="asset" value="asset">Asset Account</option>
+                  <option key="liability" value="liability">Liability Account</option>
                 </select>
               </div>
 
