@@ -1,6 +1,5 @@
 import express from 'express';
 import BankingEntry from '../models/BankingEntry.js';
-import PartyCommissionLedger from '../models/PartyCommissionLedger.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -103,60 +102,11 @@ router.post('/', async (req, res) => {
     const bankingEntry = new BankingEntry(req.body);
     await bankingEntry.save();
 
-    // Create corresponding ledger entries for vehicle expenses
-    if (bankingEntry.vehicle_no && bankingEntry.category === 'vehicle_expense') {
-      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-      
-      const vehicleExpenseEntry = new LedgerEntry({
-        referenceId: bankingEntry._id,
-        reference_id: bankingEntry._id.toString(),
-        ledger_type: 'vehicle_expense',
-        reference_name: `Vehicle ${bankingEntry.vehicle_no} - Expense`,
-        source_type: 'banking',
-        type: 'expense',
-        date: bankingEntry.date,
-        description: bankingEntry.narration || 'Vehicle expense',
-        debit: bankingEntry.amount,
-        credit: 0,
-        balance: 0,
-        vehicle_no: bankingEntry.vehicle_no,
-      });
-      
-      await vehicleExpenseEntry.save();
-      console.log('✅ Created vehicle ledger entry for banking expense:', vehicleExpenseEntry._id);
-    }
+    // Party on account entries are now handled by the centralized ledger regeneration system
+    // On account entries will be created during manual regeneration
 
-    // Create party on account ledger entry for on account payments
-    if (bankingEntry.category === 'party_on_account' && bankingEntry.reference_name) {
-      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-      const Party = (await import('../models/Party.js')).default;
-      
-      // Find the party by name
-      const party = await Party.findOne({ name: bankingEntry.reference_name });
-      const partyId = party ? party._id : bankingEntry.reference_name;
-      
-      const onAccountLedgerEntry = new LedgerEntry({
-        referenceId: partyId,
-        reference_id: bankingEntry._id.toString(),
-        ledger_type: 'party',
-        reference_name: bankingEntry.reference_name,
-        source_type: 'banking',
-        type: 'party',
-        date: bankingEntry.date,
-        description: `On Account Payment – Bank Transfer`,
-        narration: `On Account Payment – Bank Transfer`,
-        debit: 0,
-        credit: bankingEntry.amount,
-        balance: 0,
-        partyId: partyId
-      });
-      
-      await onAccountLedgerEntry.save();
-      console.log('✅ Created party on account ledger entry:', onAccountLedgerEntry._id);
-    }
-
-    // Create party commission ledger entry for commission payments
-    await createPartyCommissionPaymentEntry(bankingEntry);
+    // Party commission entries are now handled by the centralized ledger regeneration system
+    // await createPartyCommissionPaymentEntry(bankingEntry);
 
     // Handle fuel wallet credits for banking transactions
     if (bankingEntry.category === 'fuel_wallet' && bankingEntry.reference_name && bankingEntry.type === 'debit') {
@@ -190,34 +140,63 @@ router.post('/', async (req, res) => {
       console.log('✅ Credited fuel wallet from banking:', bankingEntry.reference_name, 'Amount:', bankingEntry.amount);
     }
 
-    // Create general ledger entry for all banking transactions
+    // Create ledger entries automatically with duplicate prevention
+    // Create appropriate ledger entries based on category
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
     
-    // Determine ledger type based on category
-    let ledgerType = 'general';
-    if (bankingEntry.category === 'party_commission') {
-      ledgerType = 'commission';
-    } else if (bankingEntry.category === 'vehicle_expense') {
-      ledgerType = 'vehicle_expense';
+    // Exclude specific categories from general ledger
+    const excludedCategories = [
+      'party_commission', 
+      'party_on_account', 
+      'memo_advance', 
+      'bill_advance', 
+      'memo_payment', 
+      'bill_payment', 
+      'on_account_advance',
+      'fuel_wallet'
+    ];
+    
+    if (!excludedCategories.includes(bankingEntry.category)) {
+      let ledgerType = 'general';
+      let referenceName = bankingEntry.reference_name || bankingEntry.category || 'Bank Transaction';
+      let referenceId = bankingEntry._id;
+      
+      // Handle vehicle expenses specifically
+      if (bankingEntry.category === 'vehicle_expense' && bankingEntry.vehicle_no) {
+        ledgerType = 'vehicle_expense';
+        referenceName = `Vehicle ${bankingEntry.vehicle_no} - Bank Expense`;
+        referenceId = bankingEntry.vehicle_no;
+      }
+      
+      const ledgerEntry = new LedgerEntry({
+        referenceId: referenceId,
+        reference_id: bankingEntry._id.toString(),
+        ledger_type: ledgerType,
+        reference_name: referenceName,
+        source_type: 'banking',
+        type: bankingEntry.type === 'debit' ? 'expense' : 'payment',
+        date: bankingEntry.date,
+        description: bankingEntry.narration || `Bank ${bankingEntry.type} - ${bankingEntry.category}`,
+        debit: bankingEntry.type === 'debit' ? bankingEntry.amount : 0,
+        credit: bankingEntry.type === 'credit' ? bankingEntry.amount : 0,
+        balance: 0,
+        vehicle_no: bankingEntry.vehicle_no || undefined,
+      });
+      
+      // Check if ledger entry already exists to prevent duplicates
+      const existingEntry = await LedgerEntry.findOne({
+        reference_id: bankingEntry._id.toString(),
+        source_type: 'banking',
+        ledger_type: ledgerType
+      });
+      
+      if (!existingEntry) {
+        await ledgerEntry.save();
+        console.log('✅ Created general ledger entry for banking transaction:', ledgerEntry._id, 'Type:', ledgerType);
+      } else {
+        console.log('⚠️ Ledger entry already exists for banking transaction, skipping duplicate');
+      }
     }
-    
-    const generalLedgerEntry = new LedgerEntry({
-      referenceId: bankingEntry._id,
-      reference_id: bankingEntry._id.toString(),
-      ledger_type: ledgerType,
-      reference_name: bankingEntry.reference_name || bankingEntry.category || 'Bank Transaction',
-      source_type: 'banking',
-      type: bankingEntry.type === 'debit' ? 'expense' : 'payment',
-      date: bankingEntry.date,
-      description: bankingEntry.narration || `Bank ${bankingEntry.type} - ${bankingEntry.category}`,
-      debit: bankingEntry.type === 'debit' ? bankingEntry.amount : 0,
-      credit: bankingEntry.type === 'credit' ? bankingEntry.amount : 0,
-      balance: 0,
-      vehicle_no: bankingEntry.vehicle_no || undefined,
-    });
-    
-    await generalLedgerEntry.save();
-    console.log('✅ Created general ledger entry for banking transaction:', generalLedgerEntry._id);
 
     res.status(201).json({
       message: 'Banking entry created successfully',
@@ -254,9 +233,12 @@ router.put('/:id', async (req, res) => {
       ledgerType = 'vehicle_expense';
     }
     
-    // Update all ledger entries with this referenceId (in case of duplicates)
+    // Update all ledger entries with this banking entry reference_id
     const updateResult = await LedgerEntry.updateMany(
-      { referenceId: bankingEntry._id },
+      { 
+        reference_id: bankingEntry._id.toString(),
+        source_type: 'banking'
+      },
       {
         ledger_type: ledgerType,
         reference_name: bankingEntry.reference_name || bankingEntry.category || 'Bank Transaction',
@@ -297,13 +279,16 @@ router.delete('/:id', async (req, res) => {
       reference_type: 'banking'
     });
 
-    // Delete associated general ledger entries
+    // Delete associated ledger entries
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    await LedgerEntry.deleteMany({
-      referenceId: bankingEntry._id,
+    
+    // Delete by reference_id (banking entry ID) to catch all related entries
+    const deleteResult = await LedgerEntry.deleteMany({
+      reference_id: bankingEntry._id.toString(),
       source_type: 'banking'
     });
-    console.log('✅ Deleted associated ledger entries for banking entry:', req.params.id);
+    
+    console.log('✅ Deleted', deleteResult.deletedCount, 'associated ledger entries for banking entry:', req.params.id);
 
     // Delete the banking entry
     await BankingEntry.findByIdAndDelete(req.params.id);

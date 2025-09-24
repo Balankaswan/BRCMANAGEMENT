@@ -5,7 +5,7 @@ import { authenticateToken } from '../middleware/auth.js';
 const router = express.Router();
 
 // Get all party commission ledger entries with optional filtering
-router.get('/', authenticateToken, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { date_from, date_to, bill_number, party_id } = req.query;
     
@@ -39,7 +39,7 @@ router.get('/', authenticateToken, async (req, res) => {
 });
 
 // Get ledger summary (party-wise or overall)
-router.get('/summary', authenticateToken, async (req, res) => {
+router.get('/summary', async (req, res) => {
   try {
     const { date_from, date_to, party_id } = req.query;
     
@@ -87,7 +87,7 @@ router.get('/summary', authenticateToken, async (req, res) => {
 });
 
 // Get list of parties with commission entries
-router.get('/parties', authenticateToken, async (req, res) => {
+router.get('/parties', async (req, res) => {
   try {
     const parties = await PartyCommissionLedger.aggregate([
       {
@@ -125,8 +125,24 @@ router.get('/parties', authenticateToken, async (req, res) => {
   }
 });
 
+// Delete all party commission ledger entries (bulk delete) - must be before /:id route
+router.delete('/all', async (req, res) => {
+  try {
+    const deleteResult = await PartyCommissionLedger.deleteMany({});
+    console.log(`🗑️ Bulk deleted ${deleteResult.deletedCount} party commission ledger entries`);
+    
+    res.json({
+      message: `Successfully deleted ${deleteResult.deletedCount} party commission ledger entries`,
+      deletedCount: deleteResult.deletedCount
+    });
+  } catch (error) {
+    console.error('Bulk delete party commission ledger entries error:', error);
+    res.status(500).json({ message: 'Failed to delete party commission ledger entries', error: error.message });
+  }
+});
+
 // Create party commission ledger entry (internal use)
-router.post('/', authenticateToken, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const entry = new PartyCommissionLedger(req.body);
     await entry.save();
@@ -138,7 +154,7 @@ router.post('/', authenticateToken, async (req, res) => {
 });
 
 // Delete party commission ledger entry (internal use)
-router.delete('/:id', authenticateToken, async (req, res) => {
+router.delete('/:id', async (req, res) => {
   try {
     const entry = await PartyCommissionLedger.findByIdAndDelete(req.params.id);
     if (!entry) {

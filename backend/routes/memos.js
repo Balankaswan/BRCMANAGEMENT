@@ -94,8 +94,14 @@ router.post('/', async (req, res) => {
     // Populate loading slip data
     await memo.populate({ path: 'loading_slip_id', model: 'LoadingSlip' });
 
-    // Automatically create ledger entries
-    await createMemoLedgerEntries(memo);
+    // Create ledger entries automatically for this memo
+    try {
+      await createMemoLedgerEntries(memo);
+      console.log('✅ Created ledger entries for memo:', memo.memo_number);
+    } catch (error) {
+      console.error('⚠️ Failed to create ledger entries for memo:', error);
+      // Don't fail memo creation if ledger creation fails
+    }
 
     const memoObj = memo.toObject();
     memoObj.id = memoObj._id.toString();

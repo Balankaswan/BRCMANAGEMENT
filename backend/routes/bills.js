@@ -64,49 +64,44 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// Helper function to create party commission ledger entry
+// Helper function to create party commission ledger entry with duplicate prevention
 const createPartyCommissionEntry = async (bill, entryType = 'credit') => {
   if (bill.party_commission_cut && bill.party_commission_cut > 0) {
-    const narration = entryType === 'credit' 
-      ? `Commission Cut – Bill No. ${bill.bill_number}`
-      : `Commission Cut Reversal – Bill No. ${bill.bill_number}`;
+    const PartyCommissionLedger = (await import('../models/PartyCommissionLedger.js')).default;
     
-    // Use party_id/party_name if available, otherwise fallback to party field
-    let partyId = bill.party_id;
-    let partyName = bill.party_name || bill.party;
+    // Check if entry already exists to prevent duplicates
+    const existingEntry = await PartyCommissionLedger.findOne({
+      bill_id: bill._id,
+      entry_type: entryType
+    });
     
-    // If no party_id, try to find party by name
-    if (!partyId && bill.party) {
-      try {
-        const Party = (await import('../models/Party.js')).default;
-        const foundParty = await Party.findOne({ name: bill.party });
-        if (foundParty) {
-          partyId = foundParty._id;
-          partyName = foundParty.name;
-        }
-      } catch (error) {
-        console.warn('Could not find party for commission ledger:', error);
-      }
-    }
-    
-    // Only create entry if we have party information
-    if (partyId && partyName) {
+    if (!existingEntry) {
+      const narration = entryType === 'credit' 
+        ? `Commission Cut – Bill No. ${bill.bill_number}`
+        : `Commission Cut Reversal – Bill No. ${bill.bill_number}`;
+      
+      // Find the party by name
+      const Party = (await import('../models/Party.js')).default;
+      const party = await Party.findOne({ name: bill.party });
+      const partyId = party ? party._id : bill.party;
+      
       const commissionEntry = new PartyCommissionLedger({
         party_id: partyId,
-        party_name: partyName,
+        party_name: bill.party,
         date: bill.date,
         bill_number: bill.bill_number,
         reference_id: bill.bill_number,
         entry_type: entryType,
         amount: bill.party_commission_cut,
         narration: narration,
-        bill_id: bill._id
+        bill_id: bill._id,
+        reference_type: 'bill'
       });
       
       await commissionEntry.save();
-      console.log(`✅ Created party commission ${entryType} entry for ${partyName}`);
+      console.log(`✅ Created party commission ${entryType} entry for bill ${bill.bill_number}: ₹${bill.party_commission_cut}`);
     } else {
-      console.warn(`⚠️ Skipping commission ledger entry - missing party info for bill ${bill.bill_number}`);
+      console.log(`⚠️ Party commission entry already exists for bill ${bill.bill_number}, skipping duplicate`);
     }
   }
 };
@@ -131,7 +126,7 @@ router.post('/', async (req, res) => {
     const bill = new Bill(billData);
     await bill.save();
 
-    // Create party commission ledger entry if commission cut exists
+    // Create party commission ledger entry if commission cut exists (with duplicate prevention)
     await createPartyCommissionEntry(bill, 'credit');
 
     // Populate loading slip data
@@ -165,7 +160,8 @@ router.put('/:id', async (req, res) => {
       { new: true, runValidators: true }
     ).populate('loading_slip_id');
 
-    // Handle party commission ledger updates
+    // Party commission entries are now handled by the centralized ledger regeneration system
+    // await createPartyCommissionEntry(bill);
     const originalCommission = originalBill.party_commission_cut || 0;
     const newCommission = bill.party_commission_cut || 0;
 
@@ -178,11 +174,8 @@ router.put('/:id', async (req, res) => {
         console.log(`🗑️ Removed old commission entry for bill ${bill.bill_number}`);
       }
       
-      // Create new commission entry if needed
-      if (newCommission > 0) {
-        await createPartyCommissionEntry(bill, 'credit');
-        console.log(`✅ Updated commission entry for bill ${bill.bill_number}: ₹${newCommission}`);
-      }
+      // Party commission entries are now handled by the centralized ledger regeneration system
+      // Commission entries will be created during manual regeneration
     }
 
     const billObj = bill.toObject();

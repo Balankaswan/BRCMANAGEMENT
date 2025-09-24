@@ -210,4 +210,143 @@ router.post('/allocate', async (req, res) => {
   }
 });
 
+// Clean up test fuel data
+router.post('/cleanup-test-data', async (req, res) => {
+  try {
+    console.log('🧹 Starting fuel test data cleanup...');
+    
+    let deletedCount = 0;
+    
+    // 1. Remove test fuel transactions
+    const testTransactions = await FuelTransaction.find({
+      $or: [
+        { narration: { $regex: /test/i } },
+        { description: { $regex: /test/i } },
+        { vehicle_no: { $regex: /test/i } },
+        { narration: { $regex: /frontend.*test/i } }
+      ]
+    });
+    
+    for (const transaction of testTransactions) {
+      await FuelTransaction.findByIdAndDelete(transaction._id);
+      deletedCount++;
+      console.log('🗑️ Deleted test fuel transaction:', transaction._id, transaction.narration);
+    }
+    
+    // 2. Remove test vehicle fuel expenses
+    const VehicleFuelExpense = (await import('../models/VehicleFuelExpense.js')).default;
+    const testExpenses = await VehicleFuelExpense.find({
+      $or: [
+        { description: { $regex: /test/i } },
+        { vehicle_no: { $regex: /test/i } },
+        { narration: { $regex: /test/i } }
+      ]
+    });
+    
+    for (const expense of testExpenses) {
+      await VehicleFuelExpense.findByIdAndDelete(expense._id);
+      deletedCount++;
+      console.log('🗑️ Deleted test vehicle fuel expense:', expense._id);
+    }
+    
+    // 3. Remove test ledger entries related to fuel
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    const testLedgerEntries = await LedgerEntry.find({
+      source_type: 'fuel',
+      $or: [
+        { description: { $regex: /test/i } },
+        { reference_name: { $regex: /test/i } },
+        { description: { $regex: /frontend.*test/i } }
+      ]
+    });
+    
+    for (const entry of testLedgerEntries) {
+      await LedgerEntry.findByIdAndDelete(entry._id);
+      deletedCount++;
+      console.log('🗑️ Deleted test fuel ledger entry:', entry._id, entry.description);
+    }
+    
+    console.log('✅ Fuel test data cleanup completed');
+    console.log('🗑️ Total deleted entries:', deletedCount);
+    
+    res.json({
+      message: 'Fuel test data cleanup completed successfully',
+      summary: {
+        deletedEntries: deletedCount,
+        testTransactions: testTransactions.length,
+        testExpenses: testExpenses.length,
+        testLedgerEntries: testLedgerEntries.length
+      }
+    });
+    
+  } catch (error) {
+    console.error('Fuel cleanup error:', error);
+    res.status(500).json({ 
+      message: 'Failed to cleanup fuel test data', 
+      error: error.message 
+    });
+  }
+});
+
+// Clear all fuel allocation data
+router.delete('/clear-all-data', async (req, res) => {
+  try {
+    console.log('🧹 Starting complete fuel data cleanup...');
+    
+    let deletedCount = 0;
+    
+    // 1. Remove all fuel transactions
+    const allTransactions = await FuelTransaction.find({});
+    for (const transaction of allTransactions) {
+      await FuelTransaction.findByIdAndDelete(transaction._id);
+      deletedCount++;
+      console.log('🗑️ Deleted fuel transaction:', transaction._id, transaction.narration);
+    }
+    
+    // 2. Remove all vehicle fuel expenses
+    const VehicleFuelExpense = (await import('../models/VehicleFuelExpense.js')).default;
+    const allExpenses = await VehicleFuelExpense.find({});
+    for (const expense of allExpenses) {
+      await VehicleFuelExpense.findByIdAndDelete(expense._id);
+      deletedCount++;
+      console.log('🗑️ Deleted vehicle fuel expense:', expense._id);
+    }
+    
+    // 3. Remove all fuel-related ledger entries
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    const fuelLedgerEntries = await LedgerEntry.find({
+      source_type: 'fuel'
+    });
+    for (const entry of fuelLedgerEntries) {
+      await LedgerEntry.findByIdAndDelete(entry._id);
+      deletedCount++;
+      console.log('🗑️ Deleted fuel ledger entry:', entry._id, entry.description);
+    }
+    
+    // 4. Reset all fuel wallet balances to 0 (but keep the wallets)
+    const resetWallets = await FuelWallet.updateMany({}, { balance: 0 });
+    console.log('🔄 Reset fuel wallet balances:', resetWallets.modifiedCount);
+    
+    console.log('✅ Complete fuel data cleanup completed');
+    console.log('🗑️ Total deleted entries:', deletedCount);
+    
+    res.json({
+      message: 'All fuel data cleared successfully',
+      summary: {
+        deletedEntries: deletedCount,
+        transactions: allTransactions.length,
+        expenses: allExpenses.length,
+        ledgerEntries: fuelLedgerEntries.length,
+        walletsReset: resetWallets.modifiedCount
+      }
+    });
+  } catch (error) {
+    console.error('Fuel data cleanup error:', error);
+    res.status(500).json({ 
+      message: 'Failed to clear fuel data', 
+      error: error.message 
+    });
+  }
+});
+
 export default router;

@@ -57,53 +57,43 @@ export const handleOwnVehicleMemo = async (memo) => {
       throw new Error('Loading slip not found');
     }
 
-    // Calculate net amount after deductions
-    const netAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0);
+    // Create single consolidated entry for the memo (total amount)
+    const totalAmount = memo.freight + (memo.detention || 0) + (memo.extra || 0) - (memo.commission || 0) - (memo.mamool || 0);
     
-    // Main freight entry (net amount after commission and mamool)
-    await createLedgerEntry({
-      referenceId: memo._id,
-      type: 'memo',
-      vehicleNo: loadingSlip.vehicle_no,
-      credit: netAmount,
-      debit: 0,
-      description: `Freight after deductions`,
-      date: memo.date,
-      memoNumber: memo.memo_number
-    });
-
-    // Separate detention entry if applicable
-    if (memo.detention && memo.detention > 0) {
-      await createLedgerEntry({
-        referenceId: memo._id,
-        type: 'memo',
-        vehicleNo: loadingSlip.vehicle_no,
-        credit: memo.detention,
-        debit: 0,
-        description: `Detention charges`,
-        date: memo.date,
-        memoNumber: memo.memo_number
+    if (totalAmount > 0) {
+      // Check if ledger entry already exists for this memo to prevent duplicates
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const existingEntry = await LedgerEntry.findOne({
+        reference_id: memo._id.toString(),
+        source_type: 'memo',
+        ledger_type: 'vehicle_expense'
       });
-    }
-
-    // Separate extra charges entry if applicable
-    if (memo.extra && memo.extra > 0) {
-      await createLedgerEntry({
-        referenceId: memo._id,
-        type: 'memo',
-        vehicleNo: loadingSlip.vehicle_no,
-        credit: memo.extra,
-        debit: 0,
-        description: `Extra charges`,
-        date: memo.date,
-        memoNumber: memo.memo_number
-      });
+      
+      if (!existingEntry) {
+        await LedgerEntry.create({
+          referenceId: loadingSlip.vehicle_no,
+          reference_id: memo._id.toString(),
+          ledger_type: 'vehicle_expense',
+          reference_name: `Vehicle ${loadingSlip.vehicle_no} - Memo Credit`,
+          source_type: 'memo',
+          type: 'payment',
+          date: memo.date,
+          description: `Memo ${memo.memo_number} - Total: ₹${totalAmount} (Freight: ₹${memo.freight}, Detention: ₹${memo.detention || 0}, Extra: ₹${memo.extra || 0}, Commission: -₹${memo.commission || 0}, Mamool: -₹${memo.mamool || 0})`,
+          debit: 0,
+          credit: totalAmount,
+          vehicle_no: loadingSlip.vehicle_no,
+          created_at: new Date()
+        });
+        console.log(`✅ Created vehicle ledger entry for memo ${memo.memo_number}: ₹${totalAmount}`);
+      } else {
+        console.log(`⚠️ Ledger entry already exists for memo ${memo.memo_number}, skipping duplicate`);
+      }
     }
 
     console.log('✅ Own vehicle memo processed:', {
       memo: memo.memo_number,
       vehicle: loadingSlip.vehicle_no,
-      netAmount,
+      totalAmount,
       detention: memo.detention || 0,
       extra: memo.extra || 0
     });

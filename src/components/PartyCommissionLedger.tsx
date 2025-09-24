@@ -1,8 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { FileText, Download, Filter, Users } from 'lucide-react';
+import { FileText, Download, Filter, Users, ExternalLink } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
-import { Party } from '../types';
+import type { Party, Memo } from '../types';
 import { apiService } from '../lib/api';
 
 interface CommissionSummary {
@@ -27,7 +27,11 @@ interface Filters {
   searchTerm: string;
 }
 
-const PartyCommissionLedger: React.FC = () => {
+interface PartyCommissionLedgerProps {
+  onNavigate?: (page: string, params?: any) => void;
+}
+
+const PartyCommissionLedger: React.FC<PartyCommissionLedgerProps> = ({ onNavigate }) => {
   const { parties } = useDataStore();
   const [selectedParty, setSelectedParty] = useState<Party | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -39,6 +43,21 @@ const PartyCommissionLedger: React.FC = () => {
     partyId: '',
     searchTerm: ''
   });
+  const [viewMemo, setViewMemo] = useState<Memo | null>(null);
+
+  // Function to handle bill number click - navigate to Bills page
+  const handleBillClick = (billNumber: string) => {
+    if (onNavigate) {
+      onNavigate('bills', { highlight: billNumber });
+    }
+  };
+
+  // Function to handle memo number click - navigate to Memos page
+  const handleMemoClick = (memoNumber: string) => {
+    if (onNavigate) {
+      onNavigate('memo', { highlight: memoNumber });
+    }
+  };
 
   // Fetch party commission entries from the PartyCommissionLedger collection
   useEffect(() => {
@@ -536,8 +555,26 @@ const PartyCommissionLedger: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {formatDate(entry.date)}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {entry.reference_id || '-'}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                      {entry.reference_id ? (
+                        <button
+                          onClick={() => {
+                            // Check if it's a memo number (starts with MO-) or bill number
+                            if (entry.reference_id.startsWith('MO-')) {
+                              handleMemoClick(entry.reference_id);
+                            } else {
+                              handleBillClick(entry.reference_id);
+                            }
+                          }}
+                          className="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors flex items-center gap-1"
+                          title={`Click to view ${entry.reference_id.startsWith('MO-') ? 'memo' : 'bill'} details`}
+                        >
+                          {entry.reference_id}
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     <td className="px-6 py-4 text-sm text-gray-900">
                       {entry.description || entry.narration || '-'}
@@ -572,6 +609,36 @@ const PartyCommissionLedger: React.FC = () => {
           </table>
         </div>
       </div>
+
+
+      {/* Memo Detail Modal */}
+      {viewMemo && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Memo #{viewMemo.memo_number}</h3>
+              <button onClick={() => setViewMemo(null)} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-4 text-sm">
+              <div><span className="text-gray-500">Date:</span> {new Date(viewMemo.date).toLocaleDateString('en-IN')}</div>
+              <div><span className="text-gray-500">Supplier:</span> {viewMemo.supplier}</div>
+              <div><span className="text-gray-500">Freight:</span> {formatCurrency(viewMemo.freight)}</div>
+              <div><span className="text-gray-500">Commission:</span> {formatCurrency(viewMemo.commission)}</div>
+              <div><span className="text-gray-500">Mamool:</span> {formatCurrency(viewMemo.mamool)}</div>
+              <div><span className="text-gray-500">Detention:</span> {formatCurrency(viewMemo.detention)}</div>
+              <div><span className="text-gray-500">Extra:</span> {formatCurrency(viewMemo.extra)}</div>
+              <div><span className="text-gray-500">RTO:</span> {formatCurrency(viewMemo.rto)}</div>
+              <div className="col-span-2"><span className="text-gray-500">Net Amount:</span> {formatCurrency(viewMemo.net_amount)}</div>
+              {viewMemo.narration && (
+                <div className="col-span-2">
+                  <span className="text-gray-500">Narration:</span>
+                  <p className="mt-1 text-gray-900">{viewMemo.narration}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

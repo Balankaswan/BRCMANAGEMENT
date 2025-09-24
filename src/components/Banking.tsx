@@ -199,7 +199,7 @@ const BankingComponent: React.FC = () => {
     // Calculate running balances for bank entries only
     let runningBalance = 0;
     const statements = Object.keys(groupedByDate)
-      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
+      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime()) // Latest first for display
       .map(dateKey => {
         const dayEntries = groupedByDate[dateKey];
         const openingBalance = runningBalance;

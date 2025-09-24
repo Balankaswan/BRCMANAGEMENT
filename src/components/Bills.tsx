@@ -9,9 +9,10 @@ import type { Bill } from '../types';
 
 interface BillsListProps {
   showOnlyFullyReceived?: boolean;
+  highlightBill?: string;
 }
 
-const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = false }) => {
+const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = false, highlightBill }) => {
   const { bills, addBill, updateBill, deleteBill, bankingEntries, cashbookEntries, addBankingEntry, loadingSlips, markBillAsReceived } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
@@ -22,17 +23,22 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
 
   const handleCreateBill = async (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      console.log('🚀 Creating bill...', billData);
       const response = await apiService.createBill(billData);
       addBill(response.bill);
-      console.log('Bill created and synced to MongoDB:', response.bill);
+      console.log('✅ Bill created successfully:', response.bill);
       
-      // Trigger sync across devices
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-      }, 1000);
+      // Reset form state immediately
+      setShowForm(false);
+      setEditingBill(null);
+      
     } catch (error) {
-      console.error('Failed to create bill:', error);
-      // Fallback to local storage
+      console.error('❌ Failed to create bill:', error);
+      // Reset form state even on error
+      setShowForm(false);
+      setEditingBill(null);
+      
+      // Fallback: create bill locally if backend fails
       const newBill: Bill = {
         ...billData,
         id: Date.now().toString(),
@@ -41,7 +47,6 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
       };
       addBill(newBill);
     }
-    setShowForm(false);
   };
 
 
@@ -311,8 +316,14 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
             const balance = netAmount - received;
             const trips = 1; // Default trips count
             
+            const isHighlighted = highlightBill === bill.bill_number;
+            
             return (
-              <div key={bill.id || `bill-${index}-${bill.bill_number}`} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+              <div key={bill.id || `bill-${index}-${bill.bill_number}`} className={`bg-white rounded-xl shadow-sm border transition-shadow ${
+                isHighlighted 
+                  ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
+                  : 'border-gray-200 hover:shadow-md'
+              }`}>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">

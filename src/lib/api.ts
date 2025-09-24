@@ -443,6 +443,7 @@ class ApiService {
     return this.request('/party-commission-ledger/parties');
   }
 
+
   async createPartyCommissionLedgerEntry(entry: any) {
     return this.request('/party-commission-ledger', {
       method: 'POST',

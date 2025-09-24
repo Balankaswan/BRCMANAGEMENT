@@ -65,9 +65,9 @@ const AppContent: React.FC = () => {
       case 'loading-slip':
         return <LoadingSlip />;
       case 'memo':
-        return <Memo />;
+        return <Memo highlightMemo={navigationParams?.highlight} />;
       case 'bills':
-        return <Bills />;
+        return <Bills highlightBill={navigationParams?.highlight} />;
       case 'parties':
         return <Parties onNavigate={handleNavigation} />;
       case 'party-detail':
@@ -85,13 +85,13 @@ const AppContent: React.FC = () => {
           onNavigate={handleNavigation} 
         />;
       case 'party-ledger':
-        return <PartyLedger />;
+        return <PartyLedger onNavigate={handleNavigation} />;
       case 'supplier-ledger':
         return <SupplierLedger />;
       case 'general-ledger':
         return <GeneralLedger />;
       case 'party-commission-ledger':
-        return <PartyCommissionLedger />;
+        return <PartyCommissionLedger onNavigate={handleNavigation} />;
       case 'banking':
         return <Banking />;
       case 'cashbook':

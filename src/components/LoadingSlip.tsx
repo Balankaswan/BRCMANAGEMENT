@@ -39,16 +39,22 @@ const LoadingSlipComponent: React.FC = () => {
 
   const handleCreateLoadingSlip = async (slipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      console.log('🚀 Creating loading slip...', slipData);
       const response = await apiService.createLoadingSlip(slipData);
       addLoadingSlip(response.loadingSlip);
-      console.log('Loading slip created and synced to MongoDB:', response.loadingSlip);
+      console.log('✅ Loading slip created successfully:', response.loadingSlip);
       
-      // Force refresh data on all connected devices by triggering a sync
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-      }, 1000);
+      // Reset form state immediately
+      setShowForm(false);
+      setEditingSlip(null);
+      
     } catch (error) {
-      console.error('Failed to create loading slip:', error);
+      console.error('❌ Failed to create loading slip:', error);
+      // Reset form state even on error
+      setShowForm(false);
+      setEditingSlip(null);
+      
+      // Fallback: create loading slip locally if backend fails
       const newSlip: LoadingSlip = {
         ...slipData,
         id: getNextSequenceNumber(loadingSlips, 'slip_number', 'LS'),
@@ -57,7 +63,6 @@ const LoadingSlipComponent: React.FC = () => {
       };
       addLoadingSlip(newSlip);
     }
-    setShowForm(false);
   };
 
   const handleUpdateLoadingSlip = async (loadingSlipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {

@@ -9,9 +9,10 @@ import type { Memo } from '../types';
 
 interface MemoListProps {
   showOnlyFullyPaid?: boolean;
+  highlightMemo?: string;
 }
 
-const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) => {
+const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, highlightMemo }) => {
   const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, cashbookEntries, addBankingEntry, markMemoAsPaid, setLedgerEntries, loadingSlips, vehicles } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingMemo, setEditingMemo] = useState<Memo | null>(null);
@@ -22,9 +23,14 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
 
   const handleCreateMemo = async (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      console.log('🚀 Creating memo...', memoData);
       const response = await apiService.createMemo(memoData);
       addMemo(response.memo);
-      console.log('Memo created and synced to MongoDB:', response.memo);
+      console.log('✅ Memo created successfully:', response.memo);
+      
+      // Reset form state immediately
+      setShowForm(false);
+      setEditingMemo(null);
       
       // Create ledger entries for own vehicles after memo creation
       // CRITICAL FIX: Check both frontend store and backend memo data for loading slip
@@ -71,12 +77,13 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
         console.error('Failed to sync ledger entries:', error);
       }
       
-      // Trigger sync across devices
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-      }, 1000);
     } catch (error) {
-      console.error('Failed to create memo:', error);
+      console.error('❌ Failed to create memo:', error);
+      // Reset form state even on error
+      setShowForm(false);
+      setEditingMemo(null);
+      
+      // Fallback: create memo locally if backend fails
       const newMemo: Memo = {
         ...memoData,
         id: Date.now().toString(),
@@ -85,7 +92,6 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
       };
       addMemo(newMemo);
     }
-    setShowForm(false);
   };
 
   const handleShowForm = () => {
@@ -355,9 +361,14 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false }) =
             const calculatedBalance = memo.freight - paid - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
             const isFullyPaid = calculatedBalance <= 0;
             const balance = Math.max(0, calculatedBalance);
+            const isHighlighted = highlightMemo === memo.memo_number;
             
             return (
-            <div key={memo.id || `memo-${index}-${memo.memo_number}`} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+            <div key={memo.id || `memo-${index}-${memo.memo_number}`} className={`bg-white rounded-xl shadow-sm border transition-shadow ${
+              isHighlighted 
+                ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
+                : 'border-gray-200 hover:shadow-md'
+            }`}>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>

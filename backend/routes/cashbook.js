@@ -1,10 +1,11 @@
 import express from 'express';
 import CashbookEntry from '../models/CashbookEntry.js';
+import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Get all cashbook entries with balance summary
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const { page = 1, limit = 50 } = req.query;
     const skip = (page - 1) * limit;
@@ -39,29 +40,6 @@ router.post('/', async (req, res) => {
   try {
     const cashbookEntry = new CashbookEntry(req.body);
     await cashbookEntry.save();
-
-    // Create corresponding ledger entries for vehicle expenses
-    if (cashbookEntry.vehicle_no && cashbookEntry.category === 'vehicle_expense') {
-      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-      
-      const vehicleExpenseEntry = new LedgerEntry({
-        referenceId: cashbookEntry._id,
-        reference_id: cashbookEntry._id.toString(),
-        ledger_type: 'vehicle_expense',
-        reference_name: `Vehicle ${cashbookEntry.vehicle_no} - Cash Expense`,
-        source_type: 'cashbook',
-        type: 'expense',
-        date: cashbookEntry.date,
-        description: cashbookEntry.narration || 'Vehicle cash expense',
-        debit: cashbookEntry.amount,
-        credit: 0,
-        balance: 0,
-        vehicle_no: cashbookEntry.vehicle_no,
-      });
-      
-      await vehicleExpenseEntry.save();
-      console.log('✅ Created vehicle ledger entry for cashbook expense:', vehicleExpenseEntry._id);
-    }
 
     // Create party on account ledger entry for on account payments
     if (cashbookEntry.category === 'party_on_account' && cashbookEntry.reference_name) {
@@ -121,31 +99,8 @@ router.post('/', async (req, res) => {
       console.log('✅ Created supplier ledger entry from cashbook:', supplierLedgerEntry._id);
     }
 
-    // Create party commission ledger entry for commission payments
-    if (cashbookEntry.category === 'party_commission' && cashbookEntry.type === 'debit' && cashbookEntry.reference_name) {
-      const PartyCommissionLedger = (await import('../models/PartyCommissionLedger.js')).default;
-      const Party = (await import('../models/Party.js')).default;
-      
-      // Find the party by name
-      const party = await Party.findOne({ name: cashbookEntry.reference_name });
-      const partyId = party ? party._id : cashbookEntry.reference_name;
-      
-      const commissionEntry = new PartyCommissionLedger({
-        party_id: partyId,
-        party_name: cashbookEntry.reference_name,
-        date: cashbookEntry.date,
-        bill_number: '',
-        reference_id: cashbookEntry._id.toString(),
-        entry_type: 'debit',
-        amount: cashbookEntry.amount,
-        narration: `Commission Payment – Cash Ref #${cashbookEntry._id.toString().slice(-6)}`,
-        cashbook_entry_id: cashbookEntry._id,
-        reference_type: 'cashbook'
-      });
-      
-      await commissionEntry.save();
-      console.log('✅ Created party commission payment entry from cashbook:', commissionEntry._id);
-    }
+    // Party commission entries are now handled by the centralized ledger regeneration system
+    // Commission payments will be processed during ledger regeneration
 
     // Handle bill and memo advance payments
     if (cashbookEntry.category === 'bill_advance' && cashbookEntry.reference_id) {
@@ -186,34 +141,63 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Create general ledger entries for all cashbook transactions (same as banking)
+    // Create ledger entries automatically with duplicate prevention
+    // Create appropriate ledger entries based on category
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
     
-    // Determine ledger type based on category
-    let ledgerType = 'general';
-    if (cashbookEntry.category === 'party_commission') {
-      ledgerType = 'commission';
-    } else if (cashbookEntry.category === 'vehicle_expense') {
-      ledgerType = 'vehicle_expense';
+    // Exclude specific categories from general ledger
+    const excludedCategories = [
+      'party_commission', 
+      'party_on_account', 
+      'memo_advance', 
+      'bill_advance', 
+      'memo_payment', 
+      'bill_payment', 
+      'on_account_advance',
+      'fuel_wallet'
+    ];
+    
+    if (!excludedCategories.includes(cashbookEntry.category)) {
+      let ledgerType = 'general';
+      let referenceName = cashbookEntry.reference_name || cashbookEntry.category || 'Cash Transaction';
+      let referenceId = cashbookEntry._id;
+      
+      // Handle vehicle expenses specifically
+      if (cashbookEntry.category === 'vehicle_expense' && cashbookEntry.vehicle_no) {
+        ledgerType = 'vehicle_expense';
+        referenceName = `Vehicle ${cashbookEntry.vehicle_no} - Cash Expense`;
+        referenceId = cashbookEntry.vehicle_no;
+      }
+      
+      const ledgerEntry = new LedgerEntry({
+        referenceId: referenceId,
+        reference_id: cashbookEntry._id.toString(),
+        ledger_type: ledgerType,
+        reference_name: referenceName,
+        source_type: 'cashbook',
+        type: cashbookEntry.type === 'debit' ? 'expense' : 'payment',
+        date: cashbookEntry.date,
+        description: cashbookEntry.narration || `Cash ${cashbookEntry.type} - ${cashbookEntry.category}`,
+        debit: cashbookEntry.type === 'debit' ? cashbookEntry.amount : 0,
+        credit: cashbookEntry.type === 'credit' ? cashbookEntry.amount : 0,
+        balance: 0,
+        vehicle_no: cashbookEntry.vehicle_no || undefined,
+      });
+      
+      // Check if ledger entry already exists to prevent duplicates
+      const existingEntry = await LedgerEntry.findOne({
+        reference_id: cashbookEntry._id.toString(),
+        source_type: 'cashbook',
+        ledger_type: ledgerType
+      });
+      
+      if (!existingEntry) {
+        await ledgerEntry.save();
+        console.log('✅ Created general ledger entry for cashbook transaction:', ledgerEntry._id, 'Type:', ledgerType);
+      } else {
+        console.log('⚠️ Ledger entry already exists for cashbook transaction, skipping duplicate');
+      }
     }
-    
-    const generalLedgerEntry = new LedgerEntry({
-      referenceId: cashbookEntry._id,
-      reference_id: cashbookEntry._id.toString(),
-      ledger_type: ledgerType,
-      reference_name: cashbookEntry.reference_name || cashbookEntry.category || 'Cash Transaction',
-      source_type: 'cashbook',
-      type: cashbookEntry.type === 'debit' ? 'expense' : 'payment',
-      date: cashbookEntry.date,
-      description: cashbookEntry.narration || `Cash ${cashbookEntry.type} - ${cashbookEntry.category}`,
-      debit: cashbookEntry.type === 'debit' ? cashbookEntry.amount : 0,
-      credit: cashbookEntry.type === 'credit' ? cashbookEntry.amount : 0,
-      balance: 0,
-      vehicle_no: cashbookEntry.vehicle_no || undefined,
-    });
-    
-    await generalLedgerEntry.save();
-    console.log('✅ Created general ledger entry for cashbook transaction:', generalLedgerEntry._id);
 
     res.status(201).json({
       message: 'Cashbook entry created successfully',
@@ -247,19 +231,21 @@ router.put('/:id', async (req, res) => {
     // Update corresponding ledger entries
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
     
-    // Find and update the ledger entry
-    const ledgerEntry = await LedgerEntry.findOne({ referenceId: cashbookEntry._id });
-    if (ledgerEntry) {
-      // Determine ledger type based on category
-      let ledgerType = 'general';
-      if (cashbookEntry.category === 'party_commission') {
-        ledgerType = 'commission';
-      } else if (cashbookEntry.category === 'vehicle_expense') {
-        ledgerType = 'vehicle_expense';
-      }
-      
-      // Update ledger entry with new data
-      await LedgerEntry.findByIdAndUpdate(ledgerEntry._id, {
+    // Determine ledger type based on category
+    let ledgerType = 'general';
+    if (cashbookEntry.category === 'party_commission') {
+      ledgerType = 'commission';
+    } else if (cashbookEntry.category === 'vehicle_expense') {
+      ledgerType = 'vehicle_expense';
+    }
+    
+    // Update all ledger entries with this cashbook entry reference_id
+    const updateResult = await LedgerEntry.updateMany(
+      { 
+        reference_id: cashbookEntry._id.toString(),
+        source_type: 'cashbook'
+      },
+      {
         ledger_type: ledgerType,
         reference_name: cashbookEntry.reference_name || cashbookEntry.category || 'Cash Transaction',
         type: cashbookEntry.type === 'debit' ? 'expense' : 'payment',
@@ -268,10 +254,10 @@ router.put('/:id', async (req, res) => {
         debit: cashbookEntry.type === 'debit' ? cashbookEntry.amount : 0,
         credit: cashbookEntry.type === 'credit' ? cashbookEntry.amount : 0,
         vehicle_no: cashbookEntry.vehicle_no || undefined,
-      });
-      
-      console.log('✅ Updated corresponding ledger entry for cashbook entry:', req.params.id);
-    }
+      }
+    );
+    
+    console.log('✅ Updated', updateResult.modifiedCount, 'ledger entries for cashbook entry:', req.params.id);
     
     res.json({
       message: 'Cashbook entry updated successfully',
@@ -326,13 +312,16 @@ router.delete('/:id', async (req, res) => {
       reference_type: 'cashbook'
     });
 
-    // Delete associated general ledger entries
+    // Delete associated ledger entries
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    await LedgerEntry.deleteMany({
-      referenceId: cashbookEntry._id,
+    
+    // Delete by reference_id (cashbook entry ID) to catch all related entries
+    const deleteResult = await LedgerEntry.deleteMany({
+      reference_id: cashbookEntry._id.toString(),
       source_type: 'cashbook'
     });
-    console.log('✅ Deleted associated ledger entries for cashbook entry:', req.params.id);
+    
+    console.log('✅ Deleted', deleteResult.deletedCount, 'associated ledger entries for cashbook entry:', req.params.id);
 
     // Delete the cashbook entry
     await CashbookEntry.findByIdAndDelete(req.params.id);

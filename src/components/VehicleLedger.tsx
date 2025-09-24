@@ -35,7 +35,7 @@ const VehicleLedger: React.FC = () => {
     const interval = setInterval(refreshLedgerData, 10000);
     
     return () => clearInterval(interval);
-  }, [setLedgerEntries, ledgerEntries.length]);
+  }, [setLedgerEntries]); // Removed ledgerEntries.length to prevent infinite re-renders
   const [selectedVehicle, setSelectedVehicle] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -175,12 +175,6 @@ const VehicleLedger: React.FC = () => {
       .reduce((sum, entry) => sum + entry.credit, 0);
     
     // Breakdown for display - use ledger_type instead of description keywords
-    const vehicleIncome = vehicleLedgerEntries
-      .filter(entry => entry.ledger_type === 'vehicle_income' || 
-                      entry.description?.toLowerCase().includes('freight') ||
-                      entry.description?.toLowerCase().includes('memo'))
-      .reduce((sum, entry) => sum + (entry.credit || 0), 0);
-    
     const commission = 0; // Commission is deducted, not shown as separate income
     const mamul = 0; // Mamool is deducted, not shown as separate income
 
@@ -285,11 +279,12 @@ const VehicleLedger: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Vehicle Ledger</h1>
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-2">
           <button
             onClick={exportToCSV}
             disabled={!selectedVehicle || filteredData.length === 0}

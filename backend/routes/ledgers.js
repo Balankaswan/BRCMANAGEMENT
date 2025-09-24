@@ -47,6 +47,8 @@ router.get('/', async (req, res) => {
   }
 });
 
+
+
 // Delete all ledger entries (bulk delete)
 router.delete('/all', async (req, res) => {
   try {
@@ -60,6 +62,255 @@ router.delete('/all', async (req, res) => {
   } catch (error) {
     console.error('Bulk delete ledger entries error:', error);
     res.status(500).json({ message: 'Failed to delete ledger entries', error: error.message });
+  }
+});
+
+// Regenerate ledgers from existing data
+router.post('/regenerate', async (req, res) => {
+  try {
+    const Bill = (await import('../models/Bill.js')).default;
+    const BankingEntry = (await import('../models/BankingEntry.js')).default;
+    const CashbookEntry = (await import('../models/CashbookEntry.js')).default;
+    const PartyCommissionLedger = (await import('../models/PartyCommissionLedger.js')).default;
+    const Party = (await import('../models/Party.js')).default;
+
+    let count = 0;
+
+    // Regenerate from Bills
+    const bills = await Bill.find({ party_commission_cut: { $gt: 0 } });
+    for (const bill of bills) {
+      const party = await Party.findOne({ name: bill.party });
+      if (party) {
+        await new PartyCommissionLedger({
+          party_id: party._id,
+          party_name: bill.party,
+          bill_id: bill._id,
+          bill_number: bill.bill_number,
+          reference_id: bill.bill_number,
+          entry_type: 'credit',
+          amount: bill.party_commission_cut,
+          narration: `Commission Cut – Bill No. ${bill.bill_number}`,
+          date: bill.date || new Date()
+        }).save();
+        count++;
+      }
+    }
+
+    // Regenerate from Banking
+    const bankingEntries = await BankingEntry.find({});
+    for (const entry of bankingEntries) {
+      let ledgerType = null;
+      let referenceName = entry.reference_name || 'Bank Transaction';
+      let referenceId = entry._id;
+      
+      // Categorize based on banking category
+      if (entry.category === 'party_commission') {
+        continue; // Skip - handled by Party Commission Ledger
+      } else if (entry.category === 'party_on_account') {
+        continue; // Skip - handled by Party Ledger separately
+      } else if (entry.category === 'bill_advance' || entry.category === 'bill_payment') {
+        ledgerType = 'party';
+        referenceName = entry.reference_name || 'Party Transaction';
+        referenceId = entry.reference_name || entry._id;
+      } else if (entry.category === 'memo_advance') {
+        ledgerType = 'supplier';
+        referenceName = entry.reference_name || 'Supplier Transaction';
+        referenceId = entry.reference_name || entry._id;
+      } else if (entry.category === 'vehicle_expense') {
+        if (entry.vehicle_no) {
+          ledgerType = 'vehicle_expense';
+          referenceName = `Vehicle ${entry.vehicle_no} - Bank Expense`;
+          referenceId = entry.vehicle_no;
+        }
+      } else if (entry.category === 'fuel_wallet') {
+        continue; // Skip - handled by Fuel system
+      } else if (entry.category === 'expense' || entry.category === 'other') {
+        // Only these go to General Ledger
+        ledgerType = 'general';
+        referenceName = entry.reference_name || 'General Transaction';
+        referenceId = entry._id;
+      } else {
+        // Unknown categories go to general for now
+        ledgerType = 'general';
+        referenceName = entry.reference_name || 'General Transaction';
+        referenceId = entry._id;
+      }
+      
+      // Skip if no ledger type assigned
+      if (!ledgerType) continue;
+      
+      await new LedgerEntry({
+        referenceId: referenceId,
+        reference_id: entry._id.toString(),
+        ledger_type: ledgerType,
+        reference_name: referenceName,
+        source_type: 'banking',
+        type: entry.type === 'debit' ? 'expense' : 'payment',
+        date: entry.date,
+        description: entry.narration || `Bank ${entry.type} - ${entry.category}`,
+        debit: entry.type === 'debit' ? entry.amount : 0,
+        credit: entry.type === 'credit' ? entry.amount : 0,
+        balance: 0,
+        vehicle_no: entry.vehicle_no || undefined,
+      }).save();
+      count++;
+    }
+
+    // Regenerate from Cashbook
+    const cashbookEntries = await CashbookEntry.find({});
+    for (const entry of cashbookEntries) {
+      let ledgerType = null;
+      let referenceName = entry.reference_name || 'Cash Transaction';
+      let referenceId = entry._id;
+      
+      // Categorize based on cashbook category (same logic as banking)
+      switch (entry.category) {
+        case 'party_commission':
+          continue; // Skip - handled by Party Commission Ledger
+          
+        case 'party_on_account':
+          continue; // Skip - handled by Party Ledger separately
+          
+        case 'bill_advance':
+        case 'bill_payment':
+          ledgerType = 'party';
+          referenceName = entry.reference_name || 'Party Transaction';
+          referenceId = entry.reference_name || entry._id;
+          break;
+          
+        case 'memo_advance':
+          ledgerType = 'supplier';
+          referenceName = entry.reference_name || 'Supplier Transaction';
+          referenceId = entry.reference_name || entry._id;
+          break;
+          
+        case 'vehicle_expense':
+          if (entry.vehicle_no) {
+            ledgerType = 'vehicle_expense';
+            referenceName = `Vehicle ${entry.vehicle_no} - Cash Expense`;
+            referenceId = entry.vehicle_no;
+          }
+          break;
+          
+        case 'fuel_wallet':
+          continue; // Skip - handled by Fuel system
+          
+        case 'expense':
+        case 'other':
+          // Only these go to General Ledger
+          ledgerType = 'general';
+          referenceName = entry.reference_name || 'General Transaction';
+          referenceId = entry._id;
+          break;
+          
+        default:
+          // Unknown categories go to general for now
+          ledgerType = 'general';
+          referenceName = entry.reference_name || 'General Transaction';
+          referenceId = entry._id;
+          break;
+      }
+      
+      // Skip if no ledger type assigned
+      if (!ledgerType) continue;
+      
+      await new LedgerEntry({
+        referenceId: referenceId,
+        reference_id: entry._id.toString(),
+        ledger_type: ledgerType,
+        reference_name: referenceName,
+        source_type: 'cashbook',
+        type: entry.type === 'debit' ? 'expense' : 'payment',
+        date: entry.date,
+        description: entry.narration || `Cash ${entry.type} - ${entry.category}`,
+        debit: entry.type === 'debit' ? entry.amount : 0,
+        credit: entry.type === 'credit' ? entry.amount : 0,
+        balance: 0,
+        vehicle_no: entry.vehicle_no || undefined,
+      }).save();
+      count++;
+    }
+
+    // 4. Regenerate from Memos (for vehicle ledger credits)
+    console.log('🔄 Regenerating Vehicle Ledger from Memos...');
+    const Memo = (await import('../models/Memo.js')).default;
+    const Vehicle = (await import('../models/Vehicle.js')).default;
+    const LoadingSlip = (await import('../models/LoadingSlip.js')).default;
+    
+    const memos = await Memo.find({}).populate('loading_slip_id');
+    
+    for (const memo of memos) {
+      if (memo.loading_slip_id && memo.loading_slip_id.vehicle_no) {
+        const vehicle = await Vehicle.findOne({ vehicle_no: memo.loading_slip_id.vehicle_no });
+        const isOwnVehicle = vehicle?.ownership_type === 'own';
+        
+        if (isOwnVehicle) {
+          // Calculate net amount after deductions
+          const netAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0);
+          
+          // Main freight entry
+          if (netAmount > 0) {
+            await new LedgerEntry({
+              referenceId: memo.loading_slip_id.vehicle_no,
+              reference_id: memo._id.toString(),
+              ledger_type: 'vehicle_expense',
+              reference_name: `Vehicle ${memo.loading_slip_id.vehicle_no} - Memo Credit`,
+              source_type: 'memo',
+              type: 'payment',
+              date: memo.date,
+              description: `Memo ${memo.memo_number} - Freight after deductions`,
+              debit: 0,
+              credit: netAmount,
+              balance: 0,
+              vehicle_no: memo.loading_slip_id.vehicle_no,
+            }).save();
+            count++;
+          }
+          
+          // Detention entry
+          if (memo.detention && memo.detention > 0) {
+            await new LedgerEntry({
+              referenceId: memo.loading_slip_id.vehicle_no,
+              reference_id: memo._id.toString(),
+              ledger_type: 'vehicle_expense',
+              reference_name: `Vehicle ${memo.loading_slip_id.vehicle_no} - Memo Credit`,
+              source_type: 'memo',
+              type: 'payment',
+              date: memo.date,
+              description: `Memo ${memo.memo_number} - Detention charges`,
+              debit: 0,
+              credit: memo.detention,
+              balance: 0,
+              vehicle_no: memo.loading_slip_id.vehicle_no,
+            }).save();
+            count++;
+          }
+          
+          // Extra charges entry
+          if (memo.extra && memo.extra > 0) {
+            await new LedgerEntry({
+              referenceId: memo.loading_slip_id.vehicle_no,
+              reference_id: memo._id.toString(),
+              ledger_type: 'vehicle_expense',
+              reference_name: `Vehicle ${memo.loading_slip_id.vehicle_no} - Memo Credit`,
+              source_type: 'memo',
+              type: 'payment',
+              date: memo.date,
+              description: `Memo ${memo.memo_number} - Extra charges`,
+              debit: 0,
+              credit: memo.extra,
+              balance: 0,
+              vehicle_no: memo.loading_slip_id.vehicle_no,
+            }).save();
+            count++;
+          }
+        }
+      }
+    }
+
+    res.json({ message: 'Regenerated successfully', count });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -152,11 +403,33 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// Delete ledger entry
+// Clear all ledger entries (for debugging) - must be before /:id route
+router.delete('/clear-all', async (req, res) => {
+  try {
+    const result = await LedgerEntry.deleteMany({});
+    console.log(`🗑️ Cleared ${result.deletedCount} ledger entries`);
+    
+    // Also clear party commission ledger entries
+    const PartyCommissionLedger = (await import('../models/PartyCommissionLedger.js')).default;
+    const commissionResult = await PartyCommissionLedger.deleteMany({});
+    console.log(`🗑️ Cleared ${commissionResult.deletedCount} party commission entries`);
+    
+    res.json({
+      message: 'All ledger entries cleared successfully',
+      deletedLedgerEntries: result.deletedCount,
+      deletedCommissionEntries: commissionResult.deletedCount
+    });
+  } catch (error) {
+    console.error('Clear all ledger entries error:', error);
+    res.status(500).json({ message: 'Failed to clear ledger entries', error: error.message });
+  }
+});
+
+// Delete ledger entry by ID
 router.delete('/:id', async (req, res) => {
   try {
     const ledgerEntry = await LedgerEntry.findByIdAndDelete(req.params.id);
-
+    
     if (!ledgerEntry) {
       return res.status(404).json({ message: 'Ledger entry not found' });
     }
