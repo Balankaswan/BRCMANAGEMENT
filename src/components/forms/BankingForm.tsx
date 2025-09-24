@@ -24,7 +24,6 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     vehicle_no: editingEntry?.vehicle_no || '',
   });
 
-  const existingMemos = useMemo(() => memos.map(m => m.memo_number), [memos]);
   const existingBills = useMemo(() => bills.map(b => b.bill_number), [bills]);
   const [showReferenceDropdown, setShowReferenceDropdown] = useState(false);
   const [showNewLedgerModal, setShowNewLedgerModal] = useState(false);
@@ -146,9 +145,25 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
 
   const getReferenceOptions = () => {
     if (formData.category.includes('bill')) {
-      return existingBills;
+      // Filter bills based on current input
+      const searchTerm = formData.reference_id.toLowerCase();
+      return existingBills.filter(billNumber => 
+        billNumber.toLowerCase().includes(searchTerm)
+      );
     } else if (formData.category.includes('memo')) {
-      return existingMemos;
+      // Filter memos based on current input and show memo details
+      const searchTerm = formData.reference_id.toLowerCase();
+      return memos
+        .filter(memo => 
+          memo.memo_number.toLowerCase().includes(searchTerm) ||
+          memo.supplier.toLowerCase().includes(searchTerm) ||
+          (memo.freight && memo.freight.toString().includes(searchTerm))
+        )
+        .map(memo => {
+          // Show memo number with supplier and amount for better selection
+          return `${memo.memo_number} - ${memo.supplier} - ₹${formatCurrency(memo.freight || 0)}`;
+        })
+        .slice(0, 10); // Limit to 10 results for performance
     } else if (formData.category === 'party_commission' || formData.category === 'party_on_account') {
       return parties.map(p => p.name).filter(Boolean);
     }
@@ -158,18 +173,23 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
   const handleReferenceSelect = (value: string) => {
     setFormData(prev => {
       let reference_name = prev.reference_name;
+      let reference_id = value;
+      
       if (prev.category.includes('bill')) {
         const bill = bills.find(b => b.bill_number === value);
         reference_name = bill?.party || '';
       } else if (prev.category.includes('memo')) {
-        const memo = memos.find(m => m.memo_number === value);
+        // Extract memo number from the formatted string "MO-6070 - MAHENDRA AIWALA - ₹47,000"
+        const memoNumber = value.split(' - ')[0];
+        const memo = memos.find(m => m.memo_number === memoNumber);
         reference_name = memo?.supplier || '';
+        reference_id = memoNumber; // Use just the memo number as reference_id
       } else if (prev.category === 'party_commission' || prev.category === 'party_on_account') {
         reference_name = value; // Party name is the reference_name for commission/on account payments
       }
       return {
         ...prev,
-        reference_id: value,
+        reference_id: reference_id,
         reference_name,
       };
     });
@@ -387,10 +407,13 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                         type="text"
                         name="reference_id"
                         value={formData.reference_id}
-                        onChange={handleInputChange}
+                        onChange={(e) => {
+                          handleInputChange(e);
+                          setShowReferenceDropdown(true); // Show dropdown when typing
+                        }}
                         onFocus={() => setShowReferenceDropdown(true)}
                         className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder={formData.category.includes('bill') ? 'Select Bill Number' : 'Select Memo Number'}
+                        placeholder={formData.category.includes('bill') ? 'Type to search bills...' : 'Type to search memos...'}
                         required
                       />
                       <ChevronDown 

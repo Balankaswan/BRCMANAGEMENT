@@ -21,6 +21,23 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   const [paidDate, setPaidDate] = useState('');
   const [search, setSearch] = useState('');
 
+  // Debug function for memo search
+  React.useEffect(() => {
+    (window as any).debugMemoSearch = () => {
+      console.log('🔍 MEMO SEARCH DEBUG REPORT:');
+      console.log('Total memos in store:', memos.length);
+      console.log('Current search term:', search);
+      console.log('Show only fully paid:', showOnlyFullyPaid);
+      console.log('Loading slips available:', loadingSlips.length);
+      console.log('Sample memos:', memos.slice(0, 5).map(m => ({
+        number: m.memo_number,
+        supplier: m.supplier,
+        status: m.status,
+        date: m.date
+      })));
+    };
+  }, [memos, search, showOnlyFullyPaid, loadingSlips]);
+
   const handleCreateMemo = async (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
     try {
       console.log('🚀 Creating memo...', memoData);
@@ -237,8 +254,17 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   };
 
   const filteredMemos = useMemo(() => {
+    console.log('🔍 MEMO SEARCH DEBUG:', {
+      totalMemos: memos.length,
+      searchTerm: search,
+      showOnlyFullyPaid,
+      memosPreview: memos.slice(0, 3).map(m => ({ number: m.memo_number, supplier: m.supplier, status: m.status }))
+    });
+    
     // Main list shows only pending; Paid Memo view shows only paid
     let base = showOnlyFullyPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
+    
+    console.log('📋 After status filter:', base.length, 'memos');
     
     // Sort memos by document number (numeric part) in descending order, then by date
     base = [...base].sort((a, b) => {
@@ -271,9 +297,15 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         return calculatedBalance <= 0;
       });
     }
-    if (!search.trim()) return base;
+    if (!search.trim()) {
+      console.log('🔍 No search term, returning all:', base.length, 'memos');
+      return base;
+    }
+    
     const q = search.toLowerCase();
-    return base.filter(m => {
+    console.log('🔍 Searching for:', q);
+    
+    const filtered = base.filter(m => {
       const ls = loadingSlips.find(ls => ls.id === m.loading_slip_id);
       const haystack = [
         m.memo_number,
@@ -287,8 +319,16 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       ]
         .join(' ')
         .toLowerCase();
-      return haystack.includes(q);
+      
+      const matches = haystack.includes(q);
+      if (matches) {
+        console.log('✅ Match found:', m.memo_number, 'haystack:', haystack);
+      }
+      return matches;
     });
+    
+    console.log('🔍 Search results:', filtered.length, 'out of', base.length, 'memos');
+    return filtered;
   }, [memos, bankingEntries, showOnlyFullyPaid, search, loadingSlips]);
 
   return (

@@ -119,6 +119,7 @@ export const useApiSync = () => {
           console.log('💾 MEMOS SYNC START');
           console.log('📊 MongoDB Memos Available:', fetchedMemos.length);
           console.log('🏪 Current Store Memos:', currentMemos.length);
+          console.log('🔍 Raw memos response:', memosResponse.value);
           
           if (fetchedMemos.length === 0) {
             console.error('❌ NO MEMOS FETCHED FROM MONGODB! Check API response.');
@@ -173,6 +174,8 @@ export const useApiSync = () => {
           } else {
             console.log('⚠️ No memos fetched from MongoDB');
           }
+        } else if (memosResponse.status === 'rejected') {
+          console.error('❌ MEMOS API CALL FAILED:', memosResponse.reason);
         }
 
         // BULLETPROOF LOADING SLIPS IMPORT AND SYNC
@@ -183,6 +186,7 @@ export const useApiSync = () => {
           console.log('💾 LOADING SLIPS SYNC START');
           console.log('📊 MongoDB Loading Slips Available:', fetchedSlips.length);
           console.log('🏪 Current Store Loading Slips:', currentSlips.length);
+          console.log('🔍 Raw loading slips response:', loadingSlipsResponse.value);
           
           if (fetchedSlips.length === 0) {
             console.error('❌ NO LOADING SLIPS FETCHED FROM MONGODB! Check API response.');
@@ -231,6 +235,8 @@ export const useApiSync = () => {
           } else {
             console.log('⚠️ No loading slips fetched from MongoDB');
           }
+        } else if (loadingSlipsResponse.status === 'rejected') {
+          console.error('❌ LOADING SLIPS API CALL FAILED:', loadingSlipsResponse.reason);
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
@@ -384,6 +390,18 @@ export const useApiSync = () => {
 
     // Expose manual sync function globally for debugging
     (window as any).restoreBankStatements = manualSync;
+    (window as any).restoreAllData = manualSync;
+    (window as any).debugDataSync = () => {
+      console.log('🔍 CURRENT DATA STORE STATE:');
+      console.log('Bills:', store.bills.length);
+      console.log('Memos:', store.memos.length);
+      console.log('Loading Slips:', store.loadingSlips.length);
+      console.log('Banking Entries:', store.bankingEntries.length);
+      console.log('Cashbook Entries:', store.cashbookEntries.length);
+      console.log('Vehicles:', store.vehicles.length);
+      console.log('Parties:', store.parties.length);
+      console.log('Suppliers:', store.suppliers.length);
+    };
 
     // Real-time sync connection
     const connectToRealTimeSync = () => {

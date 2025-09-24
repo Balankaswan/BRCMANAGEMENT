@@ -62,8 +62,6 @@ router.get('/', async (req, res) => {
 
     res.json({
       loadingSlips: enrichedLoadingSlips,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
       total
     });
   } catch (error) {
