@@ -12,7 +12,7 @@ const router = express.Router();
 // Get all loading slips
 router.get('/', async (req, res) => {
   try {
-    const { party, vehicle_no, supplier, page = 1, limit = 50 } = req.query;
+    const { party, vehicle_no, supplier } = req.query;
     
     const filter = {};
     if (party) filter.party = new RegExp(party, 'i');
@@ -20,11 +20,9 @@ router.get('/', async (req, res) => {
     if (supplier) filter.supplier = new RegExp(supplier, 'i');
 
     const loadingSlips = await LoadingSlip.find(filter)
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ createdAt: -1 });
 
-    const total = await LoadingSlip.countDocuments(filter);
+    const total = loadingSlips.length;
 
 
     const enrichedLoadingSlips = await Promise.all(

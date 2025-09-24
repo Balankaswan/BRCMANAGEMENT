@@ -12,7 +12,7 @@ const router = express.Router();
 // Get all bills
 router.get('/', async (req, res) => {
   try {
-    const { status, party, vehicle_no, page = 1, limit = 50 } = req.query;
+    const { status, party, vehicle_no } = req.query;
     
     const filter = {};
     if (status) filter.status = status;
@@ -21,11 +21,9 @@ router.get('/', async (req, res) => {
 
     const bills = await Bill.find(filter)
       .populate('loading_slip_id')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ createdAt: -1 });
 
-    const total = await Bill.countDocuments(filter);
+    const total = bills.length;
 
     // Ensure id field is present for frontend compatibility
     const billsWithId = bills.map(bill => {
@@ -36,8 +34,6 @@ router.get('/', async (req, res) => {
 
     res.json({
       bills: billsWithId,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
       total
     });
   } catch (error) {

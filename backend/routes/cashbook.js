@@ -7,16 +7,10 @@ const router = express.Router();
 // Get all cashbook entries with balance summary
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { page = 1, limit = 50 } = req.query;
-    const skip = (page - 1) * limit;
-    
     const cashbookEntries = await CashbookEntry.find({})
-      .sort({ date: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+      .sort({ date: -1, createdAt: -1 });
     
-    const total = await CashbookEntry.countDocuments();
-    const totalPages = Math.ceil(total / limit);
+    const total = cashbookEntries.length;
     
     // Get current cash balance (latest running balance)
     const latestEntry = await CashbookEntry.findOne({}, {}, { sort: { date: -1, createdAt: -1 } });
@@ -25,8 +19,6 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json({
       cashbookEntries,
       total,
-      totalPages,
-      currentPage: parseInt(page),
       currentBalance
     });
   } catch (error) {

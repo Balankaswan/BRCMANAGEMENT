@@ -218,12 +218,22 @@ class ApiService {
   }
 
   // Banking
-  async getBankingEntries(): Promise<{ bankingEntries: any[]; total: number; totalPages: number }> {
-    return this.request('/banking');
+  async getBankingEntries(params?: { limit?: number; page?: number }): Promise<{ bankingEntries: any[]; total: number; totalPages: number }> {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.page) queryParams.append('page', params.page.toString());
+    
+    const url = queryParams.toString() ? `/banking?${queryParams}` : '/banking';
+    return this.request(url);
   }
 
-  async getCashbookEntries(): Promise<{ cashbookEntries: any[]; total: number; totalPages: number; currentBalance: number }> {
-    return this.request('/cashbook');
+  async getCashbookEntries(params?: { limit?: number; page?: number }): Promise<{ cashbookEntries: any[]; total: number; totalPages: number; currentBalance: number }> {
+    const queryParams = new URLSearchParams();
+    if (params?.limit) queryParams.append('limit', params.limit.toString());
+    if (params?.page) queryParams.append('page', params.page.toString());
+    
+    const url = queryParams.toString() ? `/cashbook?${queryParams}` : '/cashbook';
+    return this.request(url);
   }
 
   async getCashbookBalance(): Promise<{ currentBalance: number; today: any; thisMonth: any }> {

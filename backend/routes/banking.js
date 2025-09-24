@@ -14,7 +14,7 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   try {
     console.log('Banking GET request received');
-    const { type, category, vehicle_no, page = 1, limit = 50 } = req.query;
+    const { type, category, vehicle_no } = req.query;
     
     const filter = {};
     if (type) filter.type = type;
@@ -23,17 +23,13 @@ router.get('/', async (req, res) => {
 
     console.log('Banking filter:', filter);
     const bankingEntries = await BankingEntry.find(filter)
-      .sort({ date: -1, createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ date: -1, createdAt: -1 });
 
-    const total = await BankingEntry.countDocuments(filter);
+    const total = bankingEntries.length;
     console.log('Banking entries found:', bankingEntries.length, 'total:', total);
 
     res.json({
       bankingEntries,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
       total
     });
   } catch (error) {

@@ -46,8 +46,8 @@ export const useApiSync = () => {
           apiService.getVehicles({ limit: 1000 }), // Get ALL vehicles
           apiService.getMemos({ limit: 1000 }), // Get ALL memos
           apiService.getLoadingSlips({ limit: 1000 }), // Get ALL loading slips
-          apiService.getBankingEntries(),
-          apiService.getCashbookEntries(),
+          apiService.getBankingEntries({ limit: 1000 }), // Get ALL banking entries
+          apiService.getCashbookEntries({ limit: 1000 }), // Get ALL cashbook entries
           apiService.getLedgerEntries({ limit: 1000 }), // Get ALL ledger entries
           apiService.getFuelWallets(),
           apiService.getFuelTransactions({ limit: 1000 }) // Get ALL fuel transactions
@@ -234,13 +234,87 @@ export const useApiSync = () => {
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
-          store.setBankingEntries(bankingEntriesResponse.value.bankingEntries || []);
+          const fetchedBankingEntries = bankingEntriesResponse.value.bankingEntries || [];
+          console.log('💳 Banking entries synced from backend:', fetchedBankingEntries.length);
+          
+          // SMART MERGE: Preserve existing entries and add new ones from backend
+          const existingEntries = store.bankingEntries;
+          const allEntriesMap = new Map();
+          
+          // First, add existing entries to map
+          existingEntries.forEach(entry => {
+            const entryId = entry.id || (entry as any)._id;
+            if (entryId) {
+              allEntriesMap.set(entryId, entry);
+            }
+          });
+          
+          // Then, add/update with backend entries (backend is authoritative)
+          fetchedBankingEntries.forEach(fetchedEntry => {
+            const entryId = fetchedEntry.id || (fetchedEntry as any)._id;
+            if (entryId) {
+              // Ensure entry has proper ID field for frontend compatibility
+              const entryWithId = {
+                ...fetchedEntry,
+                id: fetchedEntry.id || (fetchedEntry as any)._id
+              };
+              allEntriesMap.set(entryId, entryWithId);
+            }
+          });
+          
+          // Convert map back to array, sorted by date (newest first)
+          const completeEntries = Array.from(allEntriesMap.values()).sort((a, b) => {
+            const dateA = new Date(a.date || a.created_at || 0).getTime();
+            const dateB = new Date(b.date || b.created_at || 0).getTime();
+            return dateB - dateA;
+          });
+          
+          // Update store with complete dataset
+          store.setBankingEntries(completeEntries);
+          console.log('✅ BANKING ENTRIES FULLY SYNCED - No data loss');
+          console.log('📈 Total Banking Entries in Store:', completeEntries.length);
         }
 
         if (cashbookEntriesResponse.status === 'fulfilled') {
           const fetchedCashbookEntries = cashbookEntriesResponse.value.cashbookEntries || [];
           console.log('💰 Cashbook entries synced from backend:', fetchedCashbookEntries.length);
-          store.setCashbookEntries(fetchedCashbookEntries);
+          
+          // SMART MERGE: Preserve existing entries and add new ones from backend
+          const existingCashbookEntries = store.cashbookEntries;
+          const allCashbookEntriesMap = new Map();
+          
+          // First, add existing entries to map
+          existingCashbookEntries.forEach(entry => {
+            const entryId = entry.id || (entry as any)._id;
+            if (entryId) {
+              allCashbookEntriesMap.set(entryId, entry);
+            }
+          });
+          
+          // Then, add/update with backend entries (backend is authoritative)
+          fetchedCashbookEntries.forEach(fetchedEntry => {
+            const entryId = fetchedEntry.id || (fetchedEntry as any)._id;
+            if (entryId) {
+              // Ensure entry has proper ID field for frontend compatibility
+              const entryWithId = {
+                ...fetchedEntry,
+                id: fetchedEntry.id || (fetchedEntry as any)._id
+              };
+              allCashbookEntriesMap.set(entryId, entryWithId);
+            }
+          });
+          
+          // Convert map back to array, sorted by date (newest first)
+          const completeCashbookEntries = Array.from(allCashbookEntriesMap.values()).sort((a, b) => {
+            const dateA = new Date(a.date || a.created_at || 0).getTime();
+            const dateB = new Date(b.date || b.created_at || 0).getTime();
+            return dateB - dateA;
+          });
+          
+          // Update store with complete dataset
+          store.setCashbookEntries(completeCashbookEntries);
+          console.log('✅ CASHBOOK ENTRIES FULLY SYNCED - No data loss');
+          console.log('📈 Total Cashbook Entries in Store:', completeCashbookEntries.length);
         }
 
         if (partiesResponse.status === 'fulfilled') {
@@ -302,16 +376,28 @@ export const useApiSync = () => {
       }
     };
 
+    // Manual sync trigger for restoring deleted data
+    const manualSync = () => {
+      console.log('🔄 MANUAL SYNC TRIGGERED - Restoring all data from backend');
+      syncData();
+    };
+
+    // Expose manual sync function globally for debugging
+    (window as any).restoreBankStatements = manualSync;
+
     // Real-time sync connection
     const connectToRealTimeSync = () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
 
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? window.location.origin 
-        : 'http://localhost:5001';
+      // Temporarily disable SSE in production to prevent errors
+      if (process.env.NODE_ENV === 'production') {
+        console.log('⚠️ Real-time sync disabled in production');
+        return;
+      }
       
+      const baseUrl = 'http://localhost:5001';
       const eventSource = new EventSource(`${baseUrl}/api/sync/events`);
       eventSourceRef.current = eventSource;
 

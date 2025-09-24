@@ -13,7 +13,7 @@ router.use((req, res, next) => {
 // Get all vehicles
 router.get('/', async (req, res) => {
   try {
-    const { ownership_type, search, page = 1, limit = 50 } = req.query;
+    const { ownership_type, search } = req.query;
     
     const filter = {};
     if (ownership_type) filter.ownership_type = ownership_type;
@@ -26,16 +26,12 @@ router.get('/', async (req, res) => {
     }
 
     const vehicles = await Vehicle.find(filter)
-      .sort({ vehicle_no: 1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
+      .sort({ vehicle_no: 1 });
 
-    const total = await Vehicle.countDocuments(filter);
+    const total = vehicles.length;
 
     res.json({
       vehicles,
-      totalPages: Math.ceil(total / limit),
-      currentPage: page,
       total
     });
   } catch (error) {
