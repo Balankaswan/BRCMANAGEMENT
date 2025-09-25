@@ -47,6 +47,7 @@ interface DataStoreState {
   addSupplier: (supplier: Supplier) => void;
   updateSupplier: (supplier: Supplier) => void;
   deleteSupplier: (id: string) => void;
+  setSuppliers: (suppliers: Supplier[]) => void;
   addVehicle: (vehicle: Vehicle) => void;
   updateVehicle: (vehicle: Vehicle) => void;
   deleteVehicle: (id: string) => void;
@@ -158,6 +159,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     addSupplier: (supplier) => setSuppliers(prev => [supplier, ...prev]),
     updateSupplier: (supplier) => setSuppliers(prev => prev.map(s => s.id === supplier.id ? supplier : s)),
     deleteSupplier: (id) => setSuppliers(prev => prev.filter(s => s.id !== id)),
+    setSuppliers: (suppliers) => setSuppliers(suppliers),
 
     // Vehicle actions
     addVehicle: (vehicle) => setVehicles(prev => [vehicle, ...prev]),

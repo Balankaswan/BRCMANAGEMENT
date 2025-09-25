@@ -14,7 +14,7 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   try {
     console.log('Banking GET request received');
-    const { type, category, vehicle_no } = req.query;
+    const { type, category, vehicle_no, page = 1, limit = 50 } = req.query;
     
     const filter = {};
     if (type) filter.type = type;
@@ -23,13 +23,17 @@ router.get('/', async (req, res) => {
 
     console.log('Banking filter:', filter);
     const bankingEntries = await BankingEntry.find(filter)
-      .sort({ date: -1, createdAt: -1 });
+      .sort({ date: -1, createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
 
-    const total = bankingEntries.length;
+    const total = await BankingEntry.countDocuments(filter);
     console.log('Banking entries found:', bankingEntries.length, 'total:', total);
 
     res.json({
       bankingEntries,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       total
     });
   } catch (error) {
@@ -144,6 +148,7 @@ router.post('/', async (req, res) => {
     const excludedCategories = [
       'party_commission', 
       'party_on_account', 
+      'supplier_on_account',
       'memo_advance', 
       'bill_advance', 
       'memo_payment', 
@@ -191,6 +196,54 @@ router.post('/', async (req, res) => {
         console.log('✅ Created general ledger entry for banking transaction:', ledgerEntry._id, 'Type:', ledgerType);
       } else {
         console.log('⚠️ Ledger entry already exists for banking transaction, skipping duplicate');
+      }
+    }
+
+    // Handle supplier on account transactions
+    if (bankingEntry.category === 'supplier_on_account' && bankingEntry.reference_name) {
+      try {
+        const Supplier = (await import('../models/Supplier.js')).default;
+        
+        // Find supplier by name
+        const supplier = await Supplier.findOne({ name: bankingEntry.reference_name });
+        
+        if (supplier) {
+          // Create supplier ledger entry
+          const supplierLedgerEntry = new LedgerEntry({
+            referenceId: supplier._id,
+            reference_id: bankingEntry._id.toString(),
+            ledger_type: 'supplier',
+            reference_name: supplier.name,
+            source_type: 'banking',
+            type: 'on_account',
+            date: bankingEntry.date,
+            description: `On Account Payment - Bank Ref #${bankingEntry._id.toString().slice(-6)}`,
+            debit: bankingEntry.type === 'debit' ? bankingEntry.amount : 0,
+            credit: bankingEntry.type === 'credit' ? bankingEntry.amount : 0,
+            balance: 0,
+            supplier_id: supplier._id,
+            supplier_name: supplier.name
+          });
+          
+          // Check if ledger entry already exists to prevent duplicates
+          const existingSupplierEntry = await LedgerEntry.findOne({
+            reference_id: bankingEntry._id.toString(),
+            source_type: 'banking',
+            ledger_type: 'supplier',
+            supplier_id: supplier._id
+          });
+          
+          if (!existingSupplierEntry) {
+            await supplierLedgerEntry.save();
+            console.log('✅ Created supplier ledger entry for on account payment:', supplierLedgerEntry._id, 'Supplier:', supplier.name);
+          } else {
+            console.log('⚠️ Supplier ledger entry already exists for banking transaction, skipping duplicate');
+          }
+        } else {
+          console.warn('⚠️ Supplier not found for supplier_on_account transaction:', bankingEntry.reference_name);
+        }
+      } catch (error) {
+        console.error('❌ Failed to create supplier ledger entry:', error);
       }
     }
 
@@ -270,6 +323,7 @@ router.delete('/:id', async (req, res) => {
     }
 
     // Delete associated party commission ledger entries
+    const PartyCommissionLedger = (await import('../models/PartyCommissionLedger.js')).default;
     await PartyCommissionLedger.deleteMany({
       banking_entry_id: bankingEntry._id,
       reference_type: 'banking'

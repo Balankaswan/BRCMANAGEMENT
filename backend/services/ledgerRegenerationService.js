@@ -75,21 +75,8 @@ export const regenerateLedgers = async () => {
         referenceId = entry.reference_name || entry._id;
       } else if (entry.category === 'fuel_wallet') {
         continue; // Skip - handled by Fuel system
-      } else {
-        // Exclude specific categories from general ledger
-        const excludedCategories = [
-          'memo_advance', 
-          'bill_advance', 
-          'memo_payment', 
-          'bill_payment', 
-          'on_account_advance'
-        ];
-        
-        if (excludedCategories.includes(entry.category)) {
-          continue; // Skip these categories from general ledger
-        }
-        
-        // Only remaining categories go to General Ledger
+      } else if (entry.category === 'expense' || entry.category === 'other') {
+        // Only these go to General Ledger
         ledgerType = 'general';
         referenceName = entry.narration || 'General Expense';
         referenceId = entry._id;
@@ -155,21 +142,8 @@ export const regenerateLedgers = async () => {
         referenceId = entry.reference_name || entry._id;
       } else if (entry.category === 'fuel_wallet') {
         continue; // Skip - handled by Fuel system
-      } else {
-        // Exclude specific categories from general ledger
-        const excludedCategories = [
-          'memo_advance', 
-          'bill_advance', 
-          'memo_payment', 
-          'bill_payment', 
-          'on_account_advance'
-        ];
-        
-        if (excludedCategories.includes(entry.category)) {
-          continue; // Skip these categories from general ledger
-        }
-        
-        // Only remaining categories go to General Ledger
+      } else if (entry.category === 'expense' || entry.category === 'other') {
+        // Only these go to General Ledger
         ledgerType = 'general';
         referenceName = entry.narration || 'General Expense';
         referenceId = entry._id;

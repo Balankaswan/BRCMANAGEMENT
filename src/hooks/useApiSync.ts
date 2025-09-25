@@ -40,17 +40,17 @@ export const useApiSync = () => {
           fuelWalletsResponse,
           fuelTransactionsResponse
         ] = await Promise.allSettled([
-          apiService.getBills({ limit: 1000 }), // Get ALL bills
-          apiService.getParties({ limit: 1000 }), // Get ALL parties  
-          apiService.getSuppliers({ limit: 1000 }), // Get ALL suppliers
-          apiService.getVehicles({ limit: 1000 }), // Get ALL vehicles
-          apiService.getMemos({ limit: 1000 }), // Get ALL memos
-          apiService.getLoadingSlips({ limit: 1000 }), // Get ALL loading slips
-          apiService.getBankingEntries({ limit: 1000 }), // Get ALL banking entries
-          apiService.getCashbookEntries({ limit: 1000 }), // Get ALL cashbook entries
-          apiService.getLedgerEntries({ limit: 1000 }), // Get ALL ledger entries
+          apiService.getBills({ limit: 10000 }), // Get ALL bills with high limit
+          apiService.getParties({ limit: 10000 }), // Get ALL parties with high limit
+          apiService.getSuppliers({ limit: 10000 }), // Get ALL suppliers with high limit
+          apiService.getVehicles({ limit: 10000 }), // Get ALL vehicles with high limit
+          apiService.getMemos({ limit: 10000 }), // Get ALL memos with high limit
+          apiService.getLoadingSlips({ limit: 10000 }), // Get ALL loading slips with high limit
+          apiService.getBankingEntries({ limit: 10000 }), // Get ALL banking entries
+          apiService.getCashbookEntries({ limit: 10000 }), // Get ALL cashbook entries
+          apiService.getLedgerEntries(), // Get ALL ledger entries
           apiService.getFuelWallets(),
-          apiService.getFuelTransactions({ limit: 1000 }) // Get ALL fuel transactions
+          apiService.getFuelTransactions() // Get ALL fuel transactions
         ]);
 
         // BULLETPROOF BILLS IMPORT AND SYNC
@@ -119,7 +119,6 @@ export const useApiSync = () => {
           console.log('💾 MEMOS SYNC START');
           console.log('📊 MongoDB Memos Available:', fetchedMemos.length);
           console.log('🏪 Current Store Memos:', currentMemos.length);
-          console.log('🔍 Raw memos response:', memosResponse.value);
           
           if (fetchedMemos.length === 0) {
             console.error('❌ NO MEMOS FETCHED FROM MONGODB! Check API response.');
@@ -174,8 +173,6 @@ export const useApiSync = () => {
           } else {
             console.log('⚠️ No memos fetched from MongoDB');
           }
-        } else if (memosResponse.status === 'rejected') {
-          console.error('❌ MEMOS API CALL FAILED:', memosResponse.reason);
         }
 
         // BULLETPROOF LOADING SLIPS IMPORT AND SYNC
@@ -186,7 +183,6 @@ export const useApiSync = () => {
           console.log('💾 LOADING SLIPS SYNC START');
           console.log('📊 MongoDB Loading Slips Available:', fetchedSlips.length);
           console.log('🏪 Current Store Loading Slips:', currentSlips.length);
-          console.log('🔍 Raw loading slips response:', loadingSlipsResponse.value);
           
           if (fetchedSlips.length === 0) {
             console.error('❌ NO LOADING SLIPS FETCHED FROM MONGODB! Check API response.');
@@ -235,92 +231,16 @@ export const useApiSync = () => {
           } else {
             console.log('⚠️ No loading slips fetched from MongoDB');
           }
-        } else if (loadingSlipsResponse.status === 'rejected') {
-          console.error('❌ LOADING SLIPS API CALL FAILED:', loadingSlipsResponse.reason);
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
-          const fetchedBankingEntries = bankingEntriesResponse.value.bankingEntries || [];
-          console.log('💳 Banking entries synced from backend:', fetchedBankingEntries.length);
-          
-          // SMART MERGE: Preserve existing entries and add new ones from backend
-          const existingEntries = store.bankingEntries;
-          const allEntriesMap = new Map();
-          
-          // First, add existing entries to map
-          existingEntries.forEach(entry => {
-            const entryId = entry.id || (entry as any)._id;
-            if (entryId) {
-              allEntriesMap.set(entryId, entry);
-            }
-          });
-          
-          // Then, add/update with backend entries (backend is authoritative)
-          fetchedBankingEntries.forEach(fetchedEntry => {
-            const entryId = fetchedEntry.id || (fetchedEntry as any)._id;
-            if (entryId) {
-              // Ensure entry has proper ID field for frontend compatibility
-              const entryWithId = {
-                ...fetchedEntry,
-                id: fetchedEntry.id || (fetchedEntry as any)._id
-              };
-              allEntriesMap.set(entryId, entryWithId);
-            }
-          });
-          
-          // Convert map back to array, sorted by date (newest first)
-          const completeEntries = Array.from(allEntriesMap.values()).sort((a, b) => {
-            const dateA = new Date(a.date || a.created_at || 0).getTime();
-            const dateB = new Date(b.date || b.created_at || 0).getTime();
-            return dateB - dateA;
-          });
-          
-          // Update store with complete dataset
-          store.setBankingEntries(completeEntries);
-          console.log('✅ BANKING ENTRIES FULLY SYNCED - No data loss');
-          console.log('📈 Total Banking Entries in Store:', completeEntries.length);
+          store.setBankingEntries(bankingEntriesResponse.value.bankingEntries || []);
         }
 
         if (cashbookEntriesResponse.status === 'fulfilled') {
           const fetchedCashbookEntries = cashbookEntriesResponse.value.cashbookEntries || [];
           console.log('💰 Cashbook entries synced from backend:', fetchedCashbookEntries.length);
-          
-          // SMART MERGE: Preserve existing entries and add new ones from backend
-          const existingCashbookEntries = store.cashbookEntries;
-          const allCashbookEntriesMap = new Map();
-          
-          // First, add existing entries to map
-          existingCashbookEntries.forEach(entry => {
-            const entryId = entry.id || (entry as any)._id;
-            if (entryId) {
-              allCashbookEntriesMap.set(entryId, entry);
-            }
-          });
-          
-          // Then, add/update with backend entries (backend is authoritative)
-          fetchedCashbookEntries.forEach(fetchedEntry => {
-            const entryId = fetchedEntry.id || (fetchedEntry as any)._id;
-            if (entryId) {
-              // Ensure entry has proper ID field for frontend compatibility
-              const entryWithId = {
-                ...fetchedEntry,
-                id: fetchedEntry.id || (fetchedEntry as any)._id
-              };
-              allCashbookEntriesMap.set(entryId, entryWithId);
-            }
-          });
-          
-          // Convert map back to array, sorted by date (newest first)
-          const completeCashbookEntries = Array.from(allCashbookEntriesMap.values()).sort((a, b) => {
-            const dateA = new Date(a.date || a.created_at || 0).getTime();
-            const dateB = new Date(b.date || b.created_at || 0).getTime();
-            return dateB - dateA;
-          });
-          
-          // Update store with complete dataset
-          store.setCashbookEntries(completeCashbookEntries);
-          console.log('✅ CASHBOOK ENTRIES FULLY SYNCED - No data loss');
-          console.log('📈 Total Cashbook Entries in Store:', completeCashbookEntries.length);
+          store.setCashbookEntries(fetchedCashbookEntries);
         }
 
         if (partiesResponse.status === 'fulfilled') {
@@ -334,9 +254,11 @@ export const useApiSync = () => {
         if (suppliersResponse.status === 'fulfilled') {
           const fetchedSuppliers = suppliersResponse.value.suppliers || [];
           console.log('🚚 Suppliers synced from backend:', fetchedSuppliers.length);
-          // Replace with fresh data from backend
-          store.suppliers.forEach(supplier => store.deleteSupplier(supplier.id));
-          fetchedSuppliers.forEach(supplier => store.addSupplier(supplier));
+          console.log('🚚 Suppliers data:', fetchedSuppliers);
+          // Replace with fresh data from backend using efficient setSuppliers
+          store.setSuppliers(fetchedSuppliers);
+        } else {
+          console.error('❌ Failed to fetch suppliers:', suppliersResponse.reason);
         }
 
         if (vehiclesResponse.status === 'fulfilled') {
@@ -382,40 +304,16 @@ export const useApiSync = () => {
       }
     };
 
-    // Manual sync trigger for restoring deleted data
-    const manualSync = () => {
-      console.log('🔄 MANUAL SYNC TRIGGERED - Restoring all data from backend');
-      syncData();
-    };
-
-    // Expose manual sync function globally for debugging
-    (window as any).restoreBankStatements = manualSync;
-    (window as any).restoreAllData = manualSync;
-    (window as any).debugDataSync = () => {
-      console.log('🔍 CURRENT DATA STORE STATE:');
-      console.log('Bills:', store.bills.length);
-      console.log('Memos:', store.memos.length);
-      console.log('Loading Slips:', store.loadingSlips.length);
-      console.log('Banking Entries:', store.bankingEntries.length);
-      console.log('Cashbook Entries:', store.cashbookEntries.length);
-      console.log('Vehicles:', store.vehicles.length);
-      console.log('Parties:', store.parties.length);
-      console.log('Suppliers:', store.suppliers.length);
-    };
-
     // Real-time sync connection
     const connectToRealTimeSync = () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
 
-      // Temporarily disable SSE in production to prevent errors
-      if (process.env.NODE_ENV === 'production') {
-        console.log('⚠️ Real-time sync disabled in production');
-        return;
-      }
+      const baseUrl = process.env.NODE_ENV === 'production' 
+        ? window.location.origin 
+        : 'http://localhost:5001';
       
-      const baseUrl = 'http://localhost:5001';
       const eventSource = new EventSource(`${baseUrl}/api/sync/events`);
       eventSourceRef.current = eventSource;
 

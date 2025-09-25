@@ -21,33 +21,11 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   const [paidDate, setPaidDate] = useState('');
   const [search, setSearch] = useState('');
 
-  // Debug function for memo search
-  React.useEffect(() => {
-    (window as any).debugMemoSearch = () => {
-      console.log('🔍 MEMO SEARCH DEBUG REPORT:');
-      console.log('Total memos in store:', memos.length);
-      console.log('Current search term:', search);
-      console.log('Show only fully paid:', showOnlyFullyPaid);
-      console.log('Loading slips available:', loadingSlips.length);
-      console.log('Sample memos:', memos.slice(0, 5).map(m => ({
-        number: m.memo_number,
-        supplier: m.supplier,
-        status: m.status,
-        date: m.date
-      })));
-    };
-  }, [memos, search, showOnlyFullyPaid, loadingSlips]);
-
   const handleCreateMemo = async (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      console.log('🚀 Creating memo...', memoData);
       const response = await apiService.createMemo(memoData);
       addMemo(response.memo);
-      console.log('✅ Memo created successfully:', response.memo);
-      
-      // Reset form state immediately
-      setShowForm(false);
-      setEditingMemo(null);
+      console.log('Memo created and synced to MongoDB:', response.memo);
       
       // Create ledger entries for own vehicles after memo creation
       // CRITICAL FIX: Check both frontend store and backend memo data for loading slip
@@ -94,13 +72,12 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         console.error('Failed to sync ledger entries:', error);
       }
       
+      // Trigger sync across devices
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }, 1000);
     } catch (error) {
-      console.error('❌ Failed to create memo:', error);
-      // Reset form state even on error
-      setShowForm(false);
-      setEditingMemo(null);
-      
-      // Fallback: create memo locally if backend fails
+      console.error('Failed to create memo:', error);
       const newMemo: Memo = {
         ...memoData,
         id: Date.now().toString(),
@@ -109,6 +86,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       };
       addMemo(newMemo);
     }
+    setShowForm(false);
   };
 
   const handleShowForm = () => {
@@ -254,17 +232,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   };
 
   const filteredMemos = useMemo(() => {
-    console.log('🔍 MEMO SEARCH DEBUG:', {
-      totalMemos: memos.length,
-      searchTerm: search,
-      showOnlyFullyPaid,
-      memosPreview: memos.slice(0, 3).map(m => ({ number: m.memo_number, supplier: m.supplier, status: m.status }))
-    });
-    
     // Main list shows only pending; Paid Memo view shows only paid
     let base = showOnlyFullyPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
-    
-    console.log('📋 After status filter:', base.length, 'memos');
     
     // Sort memos by document number (numeric part) in descending order, then by date
     base = [...base].sort((a, b) => {
@@ -297,15 +266,9 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         return calculatedBalance <= 0;
       });
     }
-    if (!search.trim()) {
-      console.log('🔍 No search term, returning all:', base.length, 'memos');
-      return base;
-    }
-    
+    if (!search.trim()) return base;
     const q = search.toLowerCase();
-    console.log('🔍 Searching for:', q);
-    
-    const filtered = base.filter(m => {
+    return base.filter(m => {
       const ls = loadingSlips.find(ls => ls.id === m.loading_slip_id);
       const haystack = [
         m.memo_number,
@@ -319,16 +282,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       ]
         .join(' ')
         .toLowerCase();
-      
-      const matches = haystack.includes(q);
-      if (matches) {
-        console.log('✅ Match found:', m.memo_number, 'haystack:', haystack);
-      }
-      return matches;
+      return haystack.includes(q);
     });
-    
-    console.log('🔍 Search results:', filtered.length, 'out of', base.length, 'memos');
-    return filtered;
   }, [memos, bankingEntries, showOnlyFullyPaid, search, loadingSlips]);
 
   return (

@@ -13,7 +13,7 @@ const router = express.Router();
 // Get all memos
 router.get('/', async (req, res) => {
   try {
-    const { status, supplier, vehicle_no } = req.query;
+    const { status, supplier, vehicle_no, page = 1, limit = 50 } = req.query;
     
     const filter = {};
     if (status) filter.status = status;
@@ -21,9 +21,11 @@ router.get('/', async (req, res) => {
     if (vehicle_no) filter.vehicle_no = new RegExp(vehicle_no, 'i');
 
     const memos = await Memo.find(filter)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
 
-    const total = memos.length;
+    const total = await Memo.countDocuments(filter);
 
     // Ensure id field is present for frontend compatibility
     const memosWithId = memos.map(memo => {
@@ -34,6 +36,8 @@ router.get('/', async (req, res) => {
 
     res.json({
       memos: memosWithId,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       total
     });
   } catch (error) {

@@ -18,6 +18,7 @@ const cashbookEntrySchema = new mongoose.Schema({
       'party_on_account',
       'party_commission',
       'supplier_payment',
+      'supplier_on_account',
       'bill_advance',
       'bill_payment',
       'memo_advance',

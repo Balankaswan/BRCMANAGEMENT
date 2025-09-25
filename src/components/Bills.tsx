@@ -23,22 +23,17 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
 
   const handleCreateBill = async (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
     try {
-      console.log('🚀 Creating bill...', billData);
       const response = await apiService.createBill(billData);
       addBill(response.bill);
-      console.log('✅ Bill created successfully:', response.bill);
+      console.log('Bill created and synced to MongoDB:', response.bill);
       
-      // Reset form state immediately
-      setShowForm(false);
-      setEditingBill(null);
-      
+      // Trigger sync across devices
+      setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+      }, 1000);
     } catch (error) {
-      console.error('❌ Failed to create bill:', error);
-      // Reset form state even on error
-      setShowForm(false);
-      setEditingBill(null);
-      
-      // Fallback: create bill locally if backend fails
+      console.error('Failed to create bill:', error);
+      // Fallback to local storage
       const newBill: Bill = {
         ...billData,
         id: Date.now().toString(),
@@ -47,6 +42,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
       };
       addBill(newBill);
     }
+    setShowForm(false);
   };
 
 

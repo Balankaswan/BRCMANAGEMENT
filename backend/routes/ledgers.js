@@ -13,7 +13,7 @@ router.use((req, res, next) => {
 // Get all ledger entries
 router.get('/', async (req, res) => {
   try {
-    const { vehicleNo, partyId, supplierId, type } = req.query;
+    const { vehicleNo, partyId, supplierId, type, page = 1, limit = 100 } = req.query;
     
     const filter = {};
     if (vehicleNo) filter.vehicleNo = vehicleNo;
@@ -22,9 +22,11 @@ router.get('/', async (req, res) => {
     if (type) filter.type = type;
 
     const ledgerEntries = await LedgerEntry.find(filter)
-      .sort({ date: 1, createdAt: 1 });
+      .sort({ date: 1, createdAt: 1 })
+      .limit(limit * 1)
+      .skip((page - 1) * limit);
 
-    const total = ledgerEntries.length;
+    const total = await LedgerEntry.countDocuments(filter);
 
     // Ensure id field is present for frontend compatibility
     const entriesWithId = ledgerEntries.map(entry => {
@@ -35,6 +37,8 @@ router.get('/', async (req, res) => {
 
     res.json({
       ledgerEntries: entriesWithId,
+      totalPages: Math.ceil(total / limit),
+      currentPage: page,
       total
     });
   } catch (error) {

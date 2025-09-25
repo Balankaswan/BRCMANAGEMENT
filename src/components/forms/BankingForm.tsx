@@ -12,10 +12,10 @@ interface BankingFormProps {
 }
 
 const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEntry }) => {
-  const { memos, bills, ledgerEntries, parties, vehicles, loadingSlips } = useDataStore();
+  const { memos, bills, ledgerEntries, parties, vehicles, loadingSlips, suppliers } = useDataStore();
   const [formData, setFormData] = useState({
     type: editingEntry?.type || 'credit' as 'credit' | 'debit',
-    category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'party_on_account' | 'other',
+    category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'party_on_account' | 'supplier_on_account' | 'other',
     amount: editingEntry?.amount || 0,
     date: editingEntry?.date || new Date().toISOString().split('T')[0],
     reference_id: editingEntry?.reference_id || '',
@@ -24,6 +24,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     vehicle_no: editingEntry?.vehicle_no || '',
   });
 
+  const existingMemos = useMemo(() => memos.map(m => m.memo_number), [memos]);
   const existingBills = useMemo(() => bills.map(b => b.bill_number), [bills]);
   const [showReferenceDropdown, setShowReferenceDropdown] = useState(false);
   const [showNewLedgerModal, setShowNewLedgerModal] = useState(false);
@@ -47,7 +48,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+    onSubmit(formData as any);
+
     // Note: Vehicle ledger entries are now automatically created by the backend banking route
     
     // Create party commission ledger entry for commission payments
@@ -125,6 +127,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
         { value: 'fuel_wallet', label: 'Fuel Wallet Credit' },
         { value: 'party_commission', label: 'Party Commission Payment' },
         { value: 'party_on_account', label: 'Party On Account Payment' },
+        { value: 'supplier_on_account', label: 'Supplier On Account Payment' },
         { value: 'other', label: 'Other Expense' },
       ];
     }
@@ -145,25 +148,9 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
 
   const getReferenceOptions = () => {
     if (formData.category.includes('bill')) {
-      // Filter bills based on current input
-      const searchTerm = formData.reference_id.toLowerCase();
-      return existingBills.filter(billNumber => 
-        billNumber.toLowerCase().includes(searchTerm)
-      );
+      return existingBills;
     } else if (formData.category.includes('memo')) {
-      // Filter memos based on current input and show memo details
-      const searchTerm = formData.reference_id.toLowerCase();
-      return memos
-        .filter(memo => 
-          memo.memo_number.toLowerCase().includes(searchTerm) ||
-          memo.supplier.toLowerCase().includes(searchTerm) ||
-          (memo.freight && memo.freight.toString().includes(searchTerm))
-        )
-        .map(memo => {
-          // Show memo number with supplier and amount for better selection
-          return `${memo.memo_number} - ${memo.supplier} - ₹${formatCurrency(memo.freight || 0)}`;
-        })
-        .slice(0, 10); // Limit to 10 results for performance
+      return existingMemos;
     } else if (formData.category === 'party_commission' || formData.category === 'party_on_account') {
       return parties.map(p => p.name).filter(Boolean);
     }
@@ -173,23 +160,18 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
   const handleReferenceSelect = (value: string) => {
     setFormData(prev => {
       let reference_name = prev.reference_name;
-      let reference_id = value;
-      
       if (prev.category.includes('bill')) {
         const bill = bills.find(b => b.bill_number === value);
         reference_name = bill?.party || '';
       } else if (prev.category.includes('memo')) {
-        // Extract memo number from the formatted string "MO-6070 - MAHENDRA AIWALA - ₹47,000"
-        const memoNumber = value.split(' - ')[0];
-        const memo = memos.find(m => m.memo_number === memoNumber);
+        const memo = memos.find(m => m.memo_number === value);
         reference_name = memo?.supplier || '';
-        reference_id = memoNumber; // Use just the memo number as reference_id
       } else if (prev.category === 'party_commission' || prev.category === 'party_on_account') {
         reference_name = value; // Party name is the reference_name for commission/on account payments
       }
       return {
         ...prev,
-        reference_id: reference_id,
+        reference_id: value,
         reference_name,
       };
     });
@@ -232,6 +214,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -267,6 +250,29 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
               </select>
             </div>
           </div>
+
+          {/* SUPPLIER DROPDOWN - MOVED HERE FOR BETTER VISIBILITY */}
+          {formData.category === 'supplier_on_account' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Select Supplier
+              </label>
+              <select
+                name="reference_name"
+                value={formData.reference_name}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              >
+                <option value="">Select Supplier</option>
+                {suppliers && suppliers.map((supplier: any) => (
+                  <option key={supplier.id || supplier._id} value={supplier.name}>
+                    {supplier.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
@@ -395,8 +401,9 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                 </div>
               )}
 
-              {/* Reference fields for other categories (excluding party_on_account and party_commission) */}
-              {formData.category !== 'bill_advance' && formData.category !== 'bill_payment' && formData.category !== 'party_on_account' && formData.category !== 'party_commission' && (
+
+              {/* Reference fields for other categories (excluding party_on_account, party_commission, and supplier_on_account) */}
+              {formData.category !== 'bill_advance' && formData.category !== 'bill_payment' && formData.category !== 'party_on_account' && formData.category !== 'party_commission' && String(formData.category) !== 'supplier_on_account' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -407,13 +414,10 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                         type="text"
                         name="reference_id"
                         value={formData.reference_id}
-                        onChange={(e) => {
-                          handleInputChange(e);
-                          setShowReferenceDropdown(true); // Show dropdown when typing
-                        }}
+                        onChange={handleInputChange}
                         onFocus={() => setShowReferenceDropdown(true)}
                         className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder={formData.category.includes('bill') ? 'Type to search bills...' : 'Type to search memos...'}
+                        placeholder={formData.category.includes('bill') ? 'Select Bill Number' : 'Select Memo Number'}
                         required
                       />
                       <ChevronDown 

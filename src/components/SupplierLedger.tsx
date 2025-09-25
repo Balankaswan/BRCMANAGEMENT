@@ -22,7 +22,7 @@ interface SupplierLedgerProps {
 }
 
 const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => {
-  const { memos, bankingEntries, loadingSlips } = useDataStore();
+  const { memos, bankingEntries, cashbookEntries, loadingSlips } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [supplierFilter, setSupplierFilter] = useState(selectedSupplier || '');
@@ -45,17 +45,42 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       .filter(memo => memo.supplier === supplierFilter)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // Get all banking entries for the supplier's memos
+    // Get all banking and cashbook entries for the supplier's memos and on account payments
     const supplierBankingEntries = bankingEntries
-      .filter(entry => 
-        (entry.category === 'memo_payment' || entry.category === 'memo_advance') &&
-        supplierMemos.some(memo => memo.memo_number === entry.reference_id)
-      )
+      .filter(entry => {
+        // Include memo payments and advances
+        if ((entry.category === 'memo_payment' || entry.category === 'memo_advance') &&
+            supplierMemos.some(memo => memo.memo_number === entry.reference_id)) {
+          return true;
+        }
+        // Include supplier on account payments
+        if ((entry.category as any) === 'supplier_on_account' && entry.reference_name === supplierFilter) {
+          return true;
+        }
+        return false;
+      });
+
+    // Get cashbook entries for supplier payments and on account
+    const supplierCashbookEntries = cashbookEntries
+      .filter(entry => {
+        // Include supplier payments
+        if (entry.category === 'supplier_payment' && entry.reference_name === supplierFilter) {
+          return true;
+        }
+        // Include supplier on account payments
+        if ((entry.category as any) === 'supplier_on_account' && entry.reference_name === supplierFilter) {
+          return true;
+        }
+        return false;
+      });
+
+    // Combine all payment entries and sort by date
+    const allPaymentEntries = [...supplierBankingEntries, ...supplierCashbookEntries]
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Combine and sort all entries by date
     const allEntries: Array<{
-      type: 'memo' | 'payment' | 'advance';
+      type: 'memo' | 'payment' | 'advance' | 'on_account';
       date: string;
       data: any;
     }> = [];
@@ -70,10 +95,18 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       });
     });
 
-    // Add banking entries
-    supplierBankingEntries.forEach(entry => {
+    // Add payment entries (banking and cashbook)
+    allPaymentEntries.forEach(entry => {
+      let entryType: 'payment' | 'advance' | 'on_account' = 'payment';
+      
+      if (entry.category === 'memo_advance') {
+        entryType = 'advance';
+      } else if ((entry.category as any) === 'supplier_on_account') {
+        entryType = 'on_account';
+      }
+      
       allEntries.push({
-        type: entry.category === 'memo_advance' ? 'advance' : 'payment',
+        type: entryType,
         date: entry.date,
         data: entry
       });
@@ -109,7 +142,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         const mamul = entry.data.mamool || 0;
         
         // Check if there was an advance for this memo
-        const memoAdvances = supplierBankingEntries.filter(be => 
+        const memoAdvances = allPaymentEntries.filter(be => 
           be.category === 'memo_advance' && be.reference_id === entry.data.memo_number
         );
         const totalAdvance = memoAdvances.reduce((sum, adv) => sum + adv.amount, 0);
@@ -127,10 +160,16 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       } else if (entry.type === 'advance') {
         // Advance is already accounted for in memo creation
         return;
+      } else if (entry.type === 'on_account') {
+        debitPayment = entry.data.amount;
+        
+        // Deduct on account payment from running balance
+        runningBalance -= debitPayment;
+        remarks = 'On Account Payment';
       }
 
       entries.push({
-        id: entry.data.id || `${entry.type}-${entry.date}`,
+        id: entry.data.id || entry.data._id || `${entry.type}-${entry.date}-${Date.now()}-${Math.random()}`,
         date: entry.date,
         memoNo: memo?.memo_number || '',
         tripDetails,
@@ -145,7 +184,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     });
 
     return entries;
-  }, [supplierFilter, memos, bankingEntries, loadingSlips]);
+  }, [supplierFilter, memos, bankingEntries, cashbookEntries, loadingSlips]);
 
   // Filter by date range
   const filteredEntries = useMemo(() => {

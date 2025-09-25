@@ -7,10 +7,16 @@ const router = express.Router();
 // Get all cashbook entries with balance summary
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const cashbookEntries = await CashbookEntry.find({})
-      .sort({ date: -1, createdAt: -1 });
+    const { page = 1, limit = 50 } = req.query;
+    const skip = (page - 1) * limit;
     
-    const total = cashbookEntries.length;
+    const cashbookEntries = await CashbookEntry.find({})
+      .sort({ date: -1, createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit));
+    
+    const total = await CashbookEntry.countDocuments();
+    const totalPages = Math.ceil(total / limit);
     
     // Get current cash balance (latest running balance)
     const latestEntry = await CashbookEntry.findOne({}, {}, { sort: { date: -1, createdAt: -1 } });
@@ -19,6 +25,8 @@ router.get('/', authenticateToken, async (req, res) => {
     res.json({
       cashbookEntries,
       total,
+      totalPages,
+      currentPage: parseInt(page),
       currentBalance
     });
   } catch (error) {
@@ -89,6 +97,36 @@ router.post('/', async (req, res) => {
       
       await supplierLedgerEntry.save();
       console.log('✅ Created supplier ledger entry from cashbook:', supplierLedgerEntry._id);
+    }
+
+    // Create supplier on account ledger entry for supplier on account payments
+    if (cashbookEntry.category === 'supplier_on_account' && cashbookEntry.reference_name) {
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const Supplier = (await import('../models/Supplier.js')).default;
+      
+      // Find the supplier by name
+      const supplier = await Supplier.findOne({ name: cashbookEntry.reference_name });
+      const supplierId = supplier ? supplier._id : cashbookEntry.reference_name;
+      
+      const supplierOnAccountLedgerEntry = new LedgerEntry({
+        referenceId: supplierId,
+        reference_id: cashbookEntry._id.toString(),
+        ledger_type: 'supplier',
+        reference_name: cashbookEntry.reference_name,
+        source_type: 'cashbook',
+        type: 'on_account',
+        date: cashbookEntry.date,
+        description: `On Account Payment – Cash Payment`,
+        narration: cashbookEntry.narration || `On Account Payment – Cash Payment`,
+        debit: cashbookEntry.amount,
+        credit: 0,
+        balance: 0,
+        supplier_id: supplierId,
+        supplier_name: cashbookEntry.reference_name
+      });
+      
+      await supplierOnAccountLedgerEntry.save();
+      console.log('✅ Created supplier on account ledger entry from cashbook:', supplierOnAccountLedgerEntry._id);
     }
 
     // Party commission entries are now handled by the centralized ledger regeneration system

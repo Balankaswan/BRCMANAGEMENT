@@ -8,7 +8,7 @@ interface DashboardProps {
 }
 
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
-  const { memos, bills, bankingEntries, loadingSlips, vehicles } = useDataStore();
+  const { memos, bills, bankingEntries, cashbookEntries, loadingSlips, vehicles } = useDataStore();
   
   // Month filter state
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -66,8 +66,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       // Net amount party owes = Bill Amount + Extras - Deductions
       const partyOwes = billAmount + detention + extra + rto - mamool - tds - penalties;
       
-      // Find all payments for this bill
-      const billPayments = bankingEntries
+      // Find all payments for this bill from banking entries
+      const bankingPayments = bankingEntries
         .filter(entry => {
           const matchesReference = entry.reference_id === bill.bill_number;
           const isCredit = entry.type === 'credit';
@@ -75,9 +75,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           return matchesReference && isCredit;
         })
         .reduce((total, entry) => {
-          console.log(`  Payment found: ${entry.category} - ₹${entry.amount}`);
+          console.log(`  Banking Payment found: ${entry.category} - ₹${entry.amount}`);
           return total + entry.amount;
         }, 0);
+      
+      // Find all payments for this bill from cashbook entries
+      const cashbookPayments = cashbookEntries
+        .filter(entry => {
+          const matchesReference = entry.reference_id === bill.bill_number;
+          const isCredit = entry.type === 'credit';
+          return matchesReference && isCredit;
+        })
+        .reduce((total, entry) => {
+          console.log(`  Cashbook Payment found: ${entry.category} - ₹${entry.amount}`);
+          return total + entry.amount;
+        }, 0);
+      
+      const billPayments = bankingPayments + cashbookPayments;
       
       const billBalance = partyOwes - billPayments;
       
@@ -106,9 +120,15 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       return sum + netAmount;
     }, 0);
     
-    const simpleTotalPayments = bankingEntries
+    const simpleBankingPayments = bankingEntries
       .filter(entry => entry.type === 'credit' && bills.some(bill => bill.bill_number === entry.reference_id))
       .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const simpleCashbookPayments = cashbookEntries
+      .filter(entry => entry.type === 'credit' && bills.some(bill => bill.bill_number === entry.reference_id))
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const simpleTotalPayments = simpleBankingPayments + simpleCashbookPayments;
     
     console.log('🔍 Verification:');
     console.log(`  Simple Total Bills: ₹${simpleTotalBills}`);
@@ -116,7 +136,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     console.log(`  Simple Balance: ₹${Math.max(0, simpleTotalBills - simpleTotalPayments)}`);
     
     return balance;
-  }, [bills, bankingEntries]);
+  }, [bills, bankingEntries, cashbookEntries]);
 
   // Calculate supplier balance (memos due to suppliers - ONLY market vehicles) - OVERALL, not filtered by month
   const supplierBalance = useMemo(() => {
@@ -165,15 +185,29 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         return sum;
       }
       
-      // Check if memo has been paid (subtract payments from banking entries)
-      const memoPayments = bankingEntries
+      // Check if memo has been paid (subtract payments and advances from banking and cashbook entries)
+      const bankingPayments = bankingEntries
         .filter(entry => {
           const matchesReference = entry.reference_id === memo.memo_number;
           const isDebit = entry.type === 'debit';
-          const isMemoPayment = entry.category === 'memo_payment' || entry.category === 'supplier_payment';
+          const isMemoPayment = entry.category === 'memo_payment' || 
+                               entry.category === 'supplier_payment' || 
+                               entry.category === 'memo_advance';
           return matchesReference && isDebit && isMemoPayment;
         })
         .reduce((total, entry) => total + entry.amount, 0);
+      
+      // Also check cashbook entries for supplier payments
+      const cashbookPayments = cashbookEntries
+        .filter(entry => {
+          const matchesReference = entry.reference_id === memo.memo_number;
+          const isDebit = entry.type === 'debit';
+          const isMemoPayment = entry.category === 'supplier_payment';
+          return matchesReference && isDebit && isMemoPayment;
+        })
+        .reduce((total, entry) => total + entry.amount, 0);
+      
+      const memoPayments = bankingPayments + cashbookPayments;
       
       const memoBalance = memo.net_amount - memoPayments;
       console.log(`Memo ${memo.memo_number}: Owes ₹${memo.net_amount}, Paid ₹${memoPayments}, Balance ₹${memoBalance}`);
@@ -183,7 +217,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     
     console.log('💰 Total Supplier Balance:', balance);
     return balance;
-  }, [memos, loadingSlips, vehicles, bankingEntries]);
+  }, [memos, loadingSlips, vehicles, bankingEntries, cashbookEntries]);
 
   // Calculate monthly revenue (total bill amounts)
   const monthlyRevenue = useMemo(() => {

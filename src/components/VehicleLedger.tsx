@@ -35,7 +35,7 @@ const VehicleLedger: React.FC = () => {
     const interval = setInterval(refreshLedgerData, 10000);
     
     return () => clearInterval(interval);
-  }, [setLedgerEntries]); // Removed ledgerEntries.length to prevent infinite re-renders
+  }, [setLedgerEntries, ledgerEntries.length]);
   const [selectedVehicle, setSelectedVehicle] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');

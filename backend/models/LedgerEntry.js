@@ -25,7 +25,7 @@ const ledgerEntrySchema = new mongoose.Schema({
   type: {
     type: String,
     required: true,
-    enum: ['memo', 'payment', 'bill', 'expense', 'commission', 'party']
+    enum: ['memo', 'payment', 'bill', 'expense', 'commission', 'party', 'on_account']
   },
   vehicleNo: {
     type: String,
