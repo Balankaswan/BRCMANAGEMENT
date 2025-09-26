@@ -13,9 +13,10 @@ interface ApiResponse<T> {
 class ApiService {
   private baseURL: string;
   private token: string | null = null;
+  private pendingRequests: Map<string, Promise<any>> = new Map();
 
-  constructor(baseURL: string) {
-    this.baseURL = baseURL;
+  constructor() {
+    this.baseURL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
     this.token = localStorage.getItem('auth_token');
   }
 
@@ -233,10 +234,31 @@ class ApiService {
   }
 
   async createBankingEntry(data: any) {
-    return this.request<{bankingEntry: any}>('/banking', {
+    // Create a unique key based on the data content only (no timestamp)
+    const requestKey = `POST-/banking-${JSON.stringify(data)}`;
+    
+    // Check if this exact request is already pending
+    if (this.pendingRequests.has(requestKey)) {
+      console.log('🚫 Duplicate banking entry request detected, returning existing promise');
+      return this.pendingRequests.get(requestKey);
+    }
+    
+    // Create the request promise
+    const requestPromise = this.request<{bankingEntry: any}>('/banking', {
       method: 'POST',
       body: JSON.stringify(data),
+    }).finally(() => {
+      // Clean up the pending request after completion (with small delay)
+      setTimeout(() => {
+        this.pendingRequests.delete(requestKey);
+      }, 1000);
     });
+    
+    // Store the pending request
+    this.pendingRequests.set(requestKey, requestPromise);
+    
+    console.log('🚀 Creating new banking entry request:', requestKey);
+    return requestPromise;
   }
 
   async createCashbookEntry(data: any) {

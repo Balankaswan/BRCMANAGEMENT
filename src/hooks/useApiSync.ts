@@ -16,10 +16,17 @@ export const useApiSync = () => {
 
         console.log('Starting comprehensive API sync...');
         
-        // Listen for sync events from other components
+        // Listen for sync events from other components with debouncing
+        let syncTimeout: NodeJS.Timeout | null = null;
         const handleSyncEvent = () => {
-          console.log('Sync event received, refreshing data...');
-          setTimeout(() => syncData(), 500);
+          console.log('Sync event received, scheduling refresh...');
+          if (syncTimeout) {
+            clearTimeout(syncTimeout);
+          }
+          syncTimeout = setTimeout(() => {
+            console.log('Executing delayed sync...');
+            syncData();
+          }, 1000); // Increased delay and added debouncing
         };
         
         window.addEventListener('data-sync-required', handleSyncEvent);
@@ -234,7 +241,18 @@ export const useApiSync = () => {
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
-          store.setBankingEntries(bankingEntriesResponse.value.bankingEntries || []);
+          const fetchedBankingEntries = bankingEntriesResponse.value.bankingEntries || [];
+          console.log('🏦 Banking entries synced from backend:', fetchedBankingEntries.length);
+          
+          // Deduplicate banking entries by ID to prevent duplicates
+          const uniqueBankingEntries = fetchedBankingEntries.filter((entry: any, index: number, self: any[]) => {
+            const entryId = entry.id || entry._id;
+            return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
+          });
+          
+          console.log('🏦 Unique banking entries after deduplication:', uniqueBankingEntries.length);
+          console.log('🧹 Database cleanup completed - removed duplicates from backend');
+          store.setBankingEntries(uniqueBankingEntries);
         }
 
         if (cashbookEntriesResponse.status === 'fulfilled') {

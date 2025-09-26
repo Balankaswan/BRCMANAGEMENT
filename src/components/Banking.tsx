@@ -20,20 +20,22 @@ const BankingComponent: React.FC = () => {
 
   const handleCreateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at' | 'updated_at'>) => {
     try {
+      console.log('🚀 Creating banking entry:', entryData);
       const response = await apiService.createBankingEntry(entryData);
-      console.log('Banking entry created in backend:', response.bankingEntry);
+      console.log('✅ Banking entry created in backend:', response.bankingEntry);
       
-      // Process the entry directly to ensure fuel wallet logic runs once
+      // Add the entry directly to store to show immediately
       const backendEntry = {
         ...response.bankingEntry,
         id: response.bankingEntry._id || response.bankingEntry.id
       };
       addBankingEntry(backendEntry);
       
-      // Trigger data sync to refresh all components
-      window.dispatchEvent(new CustomEvent('data-sync-required'));
+      // DO NOT trigger sync event to prevent duplicates
+      console.log('✅ Banking entry added to store, skipping sync to prevent duplicates');
     } catch (error) {
-      console.error('Failed to create banking entry:', error);
+      console.error('❌ Failed to create banking entry:', error);
+      // Only add manually if API call failed
       const newEntry: BankingEntry = {
         ...entryData,
         id: Date.now().toString(),

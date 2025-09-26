@@ -127,10 +127,30 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setBills: (bills) => setBills(bills),
 
     // Banking actions
-    addBankingEntry: (entry) => setBankingEntries(prev => [entry, ...prev]),
+    addBankingEntry: (entry) => {
+      setBankingEntries(prev => {
+        const entryId = entry.id || entry._id;
+        // Check if entry already exists to prevent duplicates
+        const exists = prev.some(e => (e.id || e._id) === entryId);
+        if (exists) {
+          console.log('🏦 Banking entry already exists, skipping duplicate:', entryId);
+          return prev;
+        }
+        console.log('🏦 Adding new banking entry to store:', entryId);
+        return [entry, ...prev];
+      });
+    },
     updateBankingEntry: (id, entry) => setBankingEntries(prev => prev.map(e => e.id === id ? entry : e)),
     deleteBankingEntry: (id) => setBankingEntries(prev => prev.filter(e => e.id !== id)),
-    setBankingEntries: (entries) => setBankingEntries(entries),
+    setBankingEntries: (entries) => {
+      // Deduplicate entries by ID before setting
+      const uniqueEntries = entries.filter((entry: any, index: number, self: any[]) => {
+        const entryId = entry.id || entry._id;
+        return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
+      });
+      console.log('🏦 Setting banking entries in store:', entries.length, '→', uniqueEntries.length, 'unique');
+      setBankingEntries(uniqueEntries);
+    },
 
     // Cashbook actions - simplified, backend handles all ledger logic
     addCashbookEntry: (entry) => {

@@ -46,9 +46,26 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     return Array.from(new Set([...partyNames, ...ledgerNames])).sort();
   }, [ledgerEntries, parties]);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onSubmit(formData as any);
+    e.stopPropagation();
+    
+    if (isSubmitting) {
+      console.log('🚫 Form already submitting, preventing duplicate submission');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    console.log('📝 Submitting banking form:', formData);
+    
+    try {
+      onSubmit(formData as any);
+    } finally {
+      // Reset submitting state after a delay to prevent rapid resubmission
+      setTimeout(() => setIsSubmitting(false), 2000);
+    }
 
     // Note: Vehicle ledger entries are now automatically created by the backend banking route
     
@@ -265,8 +282,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                 required
               >
                 <option value="">Select Supplier</option>
-                {suppliers && suppliers.map((supplier: any) => (
-                  <option key={supplier.id || supplier._id} value={supplier.name}>
+                {suppliers && suppliers.map((supplier: any, index: number) => (
+                  <option key={supplier.id || supplier._id || `supplier-${index}-${supplier.name}`} value={supplier.name}>
                     {supplier.name}
                   </option>
                 ))}
@@ -316,8 +333,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                     required
                   >
                     <option key="select-party-commission" value="">Select Party</option>
-                    {parties.map((party) => (
-                      <option key={party.id} value={party.name}>
+                    {parties.map((party, index) => (
+                      <option key={party.id || `party-commission-${index}-${party.name}`} value={party.name}>
                         {party.name}
                       </option>
                     ))}
@@ -351,8 +368,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                       required
                     >
                       <option key="select-party" value="">Select Party</option>
-                      {parties.map((party) => (
-                        <option key={party.id} value={party.name}>
+                      {parties.map((party, index) => (
+                        <option key={party.id || `party-on-account-${index}-${party.name}`} value={party.name}>
                           {party.name}
                         </option>
                       ))}
@@ -382,14 +399,12 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                           // Calculate balance without party commission for banking transactions
                           const balanceAmount = bill.bill_amount - (bill.party_commission_cut || 0);
                           
-                          // Get vehicle number from loading slip (bill has populated loading_slip_id object)
-                          const vehicleNo = (bill.loading_slip_id as any)?.vehicle_no || 
-                                          loadingSlips.find(ls => ls.id === bill.loading_slip_id)?.vehicle_no || 
-                                          'N/A';
-                          
                           return (
-                            <option key={`${bill.id}-${bill.bill_number}-${index}`} value={bill.bill_number}>
-                              {bill.bill_number} - {vehicleNo} - Balance: ₹{formatCurrency(balanceAmount)} ({bill.status})
+                            <option 
+                              key={bill.id || bill.bill_number || `bill-${index}-${bill.bill_number}`} 
+                              value={bill.bill_number}
+                            >
+                              {bill.bill_number} - ₹{balanceAmount.toLocaleString('en-IN')} (Balance)
                             </option>
                           );
                         })}
@@ -428,7 +443,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
                           {getReferenceOptions().map((option, index) => (
                             <div
-                              key={index}
+                              key={`reference-${index}-${option}`}
                               className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
                               onClick={() => handleReferenceSelect(option)}
                             >
@@ -471,8 +486,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                 required
               >
                 <option key="select-vehicle" value="">Select Vehicle</option>
-                {getOwnVehicles().map((vehicle) => (
-                  <option key={vehicle.id} value={vehicle.vehicle_no}>
+                {getOwnVehicles().map((vehicle, index) => (
+                  <option key={vehicle.id || `vehicle-${index}-${vehicle.vehicle_no}`} value={vehicle.vehicle_no}>
                     {vehicle.vehicle_no} ({vehicle.vehicle_type})
                   </option>
                 ))}
@@ -526,7 +541,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                         .filter(name => name && name.toLowerCase().includes((formData.reference_name || '').toLowerCase()))
                         .map((name, index) => (
                         <div
-                          key={index}
+                          key={`ledger-${index}-${name}`}
                           className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
                           onClick={() => {
                             setFormData(prev => ({ ...prev, reference_name: name || '' }));
@@ -603,9 +618,19 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
             </button>
             <button
               type="submit"
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              disabled={isSubmitting}
+              className={`w-full py-2 px-4 rounded-lg focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors ${
+                isSubmitting 
+                  ? 'bg-gray-400 text-gray-200 cursor-not-allowed' 
+                  : 'bg-blue-600 text-white hover:bg-blue-700'
+              }`}
             >
-              {editingEntry ? 'Update Entry' : 'Create Entry'}
+              {isSubmitting 
+                ? 'Creating...' 
+                : editingEntry 
+                  ? 'Update Entry' 
+                  : 'Create Entry'
+              }
             </button>
           </div>
         </form>
