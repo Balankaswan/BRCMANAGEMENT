@@ -106,7 +106,7 @@ router.post('/', async (req, res) => {
     // On account entries will be created during manual regeneration
 
     // Party commission entries are now handled by the centralized ledger regeneration system
-    // await createPartyCommissionPaymentEntry(bankingEntry);
+    await createPartyCommissionPaymentEntry(bankingEntry);
 
     // Handle fuel wallet credits for banking transactions
     if (bankingEntry.category === 'fuel_wallet' && bankingEntry.reference_name && bankingEntry.type === 'debit') {

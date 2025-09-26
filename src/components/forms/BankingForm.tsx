@@ -404,7 +404,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                               key={bill.id || bill.bill_number || `bill-${index}-${bill.bill_number}`} 
                               value={bill.bill_number}
                             >
-                              {bill.bill_number} - ₹{balanceAmount.toLocaleString('en-IN')} (Balance)
+                              {bill.bill_number} - {(bill.loading_slip_id as any)?.vehicle_no || 'No Vehicle'} - ₹{balanceAmount.toLocaleString('en-IN')} (Balance)
                             </option>
                           );
                         })}
