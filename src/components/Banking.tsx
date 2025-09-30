@@ -106,7 +106,6 @@ const BankingComponent: React.FC = () => {
         await apiService.deleteBankingEntry(id);
         console.log('Banking entry deleted from backend');
         
-        // Trigger data sync to refresh all data
         window.dispatchEvent(new CustomEvent('data-sync-required'));
       } catch (error) {
         console.error('Failed to delete banking entry from backend:', error);

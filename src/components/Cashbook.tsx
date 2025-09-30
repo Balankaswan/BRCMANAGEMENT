@@ -34,8 +34,18 @@ export default function Cashbook() {
     refreshCashbookData();
   }, [setCashbookEntries]);
 
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const handleCreateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at'>) => {
+    // Prevent double submission
+    if (isSubmitting) {
+      console.warn('⚠️ Entry creation already in progress, ignoring duplicate request');
+      return;
+    }
+
     try {
+      setIsSubmitting(true);
+      
       if (editingEntry) {
         // Update existing entry with cash payment mode
         const updatedEntry: BankingEntry = {
@@ -53,8 +63,10 @@ export default function Cashbook() {
           payment_mode: 'cash', // Force cash mode for cashbook entries
         };
         
+        console.log('💰 Creating cashbook entry:', entryToCreate);
         const response = await apiService.createCashbookEntry(entryToCreate);
         const savedEntry = response.cashbookEntry;
+        console.log('✅ Cashbook entry created successfully:', savedEntry.transaction_id);
         
         // Add to local store using addCashbookEntry to ensure proper processing
         addCashbookEntry(savedEntry);
@@ -64,10 +76,18 @@ export default function Cashbook() {
         
         // Trigger data sync
         window.dispatchEvent(new CustomEvent('data-sync-required'));
+        
+        // Reset form state immediately after successful creation
+        setShowForm(false);
+        setEditingEntry(null);
       }
-      setShowForm(false);
     } catch (error) {
-      console.error('Failed to create cashbook entry:', error);
+      console.error('❌ Failed to create cashbook entry:', error);
+      // Ensure form state is reset even on error
+      setShowForm(false);
+      setEditingEntry(null);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 

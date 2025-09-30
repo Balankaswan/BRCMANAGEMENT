@@ -10,7 +10,7 @@ import BillForm from './forms/BillForm';
 import type { LoadingSlip } from '../types';
 
 const LoadingSlipComponent: React.FC = () => {
-  const { loadingSlips, memos, bills, vehicles, addLoadingSlip, updateLoadingSlip, deleteLoadingSlip } = useDataStore();
+  const { loadingSlips, memos, bills, vehicles, addLoadingSlip, updateLoadingSlip, deleteLoadingSlip, addMemo, addBill } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingSlip, setEditingSlip] = useState<LoadingSlip | null>(null);
   const [viewSlip, setViewSlip] = useState<LoadingSlip | null>(null);
@@ -33,22 +33,19 @@ const LoadingSlipComponent: React.FC = () => {
   };
 
   const handleShowForm = () => {
+    console.log('🔄 Create button clicked - Opening form');
     setEditingSlip(null);
     setShowForm(true);
   };
 
   const handleCreateLoadingSlip = async (slipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
+    console.log('📝 Creating loading slip:', slipData.slip_number);
     try {
       const response = await apiService.createLoadingSlip(slipData);
       addLoadingSlip(response.loadingSlip);
-      console.log('Loading slip created and synced to MongoDB:', response.loadingSlip);
-      
-      // Force refresh data on all connected devices by triggering a sync
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-      }, 1000);
+      console.log('✅ Loading slip created successfully:', response.loadingSlip.slip_number);
     } catch (error) {
-      console.error('Failed to create loading slip:', error);
+      console.error('❌ Failed to create loading slip:', error);
       const newSlip: LoadingSlip = {
         ...slipData,
         id: getNextSequenceNumber(loadingSlips, 'slip_number', 'LS'),
@@ -56,8 +53,11 @@ const LoadingSlipComponent: React.FC = () => {
         updated_at: new Date().toISOString(),
       };
       addLoadingSlip(newSlip);
+      console.log('⚠️ Created loading slip locally:', newSlip.slip_number);
     }
+    console.log('🔄 Resetting form state');
     setShowForm(false);
+    setEditingSlip(null);
   };
 
   const handleUpdateLoadingSlip = async (loadingSlipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
@@ -447,13 +447,26 @@ const LoadingSlipComponent: React.FC = () => {
               const response = await apiService.createMemo(memoDataWithSlipId);
               console.log('Memo created successfully:', response);
               
-              // Trigger immediate data refresh
-              window.dispatchEvent(new CustomEvent('data-sync-required'));
+              // Add memo to local store for immediate display
+              if (response && response.memo) {
+                addMemo(response.memo);
+                console.log('Memo added to local store:', response.memo.memo_number);
+                
+                // Update loading slip with memo number for immediate display
+                if (selectedSlipForMemo) {
+                  const updatedSlip = {
+                    ...selectedSlipForMemo,
+                    memo_number: response.memo.memo_number
+                  };
+                  updateLoadingSlip(updatedSlip);
+                  console.log('Loading slip updated with memo number:', response.memo.memo_number);
+                }
+              }
               
               setShowMemoForm(false);
               setSelectedSlipForMemo(null);
               
-              console.log('Memo created and sync triggered');
+              console.log('Memo created and displayed successfully');
             } catch (error) {
               console.error('Failed to create memo - Full error details:', error);
               console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');
@@ -501,13 +514,26 @@ const LoadingSlipComponent: React.FC = () => {
               const response = await apiService.createBill(billDataWithSlipId);
               console.log('Bill created successfully:', response);
               
-              // Trigger immediate data refresh
-              window.dispatchEvent(new CustomEvent('data-sync-required'));
+              // Add bill to local store for immediate display
+              if (response && response.bill) {
+                addBill(response.bill);
+                console.log('Bill added to local store:', response.bill.bill_number);
+                
+                // Update loading slip with bill number for immediate display
+                if (selectedSlipForBill) {
+                  const updatedSlip = {
+                    ...selectedSlipForBill,
+                    bill_number: response.bill.bill_number
+                  };
+                  updateLoadingSlip(updatedSlip);
+                  console.log('Loading slip updated with bill number:', response.bill.bill_number);
+                }
+              }
               
               setShowBillForm(false);
               setSelectedSlipForBill(null);
               
-              console.log('Bill created and sync triggered');
+              console.log('Bill created and displayed successfully');
             } catch (error) {
               console.error('Failed to create bill:', error);
               setShowBillForm(false);

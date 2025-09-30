@@ -3,6 +3,7 @@ import { X, ChevronDown } from 'lucide-react';
 import { useDataStore } from '../../lib/store';
 import { apiService } from '../../lib/api';
 import { formatCurrency } from '../../utils/numberGenerator';
+import { SORTED_CITIES } from '../../data/cities';
 import type { LoadingSlip } from '../../types';
 
 interface LoadingSlipFormProps {
@@ -13,7 +14,7 @@ interface LoadingSlipFormProps {
 }
 
 const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlipNumber, onSubmit, onCancel }) => {
-  const { parties, suppliers, vehicles, addParty, addSupplier, addVehicle } = useDataStore();
+  const { parties, suppliers, vehicles, loadingSlips, addParty, addSupplier, addVehicle } = useDataStore();
   const [formData, setFormData] = useState({
     slip_number: initialData ? initialData.slip_number : nextSlipNumber,
     date: new Date().toISOString().split('T')[0],
@@ -31,22 +32,8 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
     narration: '',
   });
 
-  // Indian cities and locations for autocomplete
-  const [locations] = useState([
-    'HAZIRA', 'HYD', 'Mumbai', 'Delhi', 'Bangalore', 'Chennai', 'Pune', 'Ahmedabad', 'Kolkata', 'Jaipur',
-    'Lucknow', 'Kanpur', 'Nagpur', 'Indore', 'Thane', 'Bhopal', 'Visakhapatnam', 'Pimpri-Chinchwad',
-    'Patna', 'Vadodara', 'Ghaziabad', 'Ludhiana', 'Agra', 'Nashik', 'Faridabad', 'Meerut', 'Rajkot',
-    'Kalyan-Dombivali', 'Vasai-Virar', 'Varanasi', 'Srinagar', 'Aurangabad', 'Dhanbad', 'Amritsar',
-    'Navi Mumbai', 'Allahabad', 'Ranchi', 'Howrah', 'Coimbatore', 'Jabalpur', 'Gwalior', 'Vijayawada',
-    'Jodhpur', 'Madurai', 'Raipur', 'Kota', 'Guwahati', 'Chandigarh', 'Solapur', 'Hubli-Dharwad',
-    'Bareilly', 'Moradabad', 'Mysore', 'Gurgaon', 'Aligarh', 'Jalandhar', 'Tiruchirappalli', 'Bhubaneswar',
-    'Salem', 'Mira-Bhayandar', 'Warangal', 'Thiruvananthapuram', 'Guntur', 'Bhiwandi', 'Saharanpur',
-    'Gorakhpur', 'Bikaner', 'Amravati', 'Noida', 'Jamshedpur', 'Bhilai', 'Cuttack', 'Firozabad',
-    'Kochi', 'Nellore', 'Bhavnagar', 'Dehradun', 'Durgapur', 'Asansol', 'Rourkela', 'Nanded',
-    'Kolhapur', 'Ajmer', 'Akola', 'Gulbarga', 'Jamnagar', 'Ujjain', 'Loni', 'Siliguri', 'Jhansi',
-    'Ulhasnagar', 'Jammu', 'Sangli-Miraj & Kupwad', 'Mangalore', 'Erode', 'Belgaum', 'Ambattur',
-    'Tirunelveli', 'Malegaon', 'Gaya', 'Jalgaon', 'Udaipur', 'Maheshtala'
-  ]);
+  // Comprehensive Indian cities database for autocomplete - All in CAPS LOCK
+  const locations = SORTED_CITIES;
   const [showNewPartyForm, setShowNewPartyForm] = useState(false);
   const [showNewSupplierForm, setShowNewSupplierForm] = useState(false);
   const [showNewVehicleForm, setShowNewVehicleForm] = useState(false);
@@ -66,6 +53,38 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
   const [showVehicleDropdown, setShowVehicleDropdown] = useState(false);
   const [showFromDropdown, setShowFromDropdown] = useState(false);
   const [showToDropdown, setShowToDropdown] = useState(false);
+  const [showMaterialDropdown, setShowMaterialDropdown] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAddingParty, setIsAddingParty] = useState(false);
+  const [isAddingSupplier, setIsAddingSupplier] = useState(false);
+  const [isAddingVehicle, setIsAddingVehicle] = useState(false);
+
+  // Extract unique materials from existing loading slips
+  const previousMaterials = React.useMemo(() => {
+    const materials = loadingSlips
+      .map(slip => slip.material)
+      .filter(material => material && material.trim() !== '')
+      .map(material => material.toUpperCase().trim());
+    
+    // Remove duplicates and add common materials
+    const uniqueMaterials = [...new Set(materials)];
+    
+    // Add common transport materials if not already present
+    const commonMaterials = [
+      'STEEL COILS', 'IRON ORE', 'COAL', 'CEMENT', 'MACHINERY', 'AUTOMOBILE PARTS',
+      'TEXTILE GOODS', 'CHEMICALS', 'FOOD GRAINS', 'FERTILIZER', 'PETROLEUM PRODUCTS',
+      'CONSTRUCTION MATERIAL', 'ELECTRONICS', 'PLASTIC GOODS', 'PAPER PRODUCTS',
+      'METAL SHEETS', 'PIPES', 'TILES', 'MARBLE', 'GRANITE', 'WOOD PRODUCTS'
+    ];
+    
+    commonMaterials.forEach(material => {
+      if (!uniqueMaterials.includes(material)) {
+        uniqueMaterials.push(material);
+      }
+    });
+    
+    return uniqueMaterials.sort();
+  }, [loadingSlips]);
 
   useEffect(() => {
     if (initialData) {
@@ -88,8 +107,38 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
     }
   }, [initialData, nextSlipNumber]);
 
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (!target.closest('.dropdown-container')) {
+        setShowPartyDropdown(false);
+        setShowSupplierDropdown(false);
+        setShowVehicleDropdown(false);
+        setShowFromDropdown(false);
+        setShowToDropdown(false);
+        setShowMaterialDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Prevent double submission
+    if (isSubmitting) {
+      console.log('⚠️ Submission already in progress, ignoring...');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    console.log('📝 Starting loading slip submission...');
     
     // Auto-create vehicle if it doesn't exist
     if (!vehicles.find(v => v.vehicle_no === formData.vehicle_no)) {
@@ -112,8 +161,6 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
         const response = await apiService.createVehicle(newVehicle);
         addVehicle(response.vehicle);
         console.log('✅ Vehicle auto-created and saved to backend:', response.vehicle);
-        // Trigger sync to ensure all components are updated
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
       } catch (error) {
         console.error('❌ Failed to save vehicle to backend:', error);
         // Fallback to local creation with temporary ID
@@ -131,11 +178,20 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
     const balance = formData.freight - formData.advance;
     const total_freight = formData.freight + formData.rto;
     
-    onSubmit({
-      ...formData,
-      balance,
-      total_freight,
-    });
+    try {
+      onSubmit({
+        ...formData,
+        balance,
+        total_freight,
+      });
+      console.log('✅ Loading slip submitted successfully');
+    } catch (error) {
+      console.error('❌ Loading slip submission failed:', error);
+    } finally {
+      // Always reset submitting state
+      setIsSubmitting(false);
+      console.log('🔄 Form submission state reset');
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -147,6 +203,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
   };
 
   const handleDropdownSelect = (field: string, value: string) => {
+    console.log(`🎯 Dropdown selection: ${field} = ${value}`);
     setFormData(prev => ({ ...prev, [field]: value }));
     // Close all dropdowns
     setShowPartyDropdown(false);
@@ -154,22 +211,29 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
     setShowVehicleDropdown(false);
     setShowFromDropdown(false);
     setShowToDropdown(false);
+    setShowMaterialDropdown(false);
   };
 
   const handleAddNewParty = async () => {
-    if (newPartyName.trim()) {
+    if (newPartyName.trim() && !isAddingParty) {
+      setIsAddingParty(true);
+      console.log('🏢 Adding new party:', newPartyName.trim());
+      
       const newParty = {
         name: newPartyName.trim(),
         contact: '',
         address: ''
       };
       
-      // Save to backend first, then add to local store
       try {
+        // Save to backend first, then add to local store
         const response = await apiService.createParty(newParty);
         addParty(response.party);
         console.log('✅ Party auto-created and saved to backend:', response.party);
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        
+        setFormData(prev => ({ ...prev, party: newPartyName.trim() }));
+        setNewPartyName('');
+        setShowNewPartyForm(false);
       } catch (error) {
         console.error('❌ Failed to save party to backend:', error);
         // Fallback to local creation
@@ -181,28 +245,36 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
         };
         addParty(localParty);
         console.log('⚠️ Party created locally only (backend failed):', localParty);
+        
+        setFormData(prev => ({ ...prev, party: newPartyName.trim() }));
+        setNewPartyName('');
+        setShowNewPartyForm(false);
+      } finally {
+        setIsAddingParty(false);
       }
-      
-      setFormData(prev => ({ ...prev, party: newPartyName.trim() }));
-      setNewPartyName('');
-      setShowNewPartyForm(false);
     }
   };
 
   const handleAddNewSupplier = async () => {
-    if (newSupplierName.trim()) {
+    if (newSupplierName.trim() && !isAddingSupplier) {
+      setIsAddingSupplier(true);
+      console.log('🚚 Adding new supplier:', newSupplierName.trim());
+      
       const newSupplier = {
         name: newSupplierName.trim(),
         contact: '',
         address: ''
       };
       
-      // Save to backend first, then add to local store
       try {
+        // Save to backend first, then add to local store
         const response = await apiService.createSupplier(newSupplier);
         addSupplier(response.supplier);
         console.log('✅ Supplier auto-created and saved to backend:', response.supplier);
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        
+        setFormData(prev => ({ ...prev, supplier: newSupplierName.trim() }));
+        setNewSupplierName('');
+        setShowNewSupplierForm(false);
       } catch (error) {
         console.error('❌ Failed to save supplier to backend:', error);
         // Fallback to local creation
@@ -214,27 +286,42 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
         };
         addSupplier(localSupplier);
         console.log('⚠️ Supplier created locally only (backend failed):', localSupplier);
+        
+        setFormData(prev => ({ ...prev, supplier: newSupplierName.trim() }));
+        setNewSupplierName('');
+        setShowNewSupplierForm(false);
+      } finally {
+        setIsAddingSupplier(false);
       }
-      
-      setFormData(prev => ({ ...prev, supplier: newSupplierName.trim() }));
-      setNewSupplierName('');
-      setShowNewSupplierForm(false);
     }
   };
 
   const handleAddNewVehicle = async () => {
-    if (newVehicleData.vehicle_no.trim()) {
+    if (newVehicleData.vehicle_no.trim() && !isAddingVehicle) {
+      setIsAddingVehicle(true);
+      console.log('🚗 Adding new vehicle:', newVehicleData.vehicle_no.trim());
+      
       const newVehicle = {
         ...newVehicleData,
         vehicle_no: newVehicleData.vehicle_no.trim(),
       };
       
-      // Save to backend first, then add to local store
       try {
+        // Save to backend first, then add to local store
         const response = await apiService.createVehicle(newVehicle);
         addVehicle(response.vehicle);
         console.log('✅ Vehicle auto-created and saved to backend:', response.vehicle);
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        
+        setFormData(prev => ({ ...prev, vehicle_no: newVehicleData.vehicle_no.trim() }));
+        setNewVehicleData({
+          vehicle_no: '',
+          vehicle_type: 'Truck',
+          ownership_type: 'market',
+          owner_name: '',
+          driver_name: '',
+          driver_phone: ''
+        });
+        setShowNewVehicleForm(false);
       } catch (error) {
         console.error('❌ Failed to save vehicle to backend:', error);
         // Fallback to local creation
@@ -246,18 +333,20 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
         };
         addVehicle(localVehicle);
         console.log('⚠️ Vehicle created locally only (backend failed):', localVehicle);
+        
+        setFormData(prev => ({ ...prev, vehicle_no: newVehicleData.vehicle_no.trim() }));
+        setNewVehicleData({
+          vehicle_no: '',
+          vehicle_type: 'Truck',
+          ownership_type: 'market',
+          owner_name: '',
+          driver_name: '',
+          driver_phone: ''
+        });
+        setShowNewVehicleForm(false);
+      } finally {
+        setIsAddingVehicle(false);
       }
-      
-      setFormData(prev => ({ ...prev, vehicle_no: newVehicleData.vehicle_no.trim() }));
-      setNewVehicleData({
-        vehicle_no: '',
-        vehicle_type: 'Truck',
-        ownership_type: 'market',
-        owner_name: '',
-        driver_name: '',
-        driver_phone: ''
-      });
-      setShowNewVehicleForm(false);
     }
   };
 
@@ -332,7 +421,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Party (M/S)
               </label>
-              <div className="relative">
+              <div className="relative dropdown-container">
                 <input
                   type="text"
                   name="party"
@@ -352,10 +441,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                       <div
                         key={partyName}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
-                        onClick={() => {
-                          setFormData(prev => ({ ...prev, party: partyName }));
-                          setShowPartyDropdown(false);
-                        }}
+                        onClick={() => handleDropdownSelect('party', partyName)}
                       >
                         {partyName}
                       </div>
@@ -382,7 +468,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Vehicle No
               </label>
-              <div className="relative">
+              <div className="relative dropdown-container">
                 <input
                   type="text"
                   name="vehicle_no"
@@ -440,7 +526,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Supplier
               </label>
-              <div className="relative">
+              <div className="relative dropdown-container">
                 <input
                   type="text"
                   name="supplier"
@@ -460,10 +546,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
                       <div
                         key={supplierName}
                         className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
-                        onClick={() => {
-                          setFormData(prev => ({ ...prev, supplier: supplierName }));
-                          setShowSupplierDropdown(false);
-                        }}
+                        onClick={() => handleDropdownSelect('supplier', supplierName)}
                       >
                         {supplierName}
                       </div>
@@ -490,7 +573,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 From
               </label>
-              <div className="relative">
+              <div className="relative dropdown-container">
                 <input
                   type="text"
                   name="from_location"
@@ -523,7 +606,7 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 To
               </label>
-              <div className="relative">
+              <div className="relative dropdown-container">
                 <input
                   type="text"
                   name="to_location"
@@ -559,14 +642,39 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Material
               </label>
-              <input
-                type="text"
-                name="material"
-                value={formData.material}
-                onChange={handleInputChange}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g., Steel Coils, Iron Ore"
-              />
+              <div className="relative dropdown-container">
+                <input
+                  type="text"
+                  name="material"
+                  value={formData.material}
+                  onChange={handleInputChange}
+                  onFocus={() => setShowMaterialDropdown(true)}
+                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="e.g., Steel Coils, Iron Ore"
+                />
+                <ChevronDown 
+                  className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 cursor-pointer"
+                  onClick={() => setShowMaterialDropdown(!showMaterialDropdown)}
+                />
+                {showMaterialDropdown && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
+                    {filterOptions(previousMaterials, formData.material).map((material: string, index: number) => (
+                      <div
+                        key={`material-${index}`}
+                        className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
+                        onClick={() => handleDropdownSelect('material', material)}
+                      >
+                        {material}
+                      </div>
+                    ))}
+                    {filterOptions(previousMaterials, formData.material).length === 0 && (
+                      <div className="px-4 py-2 text-gray-500 text-sm">
+                        No materials found. Type to add new material.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -700,9 +808,17 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               </button>
               <button
                 type="submit"
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={isSubmitting}
+                className={`px-6 py-2 text-white rounded-lg transition-colors ${
+                  isSubmitting 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                {initialData ? 'Update' : 'Create'} Loading Slip
+                {isSubmitting 
+                  ? '⏳ Submitting...' 
+                  : `${initialData ? 'Update' : 'Create'} Loading Slip`
+                }
               </button>
             </div>
           </div>
@@ -736,10 +852,14 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <button
                 type="button"
                 onClick={handleAddNewParty}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                disabled={!newPartyName.trim()}
+                className={`px-4 py-2 text-white rounded-lg ${
+                  isAddingParty || !newPartyName.trim()
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                disabled={isAddingParty || !newPartyName.trim()}
               >
-                Add Party
+                {isAddingParty ? '⏳ Adding...' : 'Add Party'}
               </button>
             </div>
           </div>
@@ -773,10 +893,14 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <button
                 type="button"
                 onClick={handleAddNewSupplier}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                disabled={!newSupplierName.trim()}
+                className={`px-4 py-2 text-white rounded-lg ${
+                  isAddingSupplier || !newSupplierName.trim()
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                disabled={isAddingSupplier || !newSupplierName.trim()}
               >
-                Add Supplier
+                {isAddingSupplier ? '⏳ Adding...' : 'Add Supplier'}
               </button>
             </div>
           </div>
@@ -878,10 +1002,14 @@ const LoadingSlipForm: React.FC<LoadingSlipFormProps> = ({ initialData, nextSlip
               <button
                 type="button"
                 onClick={handleAddNewVehicle}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                disabled={!newVehicleData.vehicle_no.trim()}
+                className={`px-4 py-2 text-white rounded-lg ${
+                  isAddingVehicle || !newVehicleData.vehicle_no.trim()
+                    ? 'bg-gray-400 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+                disabled={isAddingVehicle || !newVehicleData.vehicle_no.trim()}
               >
-                Add Vehicle
+                {isAddingVehicle ? '⏳ Adding...' : 'Add Vehicle'}
               </button>
             </div>
           </div>

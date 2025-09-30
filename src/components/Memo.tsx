@@ -72,10 +72,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         console.error('Failed to sync ledger entries:', error);
       }
       
-      // Trigger sync across devices
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-      }, 1000);
+      // Sync completed
     } catch (error) {
       console.error('Failed to create memo:', error);
       const newMemo: Memo = {
@@ -118,11 +115,6 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         } catch (error) {
           console.error('Failed to sync ledger entries:', error);
         }
-        
-        // Trigger sync across devices
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('data-sync-required'));
-        }, 1000);
       } catch (error) {
         console.error('Failed to update memo:', error);
         const updatedMemo: Memo = {
@@ -204,12 +196,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         await apiService.updateMemo(showPaidModal.id, updatedMemoData);
         markMemoAsPaid(showPaidModal.id, paidDate, showPaidModal.net_amount);
         
-        // Trigger sync across devices
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('data-sync-required'));
-        }, 1000);
-        
-        console.log('Memo marked as paid and synced');
+        console.log('Memo marked as paid successfully');
       } catch (error) {
         console.error('Failed to mark memo as paid:', error);
         // Fallback to local update

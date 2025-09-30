@@ -84,6 +84,13 @@ const cashbookEntrySchema = new mongoose.Schema({
     default: 'cash',
     enum: ['cash']
   },
+  // Transaction ID for linking with ledger entries
+  transaction_id: {
+    type: String,
+    unique: true,
+    required: true,
+    index: true
+  },
   // Running balance tracking
   running_balance: {
     type: Number,

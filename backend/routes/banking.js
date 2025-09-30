@@ -1,5 +1,6 @@
 import express from 'express';
 import BankingEntry from '../models/BankingEntry.js';
+import PartyCommissionLedger from '../models/PartyCommissionLedger.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -107,6 +108,11 @@ router.post('/', async (req, res) => {
 
     // Party commission entries are now handled by the centralized ledger regeneration system
     await createPartyCommissionPaymentEntry(bankingEntry);
+
+    // Broadcast change to all connected clients for real-time sync
+    if (global.broadcastChange) {
+      global.broadcastChange('create', 'banking', bankingEntry);
+    }
 
     // Handle fuel wallet credits for banking transactions
     if (bankingEntry.category === 'fuel_wallet' && bankingEntry.reference_name && bankingEntry.type === 'debit') {
@@ -302,6 +308,11 @@ router.put('/:id', async (req, res) => {
     
     console.log('✅ Updated', updateResult.modifiedCount, 'ledger entries for banking entry:', req.params.id);
 
+    // Broadcast change to all connected clients for real-time sync
+    if (global.broadcastChange) {
+      global.broadcastChange('update', 'banking', bankingEntry);
+    }
+
     res.json({
       message: 'Banking entry updated successfully',
       bankingEntry
@@ -342,6 +353,11 @@ router.delete('/:id', async (req, res) => {
 
     // Delete the banking entry
     await BankingEntry.findByIdAndDelete(req.params.id);
+
+    // Broadcast change to all connected clients for real-time sync
+    if (global.broadcastChange) {
+      global.broadcastChange('delete', 'banking', { _id: req.params.id });
+    }
 
     res.json({ message: 'Banking entry deleted successfully' });
   } catch (error) {

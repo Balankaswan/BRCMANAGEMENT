@@ -60,9 +60,6 @@ const PODComponent: React.FC = () => {
           
           // Add to local store
           addPODFile(newPOD);
-          
-          // Trigger data sync
-          window.dispatchEvent(new CustomEvent('data-sync-required'));
         } catch (error) {
           console.error('Failed to save POD to backend:', error);
           // Still add to local store as fallback

@@ -184,6 +184,8 @@ const broadcastChange = (changeType, collection, data) => {
     timestamp: new Date().toISOString()
   });
 
+  console.log(`📡 Broadcasting ${changeType} change for ${collection} to ${connectedClients.size} clients`);
+
   connectedClients.forEach(client => {
     try {
       client.write(`data: ${message}\n\n`);
@@ -193,6 +195,9 @@ const broadcastChange = (changeType, collection, data) => {
     }
   });
 };
+
+// Make broadcastChange available globally for routes
+global.broadcastChange = broadcastChange;
 
 // Sync status endpoint
 app.get('/api/sync/status', (req, res) => {

@@ -63,7 +63,6 @@ const MemosAndBills: React.FC = () => {
         await apiService.deleteMemo(memo.id);
         deleteMemo(memo.id);
         console.log('Memo deleted successfully');
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
       } catch (error) {
         console.error('Failed to delete memo:', error);
         deleteMemo(memo.id); // Fallback to local deletion
@@ -78,7 +77,6 @@ const MemosAndBills: React.FC = () => {
         await apiService.deleteBill(bill.id);
         deleteBill(bill.id);
         console.log('Bill deleted successfully');
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
       } catch (error) {
         console.error('Failed to delete bill:', error);
         deleteBill(bill.id); // Fallback to local deletion

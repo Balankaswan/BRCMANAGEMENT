@@ -69,6 +69,15 @@ export const useApiSync = () => {
           console.log('📊 MongoDB Bills Available:', fetchedBills.length);
           console.log('🏪 Current Store Bills:', currentBills.length);
           
+          // Check if a bill was recently created (within last 5 seconds)
+          const recentBillCreation = localStorage.getItem('lastBillCreation');
+          const isRecentCreation = recentBillCreation && (Date.now() - parseInt(recentBillCreation)) < 5000;
+          
+          if (isRecentCreation) {
+            console.log('⏳ Skipping bill sync - recent creation detected');
+            return;
+          }
+          
           if (fetchedBills.length === 0) {
             console.error('❌ NO BILLS FETCHED FROM MONGODB! Check API response.');
             console.log('API Response:', billsResponse.value);
@@ -126,6 +135,15 @@ export const useApiSync = () => {
           console.log('💾 MEMOS SYNC START');
           console.log('📊 MongoDB Memos Available:', fetchedMemos.length);
           console.log('🏪 Current Store Memos:', currentMemos.length);
+          
+          // Check if a memo was recently created (within last 5 seconds)
+          const recentMemoCreation = localStorage.getItem('lastMemoCreation');
+          const isRecentCreation = recentMemoCreation && (Date.now() - parseInt(recentMemoCreation)) < 5000;
+          
+          if (isRecentCreation) {
+            console.log('⏳ Skipping memo sync - recent creation detected');
+            return;
+          }
           
           if (fetchedMemos.length === 0) {
             console.error('❌ NO MEMOS FETCHED FROM MONGODB! Check API response.');

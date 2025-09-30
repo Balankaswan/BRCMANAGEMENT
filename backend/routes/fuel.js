@@ -233,37 +233,20 @@ router.post('/cleanup-test-data', async (req, res) => {
       console.log('🗑️ Deleted test fuel transaction:', transaction._id, transaction.narration);
     }
     
-    // 2. Remove test vehicle fuel expenses
-    const VehicleFuelExpense = (await import('../models/VehicleFuelExpense.js')).default;
-    const testExpenses = await VehicleFuelExpense.find({
-      $or: [
-        { description: { $regex: /test/i } },
-        { vehicle_no: { $regex: /test/i } },
+    // 2. Clean up any related ledger entries for deleted fuel transactions
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    const testLedgerEntries = await LedgerEntry.find({
+      $and: [
+        { ledger_type: 'vehicle_expense' },
+        { source_type: 'fuel' },
         { narration: { $regex: /test/i } }
       ]
     });
     
-    for (const expense of testExpenses) {
-      await VehicleFuelExpense.findByIdAndDelete(expense._id);
+    for (const ledgerEntry of testLedgerEntries) {
+      await LedgerEntry.findByIdAndDelete(ledgerEntry._id);
       deletedCount++;
-      console.log('🗑️ Deleted test vehicle fuel expense:', expense._id);
-    }
-    
-    // 3. Remove test ledger entries related to fuel
-    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    const testLedgerEntries = await LedgerEntry.find({
-      source_type: 'fuel',
-      $or: [
-        { description: { $regex: /test/i } },
-        { reference_name: { $regex: /test/i } },
-        { description: { $regex: /frontend.*test/i } }
-      ]
-    });
-    
-    for (const entry of testLedgerEntries) {
-      await LedgerEntry.findByIdAndDelete(entry._id);
-      deletedCount++;
-      console.log('🗑️ Deleted test fuel ledger entry:', entry._id, entry.description);
+      console.log('🗑️ Deleted test fuel ledger entry:', ledgerEntry._id);
     }
     
     console.log('✅ Fuel test data cleanup completed');
@@ -274,7 +257,6 @@ router.post('/cleanup-test-data', async (req, res) => {
       summary: {
         deletedEntries: deletedCount,
         testTransactions: testTransactions.length,
-        testExpenses: testExpenses.length,
         testLedgerEntries: testLedgerEntries.length
       }
     });
@@ -285,6 +267,36 @@ router.post('/cleanup-test-data', async (req, res) => {
       message: 'Failed to cleanup fuel test data', 
       error: error.message 
     });
+  }
+});
+
+// Delete individual fuel transaction
+router.delete('/transactions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🗑️ Deleting fuel transaction:', id);
+    
+    const deletedTransaction = await FuelTransaction.findByIdAndDelete(id);
+    
+    if (!deletedTransaction) {
+      return res.status(404).json({ message: 'Fuel transaction not found' });
+    }
+    
+    // Also delete any related ledger entries
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    await LedgerEntry.deleteMany({
+      source_type: 'fuel',
+      reference_id: id
+    });
+    
+    console.log('✅ Fuel transaction deleted successfully:', id);
+    res.json({
+      message: 'Fuel transaction deleted successfully',
+      transaction: deletedTransaction
+    });
+  } catch (error) {
+    console.error('Delete fuel transaction error:', error);
+    res.status(500).json({ message: 'Failed to delete fuel transaction', error: error.message });
   }
 });
 

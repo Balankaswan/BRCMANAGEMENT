@@ -33,6 +33,7 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
     narration: '',
   });
   const [podFileName, setPodFileName] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Calculate net amount (excludes party commission cut for supplier payment calculation)
   useEffect(() => {
@@ -78,30 +79,49 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     
-    // If POD image is uploaded, save it to POD collection
-    if (formData.pod_image) {
-      try {
-        const podData = {
-          filename: podFileName || `POD_${formData.bill_number}_${Date.now()}.jpg`,
-          fileData: formData.pod_image,
-          fileType: 'image/jpeg',
-          billNo: formData.bill_number,
-          party: formData.party,
-          uploadDate: new Date().toISOString(),
-          created_at: new Date().toISOString()
-        };
-        
-        // Save POD to backend
-        await apiService.createPODFile(podData);
-        console.log('POD image saved successfully for bill:', formData.bill_number);
-      } catch (error) {
-        console.error('Failed to save POD image:', error);
-        // Continue with bill creation even if POD save fails
-      }
+    // Prevent double submission
+    if (isSubmitting) {
+      console.log('⚠️ Bill submission already in progress, ignoring...');
+      return;
     }
     
-    onSubmit(formData);
+    setIsSubmitting(true);
+    console.log('📄 Starting bill submission...');
+    
+    try {
+      // If POD image is uploaded, save it to POD collection
+      if (formData.pod_image) {
+        try {
+          const podData = {
+            filename: podFileName || `POD_${formData.bill_number}_${Date.now()}.jpg`,
+            fileData: formData.pod_image,
+            fileType: 'image/jpeg',
+            billNo: formData.bill_number,
+            party: formData.party,
+            uploadDate: new Date().toISOString(),
+            created_at: new Date().toISOString()
+          };
+          
+          // Save POD to backend
+          await apiService.createPODFile(podData);
+          console.log('POD image saved successfully for bill:', formData.bill_number);
+        } catch (error) {
+          console.error('Failed to save POD image:', error);
+          // Continue with bill creation even if POD save fails
+        }
+      }
+      
+      onSubmit(formData);
+      console.log('✅ Bill submitted successfully');
+    } catch (error) {
+      console.error('❌ Bill submission failed:', error);
+    } finally {
+      // Always reset submitting state
+      setIsSubmitting(false);
+      console.log('🔄 Bill form submission state reset');
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -463,9 +483,17 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
               </button>
               <button
                 type="submit"
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={isSubmitting}
+                className={`px-6 py-2 text-white rounded-lg transition-colors ${
+                  isSubmitting 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                {initialData ? 'Update' : 'Create'} Bill
+                {isSubmitting 
+                  ? '⏳ Submitting...' 
+                  : `${initialData ? 'Update' : 'Create'} Bill`
+                }
               </button>
             </div>
           </div>

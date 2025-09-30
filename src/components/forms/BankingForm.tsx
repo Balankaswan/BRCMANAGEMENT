@@ -50,10 +50,16 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    e.stopPropagation();
     
+    // Prevent double submission
     if (isSubmitting) {
-      console.log('🚫 Form already submitting, preventing duplicate submission');
+      console.warn('⚠️ Form submission already in progress, ignoring duplicate request');
+      return;
+    }
+    
+    // Validate required fields
+    if (!formData.amount || !formData.date || !formData.narration) {
+      alert('Please fill in all required fields');
       return;
     }
     
@@ -61,10 +67,12 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     console.log('📝 Submitting banking form:', formData);
     
     try {
-      onSubmit(formData as any);
+      await onSubmit(formData as any);
+    } catch (error) {
+      console.error('❌ Form submission failed:', error);
     } finally {
-      // Reset submitting state after a delay to prevent rapid resubmission
-      setTimeout(() => setIsSubmitting(false), 2000);
+      // Reset submitting state after a short delay
+      setTimeout(() => setIsSubmitting(false), 500);
     }
 
     // Note: Vehicle ledger entries are now automatically created by the backend banking route
@@ -708,7 +716,12 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                  disabled={isSubmitting}
+                  className={`px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
+                    isSubmitting 
+                      ? 'bg-gray-400 cursor-not-allowed' 
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
                 >
                   <Plus className="w-4 h-4" />
                   <span>Create Ledger</span>

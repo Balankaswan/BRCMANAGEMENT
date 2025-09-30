@@ -1,5 +1,7 @@
 import express from 'express';
 import PartyCommissionLedger from '../models/PartyCommissionLedger.js';
+import Bill from '../models/Bill.js';
+import Party from '../models/Party.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -142,7 +144,7 @@ router.delete('/all', async (req, res) => {
 });
 
 // Create party commission ledger entry (internal use)
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const entry = new PartyCommissionLedger(req.body);
     await entry.save();
@@ -164,6 +166,122 @@ router.delete('/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting party commission ledger entry:', error);
     res.status(500).json({ message: 'Server error', error: error.message });
+  }
+});
+
+// Import commission cuts from bills for MODERN TRANSPORT COMPANY-RAJKUMAR
+router.post('/import-commission-cuts', async (req, res) => {
+  try {
+    console.log('🔄 Starting commission import for MODERN TRANSPORT COMPANY-RAJKUMAR...');
+    
+    // Find all bills for MODERN TRANSPORT COMPANY-RAJKUMAR with commission cuts
+    const billsWithCommission = await Bill.find({
+      $and: [
+        { party_commission_cut: { $gt: 0 } },
+        { 
+          $or: [
+            { party_name: { $regex: /MODERN TRANSPORT COMPANY.*RAJKUMAR/i } },
+            { party: { $regex: /MODERN TRANSPORT COMPANY.*RAJKUMAR/i } }
+          ]
+        }
+      ]
+    });
+    
+    console.log(`📊 Found ${billsWithCommission.length} bills for MODERN TRANSPORT COMPANY-RAJKUMAR with commission cuts`);
+    
+    let importedCount = 0;
+    let skippedCount = 0;
+    const errors = [];
+    const importedEntries = [];
+    
+    for (const bill of billsWithCommission) {
+      try {
+        // Check if commission entry already exists for this bill
+        const existingEntry = await PartyCommissionLedger.findOne({
+          $or: [
+            { bill_id: bill._id },
+            { bill_number: bill.bill_number, reference_id: bill.bill_number }
+          ]
+        });
+        
+        if (existingEntry) {
+          console.log(`⚠️ Commission entry already exists for bill ${bill.bill_number}, skipping`);
+          skippedCount++;
+          continue;
+        }
+        
+        // Get party information
+        let partyId = bill.party_id;
+        let partyName = bill.party_name || bill.party || 'MODERN TRANSPORT COMPANY-RAJKUMAR';
+        
+        // If no party_id, try to find party by name
+        if (!partyId && partyName) {
+          const party = await Party.findOne({ 
+            name: { $regex: /MODERN TRANSPORT COMPANY.*RAJKUMAR/i }
+          });
+          if (party) {
+            partyId = party._id;
+            partyName = party.name;
+          }
+        }
+        
+        // Create commission ledger entry
+        const commissionEntry = new PartyCommissionLedger({
+          party_id: partyId,
+          party_name: partyName,
+          bill_id: bill._id,
+          bill_number: bill.bill_number,
+          reference_id: bill.bill_number,
+          reference_type: 'bill',
+          date: bill.date,
+          entry_type: 'credit', // Commission cut is a credit to party
+          amount: bill.party_commission_cut,
+          narration: `Commission Cut – Bill No. ${bill.bill_number}`
+        });
+        
+        const savedEntry = await commissionEntry.save();
+        importedCount++;
+        importedEntries.push(savedEntry);
+        
+        console.log(`✅ Created commission entry for bill ${bill.bill_number}: ₹${bill.party_commission_cut}`);
+        
+      } catch (error) {
+        console.error(`❌ Error processing bill ${bill.bill_number}:`, error);
+        errors.push({
+          bill_number: bill.bill_number,
+          error: error.message
+        });
+      }
+    }
+    
+    console.log(`🎯 Commission import completed: ${importedCount} imported, ${skippedCount} skipped`);
+    
+    // Broadcast change to all connected clients for real-time sync
+    if (global.broadcastChange) {
+      global.broadcastChange('create', 'party-commission-ledger', { 
+        importedCount, 
+        skippedCount,
+        party: 'MODERN TRANSPORT COMPANY-RAJKUMAR',
+        message: 'Commission entries imported from bills'
+      });
+    }
+    
+    res.json({
+      message: 'Commission import completed successfully for MODERN TRANSPORT COMPANY-RAJKUMAR',
+      party: 'MODERN TRANSPORT COMPANY-RAJKUMAR',
+      imported: importedCount,
+      skipped: skippedCount,
+      total_bills_processed: billsWithCommission.length,
+      imported_entries: importedEntries,
+      errors: errors
+    });
+    
+  } catch (error) {
+    console.error('❌ Error importing commission from bills:', error);
+    res.status(500).json({ 
+      message: 'Failed to import commission from bills', 
+      error: error.message 
+    });
   }
 });
 

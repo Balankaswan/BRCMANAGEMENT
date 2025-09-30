@@ -47,6 +47,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
     status: initialData?.status || 'pending' as const,
     narration: initialData?.narration || '',
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Auto-populate form when slip prop changes
   useEffect(() => {
@@ -82,11 +83,31 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
   }, [formData.freight, formData.commission, formData.mamool, formData.detention, formData.extra, formData.rto]);
 
   
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    e.stopPropagation();
+    
+    // Prevent double submission
+    if (isSubmitting) {
+      console.log('⚠️ Memo submission already in progress, ignoring...');
+      return;
+    }
+    
+    setIsSubmitting(true);
+    console.log('📋 Starting memo submission...');
     console.log('Memo form data being submitted:', formData);
     console.log('Loading slip ID:', formData.loading_slip_id);
-    onSubmit(formData);
+    
+    try {
+      onSubmit(formData);
+      console.log('✅ Memo submitted successfully');
+    } catch (error) {
+      console.error('❌ Memo submission failed:', error);
+    } finally {
+      // Always reset submitting state
+      setIsSubmitting(false);
+      console.log('🔄 Memo form submission state reset');
+    }
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -362,9 +383,17 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
               </button>
               <button
                 type="submit"
-                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                disabled={isSubmitting}
+                className={`px-6 py-2 text-white rounded-lg transition-colors ${
+                  isSubmitting 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
-                Create Memo
+                {isSubmitting 
+                  ? '⏳ Submitting...' 
+                  : 'Create Memo'
+                }
               </button>
             </div>
           </div>

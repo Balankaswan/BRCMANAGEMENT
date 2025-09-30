@@ -25,14 +25,13 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
     try {
       const response = await apiService.createBill(billData);
       addBill(response.bill);
-      console.log('Bill created and synced to MongoDB:', response.bill);
+      console.log('✅ Bill created successfully:', response.bill);
       
-      // Trigger sync across devices
-      setTimeout(() => {
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-      }, 1000);
+      // Reset form state immediately
+      setShowForm(false);
+      setEditingBill(null);
     } catch (error) {
-      console.error('Failed to create bill:', error);
+      console.error('❌ Failed to create bill:', error);
       // Fallback to local storage
       const newBill: Bill = {
         ...billData,
@@ -41,8 +40,12 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         updated_at: new Date().toISOString(),
       };
       addBill(newBill);
+      console.log('⚠️ Bill created locally only:', newBill);
+      
+      // Reset form state even on error
+      setShowForm(false);
+      setEditingBill(null);
     }
-    setShowForm(false);
   };
 
 
@@ -55,14 +58,13 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
       try {
         const response = await apiService.updateBill(editingBill.id, billData);
         updateBill(response.bill);
-        console.log('Bill updated and synced:', response.bill);
+        console.log('✅ Bill updated successfully:', response.bill);
         
-        // Trigger sync across devices
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('data-sync-required'));
-        }, 1000);
+        // Reset form state immediately
+        setShowForm(false);
+        setEditingBill(null);
       } catch (error) {
-        console.error('Failed to update bill:', error);
+        console.error('❌ Failed to update bill:', error);
         const updatedBill: Bill = {
           ...billData,
           id: editingBill.id,
@@ -70,9 +72,12 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
           updated_at: new Date().toISOString(),
         };
         updateBill(updatedBill);
+        console.log('⚠️ Bill updated locally only:', updatedBill);
+        
+        // Reset form state even on error
+        setShowForm(false);
+        setEditingBill(null);
       }
-      setShowForm(false);
-      setEditingBill(null);
     }
   };
 
@@ -158,12 +163,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         await apiService.updateBill(showReceivedModal.id, updatedBillData);
         markBillAsReceived(showReceivedModal.id, receivedDate, showReceivedModal.bill_amount);
         
-        // Trigger sync across devices
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('data-sync-required'));
-        }, 1000);
-        
-        console.log('Bill marked as received and synced');
+        console.log('Bill marked as received successfully');
       } catch (error) {
         console.error('Failed to mark bill as received:', error);
         // Fallback to local update
@@ -192,7 +192,6 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         await apiService.deleteBill(bill.id);
         deleteBill(bill.id);
         console.log('Bill deleted successfully');
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
       } catch (error) {
         console.error('Failed to delete bill:', error);
         deleteBill(bill.id); // Fallback to local deletion

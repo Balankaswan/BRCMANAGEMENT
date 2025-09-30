@@ -1,6 +1,7 @@
 import express from 'express';
 import CashbookEntry from '../models/CashbookEntry.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { generateCashbookTransactionId } from '../utils/transactionId.js';
 
 const router = express.Router();
 
@@ -38,7 +39,13 @@ router.get('/', authenticateToken, async (req, res) => {
 // Create new cashbook entry
 router.post('/', async (req, res) => {
   try {
-    const cashbookEntry = new CashbookEntry(req.body);
+    // Generate unique transaction ID
+    const transaction_id = generateCashbookTransactionId();
+    
+    const cashbookEntry = new CashbookEntry({
+      ...req.body,
+      transaction_id
+    });
     await cashbookEntry.save();
 
     // Create party on account ledger entry for on account payments
@@ -229,6 +236,11 @@ router.post('/', async (req, res) => {
       }
     }
 
+    // Broadcast change to all connected clients for real-time sync
+    if (global.broadcastChange) {
+      global.broadcastChange('create', 'cashbook', cashbookEntry);
+    }
+
     res.status(201).json({
       message: 'Cashbook entry created successfully',
       cashbookEntry
@@ -288,6 +300,11 @@ router.put('/:id', async (req, res) => {
     );
     
     console.log('✅ Updated', updateResult.modifiedCount, 'ledger entries for cashbook entry:', req.params.id);
+    
+    // Broadcast change to all connected clients for real-time sync
+    if (global.broadcastChange) {
+      global.broadcastChange('update', 'cashbook', cashbookEntry);
+    }
     
     res.json({
       message: 'Cashbook entry updated successfully',
@@ -355,6 +372,11 @@ router.delete('/:id', async (req, res) => {
 
     // Delete the cashbook entry
     await CashbookEntry.findByIdAndDelete(req.params.id);
+    
+    // Broadcast change to all connected clients for real-time sync
+    if (global.broadcastChange) {
+      global.broadcastChange('delete', 'cashbook', { _id: req.params.id });
+    }
     
     res.json({
       message: 'Cashbook entry deleted successfully',
