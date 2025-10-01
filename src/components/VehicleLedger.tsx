@@ -35,7 +35,30 @@ const VehicleLedger: React.FC = () => {
     const interval = setInterval(refreshLedgerData, 10000);
     
     return () => clearInterval(interval);
-  }, [setLedgerEntries, ledgerEntries.length]);
+  }, [setLedgerEntries]);
+
+  // Refresh ledger data when memos change (for real-time sync)
+  useEffect(() => {
+    const refreshLedgerAfterMemoChange = async () => {
+      try {
+        console.log('🔄 Memo data changed, refreshing vehicle ledger...');
+        console.log('Current memos count:', memos.length);
+        const data = await apiService.getLedgerEntries({ limit: 1000 });
+        if (data && data.ledgerEntries) {
+          const vehicleIncomeEntries = data.ledgerEntries.filter((e: any) => e.ledger_type === 'vehicle_income');
+          console.log('Vehicle income entries:', vehicleIncomeEntries.length);
+          setLedgerEntries(data.ledgerEntries);
+          console.log('✅ Vehicle ledger refreshed after memo change - Total:', data.ledgerEntries.length);
+        }
+      } catch (error) {
+        console.error('Failed to refresh ledger after memo change:', error);
+      }
+    };
+
+    // Debounce the refresh to avoid too many calls
+    const timeoutId = setTimeout(refreshLedgerAfterMemoChange, 500);
+    return () => clearTimeout(timeoutId);
+  }, [memos, setLedgerEntries]);
   const [selectedVehicle, setSelectedVehicle] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -279,9 +302,12 @@ const VehicleLedger: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
-
   return (
     <div className="space-y-6">
+      <div className="flex items-center space-x-3 mb-6">
+        <Truck className="w-6 h-6 text-blue-600" />
+        <h2 className="text-2xl font-bold text-gray-900">Vehicle Ledger</h2>
+      </div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Vehicle Ledger</h1>
         <div className="flex items-center space-x-2">

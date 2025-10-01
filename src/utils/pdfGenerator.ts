@@ -591,8 +591,11 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   const detention = bill.detention || 0;
   const extra = bill.extra || 0;  
   const rto = bill.rto || 0;
+  // Original freight amount (not including detention, extra, or RTO)
+  const originalFreight = bill.bill_amount || 0;
+  // Total freight for balance calculation
+  const totalFreight = originalFreight + detention + extra + rto;
   // BALANCE = TOTAL FREIGHT - ADVANCE - MAMOOL - PENALTIES - TDS (excluding party commission cut from display)
-  const totalFreight = bill.totalFreight || (bill.bill_amount + detention + extra + rto);
   const balance = totalFreight - totalAdvance - (bill.mamool || 0) - (bill.penalties || 0) - (bill.tds || 0);
   
   const rowData = [
@@ -602,7 +605,7 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
     (loadingSlip.to_location || 'N/A').substring(0, 8),
     loadingSlip.vehicle_no || 'N/A',
     `${loadingSlip.weight || 0}MT`,
-    formatCurrency(totalFreight).replace('Rs. ', ''),
+    formatCurrency(originalFreight).replace('Rs. ', ''), // Show original freight only
     formatCurrency(rto).replace('Rs. ', ''),
     formatCurrency(detention).replace('Rs. ', ''),
     formatCurrency(extra).replace('Rs. ', ''),
@@ -625,7 +628,7 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.rect(margin, totalY, pageWidth - (2 * margin), rowHeight);
   pdf.setFont('helvetica', 'bold');
   pdf.text('TOTAL', margin + 5, totalY + 8);
-  pdf.text(formatCurrency(totalFreight).replace('Rs. ', ''), colX[6] + 2, totalY + 8);
+  pdf.text(formatCurrency(originalFreight).replace('Rs. ', ''), colX[6] + 2, totalY + 8); // Show original freight only
   pdf.text(formatCurrency(totalAdvance).replace('Rs. ', ''), colX[10] + 2, totalY + 8);
   pdf.text(formatCurrency(balance).replace('Rs. ', ''), colX[11] + 2, totalY + 8);
 

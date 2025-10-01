@@ -119,6 +119,410 @@ const connectDB = async () => {
 // Connect to database
 connectDB();
 
+// Health check// Test route
+app.get('/test', (req, res) => {
+  res.json({ message: 'Server is running!', timestamp: new Date().toISOString() });
+});
+
+// Migration endpoint to fix vehicle ledger entries
+app.post('/api/migrate/fix-vehicle-income', async (req, res) => {
+  try {
+    const LedgerEntry = (await import('./models/LedgerEntry.js')).default;
+    
+    // Find all vehicle_expense entries that are from memos (these should be vehicle_income)
+    const incorrectEntries = await LedgerEntry.find({
+      ledger_type: 'vehicle_expense',
+      source_type: 'memo',
+      credit: { $gt: 0 } // Credit entries should be income, not expense
+    });
+
+    console.log(`Found ${incorrectEntries.length} incorrect vehicle expense entries from memos`);
+
+    // Update them to vehicle_income
+    const updateResult = await LedgerEntry.updateMany(
+      {
+        ledger_type: 'vehicle_expense',
+        source_type: 'memo',
+        credit: { $gt: 0 }
+      },
+      {
+        $set: { ledger_type: 'vehicle_income' }
+      }
+    );
+
+    console.log(`Updated ${updateResult.modifiedCount} entries from vehicle_expense to vehicle_income`);
+
+    res.json({
+      message: 'Migration completed successfully',
+      found: incorrectEntries.length,
+      updated: updateResult.modifiedCount,
+      entries: incorrectEntries.map(e => ({
+        id: e._id,
+        vehicle: e.vehicle_no,
+        credit: e.credit,
+        description: e.description,
+        date: e.date
+      }))
+    });
+
+  } catch (error) {
+    console.error('Migration failed:', error);
+    res.status(500).json({ 
+      message: 'Migration failed', 
+      error: error.message 
+    });
+  }
+});
+
+// Comprehensive vehicle ledger regeneration endpoint
+app.post('/api/migrate/regenerate-vehicle-ledgers', async (req, res) => {
+  try {
+    const LedgerEntry = (await import('./models/LedgerEntry.js')).default;
+    const Memo = (await import('./models/Memo.js')).default;
+    const BankingEntry = (await import('./models/BankingEntry.js')).default;
+    const CashbookEntry = (await import('./models/CashbookEntry.js')).default;
+    const FuelTransaction = (await import('./models/FuelTransaction.js')).default;
+    const Vehicle = (await import('./models/Vehicle.js')).default;
+    const LoadingSlip = (await import('./models/LoadingSlip.js')).default;
+
+    let createdCount = 0;
+    const results = {
+      memos: 0,
+      banking: 0,
+      cashbook: 0,
+      fuel: 0
+    };
+
+    // 1. Process Own Vehicle Memos (create vehicle_income entries)
+    console.log('🚛 Processing own vehicle memos...');
+    const ownVehicles = await Vehicle.find({ ownership_type: 'own' });
+    const ownVehicleNumbers = ownVehicles.map(v => v.vehicle_no);
+    
+    const memosWithLoadingSlips = await Memo.find().populate('loading_slip_id');
+    const ownVehicleMemos = memosWithLoadingSlips.filter(memo => 
+      memo.loading_slip_id && ownVehicleNumbers.includes(memo.loading_slip_id.vehicle_no)
+    );
+
+    for (const memo of ownVehicleMemos) {
+      const existingEntry = await LedgerEntry.findOne({
+        reference_id: memo._id.toString(),
+        source_type: 'memo',
+        ledger_type: 'vehicle_income'
+      });
+
+      if (!existingEntry) {
+        const totalAmount = memo.freight + (memo.detention || 0) + (memo.extra || 0) - (memo.commission || 0) - (memo.mamool || 0);
+        
+        if (totalAmount > 0) {
+          await LedgerEntry.create({
+            referenceId: memo.loading_slip_id.vehicle_no,
+            reference_id: memo._id.toString(),
+            ledger_type: 'vehicle_income',
+            reference_name: `Vehicle ${memo.loading_slip_id.vehicle_no} - Memo Credit`,
+            source_type: 'memo',
+            type: 'payment',
+            date: memo.date,
+            description: `Memo ${memo.memo_number} - Total: ₹${totalAmount}`,
+            debit: 0,
+            credit: totalAmount,
+            vehicle_no: memo.loading_slip_id.vehicle_no,
+            balance: 0
+          });
+          results.memos++;
+          createdCount++;
+        }
+      }
+    }
+
+    // 2. Process Banking Vehicle Expenses
+    console.log('🏦 Processing banking vehicle expenses...');
+    const bankingVehicleExpenses = await BankingEntry.find({
+      category: 'vehicle_expense',
+      vehicle_no: { $exists: true, $ne: null }
+    });
+
+    for (const entry of bankingVehicleExpenses) {
+      const existingEntry = await LedgerEntry.findOne({
+        reference_id: entry._id.toString(),
+        source_type: 'banking',
+        ledger_type: 'vehicle_expense'
+      });
+
+      if (!existingEntry) {
+        await LedgerEntry.create({
+          referenceId: entry.vehicle_no,
+          reference_id: entry._id.toString(),
+          ledger_type: 'vehicle_expense',
+          reference_name: `Vehicle ${entry.vehicle_no} - Bank Expense`,
+          source_type: 'banking',
+          type: entry.type === 'debit' ? 'expense' : 'payment',
+          date: entry.date,
+          description: entry.narration || `Bank ${entry.type} - ${entry.category}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          vehicle_no: entry.vehicle_no,
+          balance: 0
+        });
+        results.banking++;
+        createdCount++;
+      }
+    }
+
+    // 3. Process Cashbook Vehicle Expenses
+    console.log('💰 Processing cashbook vehicle expenses...');
+    const cashbookVehicleExpenses = await CashbookEntry.find({
+      category: 'vehicle_expense',
+      vehicle_no: { $exists: true, $ne: null }
+    });
+
+    for (const entry of cashbookVehicleExpenses) {
+      const existingEntry = await LedgerEntry.findOne({
+        reference_id: entry._id.toString(),
+        source_type: 'cashbook',
+        ledger_type: 'vehicle_expense'
+      });
+
+      if (!existingEntry) {
+        await LedgerEntry.create({
+          referenceId: entry.vehicle_no,
+          reference_id: entry._id.toString(),
+          ledger_type: 'vehicle_expense',
+          reference_name: `Vehicle ${entry.vehicle_no} - Cash Expense`,
+          source_type: 'cashbook',
+          type: entry.type === 'debit' ? 'expense' : 'payment',
+          date: entry.date,
+          description: entry.narration || `Cash ${entry.type} - ${entry.category}`,
+          debit: entry.type === 'debit' ? entry.amount : 0,
+          credit: entry.type === 'credit' ? entry.amount : 0,
+          vehicle_no: entry.vehicle_no,
+          balance: 0
+        });
+        results.cashbook++;
+        createdCount++;
+      }
+    }
+
+    // 4. Process Fuel Vehicle Expenses
+    console.log('⛽ Processing fuel vehicle expenses...');
+    const fuelTransactions = await FuelTransaction.find({
+      vehicle_no: { $exists: true, $ne: null }
+    });
+
+    for (const fuel of fuelTransactions) {
+      const existingEntry = await LedgerEntry.findOne({
+        reference_id: fuel._id.toString(),
+        source_type: 'fuel',
+        ledger_type: 'vehicle_expense'
+      });
+
+      if (!existingEntry) {
+        await LedgerEntry.create({
+          referenceId: fuel._id,
+          reference_id: fuel._id.toString(),
+          ledger_type: 'vehicle_expense',
+          reference_name: `Vehicle ${fuel.vehicle_no} - Fuel Expense`,
+          source_type: 'fuel',
+          type: 'expense',
+          date: fuel.date,
+          description: fuel.narration || `Fuel expense for vehicle ${fuel.vehicle_no}`,
+          debit: fuel.amount,
+          credit: 0,
+          vehicle_no: fuel.vehicle_no,
+          balance: 0
+        });
+        results.fuel++;
+        createdCount++;
+      }
+    }
+
+    console.log(`✅ Vehicle ledger regeneration completed. Created ${createdCount} entries.`);
+
+    res.json({
+      message: 'Vehicle ledger regeneration completed successfully',
+      totalCreated: createdCount,
+      breakdown: results,
+      summary: {
+        ownVehicles: ownVehicleNumbers.length,
+        processedMemos: ownVehicleMemos.length,
+        processedBanking: bankingVehicleExpenses.length,
+        processedCashbook: cashbookVehicleExpenses.length,
+        processedFuel: fuelTransactions.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Vehicle ledger regeneration failed:', error);
+    res.status(500).json({ 
+      message: 'Vehicle ledger regeneration failed', 
+      error: error.message 
+    });
+  }
+});
+
+// Manual endpoint to refresh vehicle ledger entry for a specific memo
+app.post('/api/refresh-memo-ledger/:memoId', async (req, res) => {
+  try {
+    const { memoId } = req.params;
+    const LedgerEntry = (await import('./models/LedgerEntry.js')).default;
+    const Memo = (await import('./models/Memo.js')).default;
+    const { createMemoLedgerEntries } = await import('./services/ledgerService.js');
+
+    console.log(`🔄 Manually refreshing ledger for memo: ${memoId}`);
+
+    // Delete existing ledger entries for this memo
+    const deleteResult = await LedgerEntry.deleteMany({ 
+      $or: [
+        { referenceId: memoId },
+        { reference_id: memoId.toString() }
+      ]
+    });
+    console.log(`🗑️ Deleted ${deleteResult.deletedCount} existing ledger entries`);
+
+    // Get memo with populated loading slip
+    const memo = await Memo.findById(memoId).populate('loading_slip_id');
+    
+    if (!memo) {
+      return res.status(404).json({ message: 'Memo not found' });
+    }
+
+    // Recreate ledger entries
+    await createMemoLedgerEntries(memo);
+    console.log(`✅ Recreated ledger entries for memo ${memo.memo_number}`);
+
+    // Get the newly created entries to return
+    const newEntries = await LedgerEntry.find({
+      reference_id: memoId.toString()
+    });
+
+    res.json({
+      message: 'Memo ledger entries refreshed successfully',
+      memo_number: memo.memo_number,
+      deleted: deleteResult.deletedCount,
+      created: newEntries.length,
+      entries: newEntries
+    });
+  } catch (error) {
+    console.error('Failed to refresh memo ledger:', error);
+    res.status(500).json({ 
+      message: 'Failed to refresh memo ledger', 
+      error: error.message 
+    });
+  }
+});
+
+// Import vehicle income from own vehicle memos
+app.post('/api/migrate/import-vehicle-income-memos', async (req, res) => {
+  try {
+    const LedgerEntry = (await import('./models/LedgerEntry.js')).default;
+    const Memo = (await import('./models/Memo.js')).default;
+    const Vehicle = (await import('./models/Vehicle.js')).default;
+    const LoadingSlip = (await import('./models/LoadingSlip.js')).default;
+
+    console.log('🚛 Starting vehicle income import from own vehicle memos...');
+
+    // Get all own vehicles
+    const ownVehicles = await Vehicle.find({ ownership_type: 'own' });
+    const ownVehicleNumbers = ownVehicles.map(v => v.vehicle_no);
+    
+    console.log(`Found ${ownVehicles.length} own vehicles:`, ownVehicleNumbers);
+
+    // Get all memos with loading slip data
+    const memosWithLoadingSlips = await Memo.find().populate('loading_slip_id');
+    console.log(`Found ${memosWithLoadingSlips.length} total memos`);
+
+    // Filter for own vehicle memos
+    const ownVehicleMemos = memosWithLoadingSlips.filter(memo => 
+      memo.loading_slip_id && ownVehicleNumbers.includes(memo.loading_slip_id.vehicle_no)
+    );
+
+    console.log(`Found ${ownVehicleMemos.length} own vehicle memos`);
+
+    let createdCount = 0;
+    let skippedCount = 0;
+    const createdEntries = [];
+
+    for (const memo of ownVehicleMemos) {
+      try {
+        // Check if ledger entry already exists
+        const existingEntry = await LedgerEntry.findOne({
+          reference_id: memo._id.toString(),
+          source_type: 'memo',
+          ledger_type: 'vehicle_income'
+        });
+
+        if (existingEntry) {
+          console.log(`⚠️ Skipping memo ${memo.memo_number} - ledger entry already exists`);
+          skippedCount++;
+          continue;
+        }
+
+        // Calculate total amount (freight + detention + extra - commission - mamool)
+        const totalAmount = memo.freight + (memo.detention || 0) + (memo.extra || 0) - (memo.commission || 0) - (memo.mamool || 0);
+        
+        if (totalAmount <= 0) {
+          console.log(`⚠️ Skipping memo ${memo.memo_number} - total amount is ${totalAmount}`);
+          skippedCount++;
+          continue;
+        }
+
+        // Create vehicle income ledger entry
+        const ledgerEntry = await LedgerEntry.create({
+          referenceId: memo.loading_slip_id.vehicle_no,
+          reference_id: memo._id.toString(),
+          ledger_type: 'vehicle_income',
+          reference_name: `Vehicle ${memo.loading_slip_id.vehicle_no} - Memo Credit`,
+          source_type: 'memo',
+          type: 'payment',
+          date: memo.date,
+          description: `Memo ${memo.memo_number} - ${memo.loading_slip_id.from_location} to ${memo.loading_slip_id.to_location} (Freight: ₹${memo.freight}, Detention: ₹${memo.detention || 0}, Extra: ₹${memo.extra || 0}, Commission: -₹${memo.commission || 0}, Mamool: -₹${memo.mamool || 0})`,
+          debit: 0,
+          credit: totalAmount,
+          vehicle_no: memo.loading_slip_id.vehicle_no,
+          balance: 0,
+          memo_number: memo.memo_number
+        });
+
+        createdEntries.push({
+          memo_number: memo.memo_number,
+          vehicle_no: memo.loading_slip_id.vehicle_no,
+          amount: totalAmount,
+          route: `${memo.loading_slip_id.from_location} to ${memo.loading_slip_id.to_location}`,
+          date: memo.date,
+          ledger_id: ledgerEntry._id
+        });
+
+        createdCount++;
+        console.log(`✅ Created vehicle income entry for memo ${memo.memo_number}: ₹${totalAmount} for vehicle ${memo.loading_slip_id.vehicle_no}`);
+
+      } catch (error) {
+        console.error(`❌ Error processing memo ${memo.memo_number}:`, error);
+      }
+    }
+
+    console.log(`✅ Vehicle income import completed. Created ${createdCount} entries, skipped ${skippedCount}.`);
+
+    res.json({
+      message: 'Vehicle income import from own vehicle memos completed successfully',
+      summary: {
+        totalOwnVehicles: ownVehicles.length,
+        totalMemos: memosWithLoadingSlips.length,
+        ownVehicleMemos: ownVehicleMemos.length,
+        created: createdCount,
+        skipped: skippedCount
+      },
+      ownVehicles: ownVehicleNumbers,
+      createdEntries: createdEntries
+    });
+
+  } catch (error) {
+    console.error('Vehicle income import failed:', error);
+    res.status(500).json({ 
+      message: 'Vehicle income import failed', 
+      error: error.message 
+    });
+  }
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 

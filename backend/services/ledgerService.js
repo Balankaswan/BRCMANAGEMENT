@@ -66,14 +66,14 @@ export const handleOwnVehicleMemo = async (memo) => {
       const existingEntry = await LedgerEntry.findOne({
         reference_id: memo._id.toString(),
         source_type: 'memo',
-        ledger_type: 'vehicle_expense'
+        ledger_type: 'vehicle_income'
       });
       
       if (!existingEntry) {
         await LedgerEntry.create({
           referenceId: loadingSlip.vehicle_no,
           reference_id: memo._id.toString(),
-          ledger_type: 'vehicle_expense',
+          ledger_type: 'vehicle_income',
           reference_name: `Vehicle ${loadingSlip.vehicle_no} - Memo Credit`,
           source_type: 'memo',
           type: 'payment',
@@ -82,6 +82,7 @@ export const handleOwnVehicleMemo = async (memo) => {
           debit: 0,
           credit: totalAmount,
           vehicle_no: loadingSlip.vehicle_no,
+          balance: 0,
           created_at: new Date()
         });
         console.log(`✅ Created vehicle ledger entry for memo ${memo.memo_number}: ₹${totalAmount}`);

@@ -121,8 +121,13 @@ router.put('/:id', async (req, res) => {
   try {
     console.log(`🔄 Updating memo ${req.params.id}`);
     
-    // Delete existing ledger entries for this memo
-    const deleteResult = await LedgerEntry.deleteMany({ referenceId: req.params.id });
+    // Delete existing ledger entries for this memo (both old and new field names)
+    const deleteResult = await LedgerEntry.deleteMany({ 
+      $or: [
+        { referenceId: req.params.id },
+        { reference_id: req.params.id }
+      ]
+    });
     console.log(`🗑️ Deleted ${deleteResult.deletedCount} existing ledger entries for memo ${req.params.id}`);
     
     const memo = await Memo.findByIdAndUpdate(
@@ -157,8 +162,14 @@ router.put('/:id', async (req, res) => {
 // Delete memo
 router.delete('/:id', async (req, res) => {
   try {
-    // Delete associated ledger entries first
-    await LedgerEntry.deleteMany({ referenceId: req.params.id });
+    // Delete associated ledger entries first (both old and new field names)
+    const deleteResult = await LedgerEntry.deleteMany({ 
+      $or: [
+        { referenceId: req.params.id },
+        { reference_id: req.params.id }
+      ]
+    });
+    console.log(`🗑️ Deleted ${deleteResult.deletedCount} ledger entries for memo ${req.params.id}`);
     
     const memo = await Memo.findByIdAndDelete(req.params.id);
 

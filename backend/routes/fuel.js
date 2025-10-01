@@ -270,6 +270,56 @@ router.post('/cleanup-test-data', async (req, res) => {
   }
 });
 
+// Update fuel transaction
+router.put('/transactions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🔄 Updating fuel transaction:', id);
+    
+    const oldTransaction = await FuelTransaction.findById(id);
+    if (!oldTransaction) {
+      return res.status(404).json({ message: 'Fuel transaction not found' });
+    }
+    
+    const updatedTransaction = await FuelTransaction.findByIdAndUpdate(
+      id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    
+    // Update corresponding vehicle ledger entries
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    
+    if (updatedTransaction.vehicle_no) {
+      const updateResult = await LedgerEntry.updateMany(
+        { 
+          reference_id: id,
+          source_type: 'fuel',
+          ledger_type: 'vehicle_expense'
+        },
+        {
+          reference_name: `Vehicle ${updatedTransaction.vehicle_no} - Fuel Expense`,
+          date: updatedTransaction.date,
+          description: updatedTransaction.narration || `Fuel expense for vehicle ${updatedTransaction.vehicle_no}`,
+          debit: updatedTransaction.amount,
+          credit: 0,
+          vehicle_no: updatedTransaction.vehicle_no,
+        }
+      );
+      
+      console.log('✅ Updated', updateResult.modifiedCount, 'vehicle ledger entries for fuel transaction:', id);
+    }
+    
+    res.json({
+      message: 'Fuel transaction updated successfully',
+      transaction: updatedTransaction
+    });
+  } catch (error) {
+    console.error('Update fuel transaction error:', error);
+    res.status(500).json({ message: 'Failed to update fuel transaction', error: error.message });
+  }
+});
+
 // Delete individual fuel transaction
 router.delete('/transactions/:id', async (req, res) => {
   try {
