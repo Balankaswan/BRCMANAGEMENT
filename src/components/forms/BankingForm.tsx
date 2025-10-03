@@ -175,6 +175,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     if (formData.category.includes('bill')) {
       return existingBills;
     } else if (formData.category.includes('memo')) {
+      console.log(`📋 Memo search: Found ${existingMemos.length} memos:`, existingMemos);
       return existingMemos;
     } else if (formData.category === 'party_commission' || formData.category === 'party_on_account') {
       return parties.map(p => p.name).filter(Boolean);
@@ -449,7 +450,9 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                       />
                       {showReferenceDropdown && (
                         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-40 overflow-y-auto">
-                          {getReferenceOptions().map((option, index) => (
+                          {getReferenceOptions()
+                            .filter(option => option && option.toLowerCase().includes((formData.reference_id || '').toLowerCase()))
+                            .map((option, index) => (
                             <div
                               key={`reference-${index}-${option}`}
                               className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
@@ -458,6 +461,13 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                               {option}
                             </div>
                           ))}
+                          {getReferenceOptions()
+                            .filter(option => option && option.toLowerCase().includes((formData.reference_id || '').toLowerCase()))
+                            .length === 0 && formData.reference_id && (
+                            <div className="px-4 py-2 text-gray-500 text-sm">
+                              No {formData.category.includes('bill') ? 'bills' : 'memos'} found matching "{formData.reference_id}"
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

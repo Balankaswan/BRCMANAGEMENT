@@ -156,7 +156,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         
         // Deduct payment from running balance
         runningBalance -= debitPayment;
-        remarks = 'Payment to Supplier';
+        remarks = entry.data.narration || 'Payment to Supplier';
       } else if (entry.type === 'advance') {
         // Advance is already accounted for in memo creation
         return;
@@ -165,7 +165,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         
         // Deduct on account payment from running balance
         runningBalance -= debitPayment;
-        remarks = 'On Account Payment';
+        remarks = entry.data.narration || 'On Account Payment';
       }
 
       entries.push({
