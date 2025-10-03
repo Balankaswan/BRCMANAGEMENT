@@ -2,7 +2,9 @@ import express from 'express';
 import Bill from '../models/Bill.js';
 import LoadingSlip from '../models/LoadingSlip.js';
 import PartyCommissionLedger from '../models/PartyCommissionLedger.js';
+import LedgerEntry from '../models/LedgerEntry.js';
 import { authenticateToken } from '../middleware/auth.js';
+import { createBillLedgerEntries } from '../services/ledgerService.js';
 
 const router = express.Router();
 
@@ -129,6 +131,15 @@ router.post('/', async (req, res) => {
     // Create party commission ledger entry if commission cut exists (with duplicate prevention)
     await createPartyCommissionEntry(bill, 'credit');
 
+    // Create bill ledger entries (party ledger with debit notes)
+    try {
+      await createBillLedgerEntries(bill);
+      console.log('✅ Created ledger entries for bill:', bill.bill_number);
+    } catch (error) {
+      console.error('⚠️ Failed to create ledger entries for bill:', error);
+      // Don't fail bill creation if ledger creation fails
+    }
+
     // Populate loading slip data
     await bill.populate('loading_slip_id');
 
@@ -148,11 +159,22 @@ router.post('/', async (req, res) => {
 // Update bill
 router.put('/:id', async (req, res) => {
   try {
-    // Get original bill to compare commission cut changes
-    const originalBill = await Bill.findById(req.params.id);
-    if (!originalBill) {
-      return res.status(404).json({ message: 'Bill not found' });
-    }
+    console.log(`🔄 Updating bill ${req.params.id}`);
+    
+    // Delete existing ledger entries for this bill (both old and new field names)
+    const deleteResult = await LedgerEntry.deleteMany({ 
+      $or: [
+        { referenceId: req.params.id },
+        { reference_id: req.params.id }
+      ]
+    });
+    console.log(`🗑️ Deleted ${deleteResult.deletedCount} existing ledger entries for bill ${req.params.id}`);
+    
+    // Delete existing party commission entries
+    await PartyCommissionLedger.deleteMany({
+      bill_id: req.params.id
+    });
+    console.log(`🗑️ Deleted existing commission entries for bill ${req.params.id}`);
 
     const bill = await Bill.findByIdAndUpdate(
       req.params.id,
@@ -160,23 +182,19 @@ router.put('/:id', async (req, res) => {
       { new: true, runValidators: true }
     ).populate('loading_slip_id');
 
-    // Party commission entries are now handled by the centralized ledger regeneration system
-    // await createPartyCommissionEntry(bill);
-    const originalCommission = originalBill.party_commission_cut || 0;
-    const newCommission = bill.party_commission_cut || 0;
-
-    if (originalCommission !== newCommission) {
-      // Remove old commission entry if it existed
-      if (originalCommission > 0) {
-        await PartyCommissionLedger.deleteMany({
-          bill_id: bill._id
-        });
-        console.log(`🗑️ Removed old commission entry for bill ${bill.bill_number}`);
-      }
-      
-      // Party commission entries are now handled by the centralized ledger regeneration system
-      // Commission entries will be created during manual regeneration
+    if (!bill) {
+      return res.status(404).json({ message: 'Bill not found' });
     }
+
+    // Wait a moment to ensure deletion is complete
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Create new party commission entry if commission cut exists
+    await createPartyCommissionEntry(bill, 'credit');
+
+    // Create new bill ledger entries with updated bill data
+    console.log(`✨ Creating new ledger entries for updated bill ${bill.bill_number}`);
+    await createBillLedgerEntries(bill);
 
     const billObj = bill.toObject();
     billObj.id = billObj._id.toString();
@@ -198,6 +216,15 @@ router.delete('/:id', async (req, res) => {
     if (!bill) {
       return res.status(404).json({ message: 'Bill not found' });
     }
+
+    // Delete associated ledger entries (both old and new field names)
+    const deleteResult = await LedgerEntry.deleteMany({ 
+      $or: [
+        { referenceId: req.params.id },
+        { reference_id: req.params.id }
+      ]
+    });
+    console.log(`🗑️ Deleted ${deleteResult.deletedCount} ledger entries for bill ${bill.bill_number}`);
 
     // Delete associated party commission ledger entries
     await PartyCommissionLedger.deleteMany({

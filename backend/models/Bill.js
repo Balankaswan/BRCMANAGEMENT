@@ -79,6 +79,17 @@ const billSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  commission: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  commission_rate: {
+    type: Number,
+    default: 0,
+    min: 0,
+    max: 100
+  },
   net_amount: {
     type: Number,
     default: 0
@@ -111,8 +122,13 @@ const billSchema = new mongoose.Schema({
 
 // Calculate net amount and total freight before saving
 billSchema.pre('save', function(next) {
+  // Calculate commission if rate is provided
+  if (this.commission_rate && this.commission_rate > 0) {
+    this.commission = (this.bill_amount * this.commission_rate) / 100;
+  }
+  
   // Net amount for supplier payment and profit calculation (excludes party commission cut)
-  this.net_amount = this.bill_amount + this.detention + this.extra + this.rto - this.mamool - this.penalties - this.tds - this.party_commission_cut;
+  this.net_amount = this.bill_amount + this.detention + this.extra + this.rto - this.mamool - this.penalties - this.tds - this.party_commission_cut - this.commission;
   // Total freight for PDF display (includes all charges, no deductions)
   this.totalFreight = this.bill_amount + this.detention + this.extra + this.rto;
   next();

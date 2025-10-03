@@ -17,7 +17,7 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
   const [formData, setFormData] = useState({
     bill_number: initialData ? initialData.bill_number : nextBillNumber,
     loading_slip_id: loadingSlip?.id || '',
-    date: new Date().toISOString().split('T')[0],
+    date: loadingSlip?.date ? new Date(loadingSlip.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
     party: loadingSlip?.party || '',
     bill_amount: loadingSlip?.total_freight || 0,
     detention: 0,
@@ -27,6 +27,8 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
     tds: 0,
     penalties: 0,
     party_commission_cut: 0,
+    commission: 0,
+    commission_rate: 0,
     net_amount: 0,
     pod_image: '',
     status: 'pending' as 'pending' | 'received',
@@ -35,14 +37,25 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
   const [podFileName, setPodFileName] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Calculate commission when commission rate changes
+  useEffect(() => {
+    if (formData.commission_rate > 0) {
+      const calculatedCommission = (formData.bill_amount * formData.commission_rate) / 100;
+      setFormData(prev => ({
+        ...prev,
+        commission: calculatedCommission,
+      }));
+    }
+  }, [formData.bill_amount, formData.commission_rate]);
+
   // Calculate net amount (excludes party commission cut for supplier payment calculation)
   useEffect(() => {
-    const netAmount = formData.bill_amount + formData.detention + formData.extra + formData.rto - formData.mamool - formData.tds - formData.penalties - formData.party_commission_cut;
+    const netAmount = formData.bill_amount + formData.detention + formData.extra + formData.rto - formData.mamool - formData.tds - formData.penalties - formData.party_commission_cut - formData.commission;
     setFormData(prev => ({
       ...prev,
       net_amount: netAmount,
     }));
-  }, [formData.bill_amount, formData.detention, formData.extra, formData.rto, formData.mamool, formData.tds, formData.penalties, formData.party_commission_cut]);
+  }, [formData.bill_amount, formData.detention, formData.extra, formData.rto, formData.mamool, formData.tds, formData.penalties, formData.party_commission_cut, formData.commission]);
 
   useEffect(() => {
     if (initialData) {
@@ -59,8 +72,10 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
         tds: initialData.tds,
         penalties: initialData.penalties,
         party_commission_cut: initialData.party_commission_cut || 0,
+        commission: initialData.commission || 0,
+        commission_rate: initialData.commission_rate || 0,
         net_amount: initialData.net_amount,
-        pod_image: initialData.pod_image || '',
+        pod_image: '',
         status: initialData.status || 'pending' as 'pending' | 'received',
         narration: initialData.narration || '',
       });
@@ -70,6 +85,7 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
         ...prev,
         bill_number: nextBillNumber,
         loading_slip_id: loadingSlip.id,
+        date: new Date(loadingSlip.date).toISOString().split('T')[0],
         party: loadingSlip.party,
         bill_amount: loadingSlip.total_freight,
         rto: loadingSlip.rto || 0,
@@ -371,13 +387,46 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
             </div>
           </div>
 
-          {/* Party Commission Cut Field */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Party Commission Cut (₹)
-              </label>
-              <input
+          {/* Commission Section */}
+          <div className="bg-yellow-50 p-4 rounded-lg">
+            <h3 className="text-sm font-medium text-yellow-900 mb-4">Commission Section</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Commission Rate (%)
+                </label>
+                <input
+                  type="number"
+                  name="commission_rate"
+                  value={formData.commission_rate}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  step="0.01"
+                  min="0"
+                  max="100"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Commission Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  name="commission"
+                  value={formData.commission}
+                  onChange={handleInputChange}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-100"
+                  step="0.01"
+                  min="0"
+                  readOnly
+                />
+                <p className="text-xs text-gray-500 mt-1">Auto-calculated from rate</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Party Commission Cut (₹)
+                </label>
+                <input
                 type="number"
                 name="party_commission_cut"
                 value={formData.party_commission_cut}
@@ -390,18 +439,19 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
               <p className="text-xs text-gray-500 mt-1">
                 This amount will be deducted from net payable to supplier and posted to Party Commission Ledger
               </p>
+              </div>
             </div>
-            <div className="flex items-center">
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 w-full">
-                <h4 className="text-sm font-medium text-yellow-800 mb-2">Commission Impact</h4>
-                <div className="text-xs text-yellow-700">
-                  <div>• Bill PDF: Shows full freight amount</div>
-                  <div>• Supplier Payment: Reduced by commission cut</div>
-                  <div>• Commission Ledger: Auto-posted as credit</div>
-                </div>
+            <div className="mt-4 bg-yellow-100 border border-yellow-200 rounded-lg p-3">
+              <h4 className="text-sm font-medium text-yellow-800 mb-2">Commission Impact</h4>
+              <div className="text-xs text-yellow-700">
+                <div>• Bill PDF: Shows full freight amount</div>
+                <div>• Supplier Payment: Reduced by commission cut</div>
+                <div>• Commission Ledger: Auto-posted as credit</div>
               </div>
             </div>
           </div>
+
+          {/* Debit Note Section */}
 
           {/* Narration Field */}
           <div>
@@ -452,6 +502,10 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
               <div>
                 <span className="text-red-700">Penalties:</span>
                 <span className="ml-2 font-medium">-{formatCurrency(formData.penalties)}</span>
+              </div>
+              <div>
+                <span className="text-red-700">Commission:</span>
+                <span className="ml-2 font-medium">-{formatCurrency(formData.commission)}</span>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-green-200">

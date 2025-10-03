@@ -58,7 +58,7 @@ export const handleOwnVehicleMemo = async (memo) => {
     }
 
     // Create single consolidated entry for the memo (total amount)
-    const totalAmount = memo.freight + (memo.detention || 0) + (memo.extra || 0) - (memo.commission || 0) - (memo.mamool || 0);
+  const totalAmount = memo.freight + (memo.detention || 0) + (memo.extra || 0) - (memo.commission || 0) - (memo.mamool || 0);
     
     if (totalAmount > 0) {
       // Check if ledger entry already exists for this memo to prevent duplicates
@@ -110,18 +110,32 @@ export const handleOwnVehicleMemo = async (memo) => {
  */
 export const handleMarketVehicleMemo = async (memo) => {
   try {
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    
+    // Calculate net amount
     const netAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
     
-    // Credit Supplier Ledger
-    await createLedgerEntry({
-      referenceId: memo._id,
-      type: 'memo',
-      supplierId: memo.supplier_id,
-      credit: netAmount,
-      debit: 0,
-      description: `Market vehicle memo ${memo.memo_number} - Amount payable`,
-      date: memo.date
-    });
+    // Credit Supplier Ledger with net amount (after all deductions)
+    try {
+      const creditEntry = await LedgerEntry.create({
+        referenceId: memo._id.toString(),
+        reference_id: memo._id.toString(),
+        ledger_type: 'supplier',
+        reference_name: memo.supplier,
+        source_type: 'memo',
+        type: 'memo',
+        description: `Memo ${memo.memo_number} - Net Amount Payable`,
+        debit: 0,
+        credit: netAmount,
+        balance: 0, // Will be calculated by frontend
+        date: memo.date,
+        memo_number: memo.memo_number
+      });
+      console.log('✅ Created supplier credit entry:', creditEntry._id);
+    } catch (error) {
+      console.error('❌ Failed to create supplier credit entry:', error);
+      throw error;
+    }
 
     console.log('✅ Market vehicle memo processed:', {
       memo: memo.memo_number,
@@ -131,6 +145,44 @@ export const handleMarketVehicleMemo = async (memo) => {
 
   } catch (error) {
     console.error('Failed to handle market vehicle memo:', error);
+    throw error;
+  }
+};
+
+/**
+ * Handle Bill Ledger Entries - creates party ledger entries
+ */
+export const createBillLedgerEntries = async (bill) => {
+  try {
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    
+    // Calculate net amount
+    const netAmount = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0) - (bill.commission || 0);
+    
+    // Debit Party Ledger with net amount (amount receivable from party)
+    await LedgerEntry.create({
+      referenceId: bill._id.toString(),
+      reference_id: bill._id.toString(),
+      ledger_type: 'party',
+      reference_name: bill.party,
+      source_type: 'bill',
+      type: 'bill',
+      description: `Bill ${bill.bill_number} - Amount Receivable (Net)`,
+      debit: netAmount,
+      credit: 0,
+      balance: 0, // Will be calculated by frontend
+      date: bill.date,
+      memo_number: bill.bill_number
+    });
+
+    console.log('✅ Bill ledger entries processed:', {
+      bill: bill.bill_number,
+      party: bill.party,
+      debit: netAmount
+    });
+
+  } catch (error) {
+    console.error('Failed to create bill ledger entries:', error);
     throw error;
   }
 };

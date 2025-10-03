@@ -61,6 +61,8 @@ export interface Bill {
   tds: number;
   penalties: number;
   party_commission_cut: number;
+  commission: number;
+  commission_rate: number;
   net_amount: number;
   status: 'pending' | 'received';
   received_date?: string;

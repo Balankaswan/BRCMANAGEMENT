@@ -33,10 +33,10 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
   const [formData, setFormData] = useState<MemoFormState>({
     memo_number: initialData?.memo_number || nextMemoNumber || '',
     loading_slip_id: initialData?.loading_slip_id || slip?.id || '',
-    date: initialData ? initialData.date.split('T')[0] : new Date().toISOString().split('T')[0],
+    date: initialData ? initialData.date.split('T')[0] : (slip?.date ? new Date(slip.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]),
     supplier: initialData?.supplier || slip?.supplier || '',
     freight: initialData?.freight || slip?.freight || 0,
-    commission_rate: 6,
+    commission_rate: initialData ? (initialData.freight > 0 ? (initialData.commission / initialData.freight) * 100 : 6) : 6,
     commission: initialData?.commission || 0,
     mamool: initialData?.mamool || 0,
     detention: initialData?.detention || 0,
@@ -56,6 +56,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
         ...prev,
         memo_number: nextMemoNumber || '',
         loading_slip_id: slip.id,
+        date: new Date(slip.date).toISOString().split('T')[0],
         supplier: slip.supplier,
         freight: slip.freight,
         rto: slip.rto || 0,
@@ -322,6 +323,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
               />
             </div>
           </div>
+
 
           {/* Narration Field */}
           <div>
