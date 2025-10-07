@@ -8,7 +8,7 @@ interface SuppliersProps {
 }
 
 const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
-  const { suppliers, memos, vehicles, loadingSlips } = useDataStore();
+  const { suppliers, memos, vehicles, loadingSlips, bankingEntries } = useDataStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredSuppliers, setFilteredSuppliers] = useState(suppliers);
 
@@ -59,10 +59,39 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       
       // Only include market vehicles in supplier balance
       if (vehicle?.ownership_type === 'market') {
-        totalBalance += memo.net_amount;
+        // Check for payments made to this memo
+        const memoPayments = bankingEntries
+          .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
+          .reduce((total, entry) => total + entry.amount, 0);
+        
+        const pendingAmount = memo.net_amount - memoPayments;
+        
+        // Debug logging for ABDUL BHAI specifically
+        if (supplierName === 'ABDUL BHAI') {
+          console.log(`📊 ${supplierName} - Memo ${memo.memo_number}:`, {
+            netAmount: memo.net_amount,
+            payments: memoPayments,
+            pending: pendingAmount,
+            vehicle: ls?.vehicle_no
+          });
+        }
+        
+        // Only add to balance if there's a pending amount
+        if (pendingAmount > 0) {
+          totalBalance += pendingAmount;
+        }
         activeTripCount++;
       }
     });
+
+    // Debug summary for ABDUL BHAI
+    if (supplierName === 'ABDUL BHAI') {
+      console.log(`💰 ${supplierName} FINAL BALANCE:`, {
+        totalBalance,
+        activeTripCount,
+        totalMemos: supplierMemos.length
+      });
+    }
 
     return { totalBalance, activeTripCount };
   };
