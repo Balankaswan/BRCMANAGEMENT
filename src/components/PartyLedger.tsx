@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Filter, Download, FileText, Table, FileDown, ExternalLink } from 'lucide-react';
+import { Filter, Download, FileText, Table, FileDown, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
 import type { Memo } from '../types';
@@ -27,6 +27,13 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
   const [dateTo, setDateTo] = useState('');
   const [partyFilter, setPartyFilter] = useState(selectedParty || '');
   const [viewMemo, setViewMemo] = useState<Memo | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const entriesPerPage = 50;
+
+  // Reset to first page when party changes
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [partyFilter]);
 
   // Function to handle bill number click - navigate to Bills page
   const handleBillClick = (billNumber: string) => {
@@ -182,6 +189,12 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
 
     return filtered;
   }, [ledgerEntries, dateFrom, dateTo]);
+
+  // Pagination logic
+  const totalPages = Math.ceil(filteredEntries.length / entriesPerPage);
+  const startIndex = (currentPage - 1) * entriesPerPage;
+  const endIndex = startIndex + entriesPerPage;
+  const paginatedEntries = filteredEntries.slice(startIndex, endIndex);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -431,6 +444,7 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
           </div>
           
           {filteredEntries.length > 0 ? (
+            <>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50">
@@ -446,7 +460,7 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredEntries.map((entry, index) => (
+                  {paginatedEntries.map((entry, index) => (
                     <tr key={entry.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {new Date(entry.date).toLocaleDateString('en-IN')}
@@ -517,6 +531,59 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
                 </tfoot>
               </table>
             </div>
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                <div className="text-sm text-gray-700">
+                  Showing {startIndex + 1} to {Math.min(endIndex, filteredEntries.length)} of {filteredEntries.length} entries
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center"
+                  >
+                    <ChevronLeft className="w-4 h-4 mr-1" />
+                    Previous
+                  </button>
+                  
+                  <div className="flex items-center space-x-1">
+                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                      const pageNum = currentPage <= 3 ? i + 1 :
+                                      currentPage >= totalPages - 2 ? totalPages - 4 + i :
+                                      currentPage - 2 + i;
+                      
+                      if (pageNum < 1 || pageNum > totalPages) return null;
+                      
+                      return (
+                        <button
+                          key={pageNum}
+                          onClick={() => setCurrentPage(pageNum)}
+                          className={`px-3 py-1 text-sm font-medium rounded-md ${
+                            currentPage === pageNum
+                              ? 'bg-blue-600 text-white'
+                              : 'text-gray-700 bg-white border border-gray-300 hover:bg-gray-50'
+                          }`}
+                        >
+                          {pageNum}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-1 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed flex items-center"
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4 ml-1" />
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           ) : (
             <div className="px-6 py-12 text-center">
               <Table className="w-12 h-12 text-gray-400 mx-auto mb-4" />

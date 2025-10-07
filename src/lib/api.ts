@@ -357,7 +357,7 @@ class ApiService {
 
   // Ledgers
   async getLedgerEntries(params?: {ledger_type?: string, reference_name?: string, vehicle_no?: string, page?: number, limit?: number}) {
-    const queryString = params ? '?' + new URLSearchParams(params as any).toString() : '?limit=1000';
+    const queryString = params ? '?' + new URLSearchParams(params as any).toString() : '?limit=10000';
     return this.request<{ledgerEntries: any[], total: number, totalPages: number}>(`/ledgers${queryString}`);
   }
 

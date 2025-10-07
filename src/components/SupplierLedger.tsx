@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Truck, Filter, Download, FileText, Table, FileDown } from 'lucide-react';
+import { Truck, Filter, Download, Table, FileDown } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
 
@@ -29,14 +29,31 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
   // Get unique suppliers from memos
   const suppliers = useMemo(() => {
+    console.log(`📊 Raw data check - Total memos: ${memos.length}, Total banking: ${bankingEntries.length}, Total cashbook: ${cashbookEntries.length}`);
+    
+    // Show sample data structure
+    if (memos.length > 0) {
+      console.log(`📋 Sample memo structure:`, Object.keys(memos[0]));
+      console.log(`📋 Sample memo:`, memos[0]);
+    }
+    if (bankingEntries.length > 0) {
+      console.log(`🏦 Sample banking entry structure:`, Object.keys(bankingEntries[0]));
+      console.log(`🏦 Sample banking entry:`, bankingEntries[0]);
+    }
     const supplierSet = new Set(memos.map(memo => memo.supplier));
-    return Array.from(supplierSet).sort();
-  }, [memos]);
+    const supplierList = Array.from(supplierSet).sort();
+    console.log(`👥 Available suppliers: ${supplierList.length}`, supplierList);
+    return supplierList;
+  }, [memos, bankingEntries, cashbookEntries]);
 
   // Generate ledger entries for selected supplier
   const ledgerEntries = useMemo(() => {
-    if (!supplierFilter) return [];
+    if (!supplierFilter) {
+      console.log(`⚠️ No supplier selected, returning empty array`);
+      return [];
+    }
 
+    console.log(`🔍 Generating ledger entries for supplier: ${supplierFilter}`);
     const entries: SupplierLedgerEntry[] = [];
     let runningBalance = 0;
 
@@ -44,31 +61,47 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     const supplierMemos = memos
       .filter(memo => memo.supplier === supplierFilter)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    console.log(`📋 Found ${supplierMemos.length} memos for supplier ${supplierFilter}:`, supplierMemos.map(m => m.memo_number));
 
     // Get all banking and cashbook entries for the supplier's memos and on account payments
+    console.log(`🏦 Total banking entries available: ${bankingEntries.length}`);
+    console.log(`🏦 Banking entry categories:`, [...new Set(bankingEntries.map(e => e.category))]);
+    
     const supplierBankingEntries = bankingEntries
       .filter(entry => {
         // Include memo payments and advances
-        if ((entry.category === 'memo_payment' || entry.category === 'memo_advance') &&
-            supplierMemos.some(memo => memo.memo_number === entry.reference_id)) {
-          return true;
+        if ((entry.category === 'memo_payment' || entry.category === 'memo_advance')) {
+          const matchingMemo = supplierMemos.find(memo => memo.memo_number === entry.reference_id);
+          if (matchingMemo) {
+            console.log(`✅ Banking entry matched by memo: ${entry.reference_id}, category: ${entry.category}`);
+            return true;
+          } else {
+            console.log(`❌ Banking entry memo not found: ${entry.reference_id}, available memos:`, supplierMemos.map(m => m.memo_number));
+          }
         }
         // Include supplier on account payments
         if ((entry.category as any) === 'supplier_on_account' && entry.reference_name === supplierFilter) {
+          console.log(`✅ Banking entry matched by supplier on account: ${entry.reference_name}`);
           return true;
         }
         return false;
       });
 
     // Get cashbook entries for supplier payments and on account
+    console.log(`💰 Total cashbook entries available: ${cashbookEntries.length}`);
+    console.log(`💰 Cashbook entry categories:`, [...new Set(cashbookEntries.map(e => e.category))]);
+    
     const supplierCashbookEntries = cashbookEntries
       .filter(entry => {
         // Include supplier payments
         if (entry.category === 'supplier_payment' && entry.reference_name === supplierFilter) {
+          console.log(`✅ Cashbook entry matched by supplier payment: ${entry.reference_name}`);
           return true;
         }
         // Include supplier on account payments
         if ((entry.category as any) === 'supplier_on_account' && entry.reference_name === supplierFilter) {
+          console.log(`✅ Cashbook entry matched by supplier on account: ${entry.reference_name}`);
           return true;
         }
         return false;
@@ -77,6 +110,9 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     // Combine all payment entries and sort by date
     const allPaymentEntries = [...supplierBankingEntries, ...supplierCashbookEntries]
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    
+    console.log(`💰 Found ${supplierBankingEntries.length} banking entries and ${supplierCashbookEntries.length} cashbook entries`);
+    console.log(`💳 Total payment entries: ${allPaymentEntries.length}`);
 
     // Combine and sort all entries by date
     const allEntries: Array<{
@@ -134,12 +170,18 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       let remarks = '';
 
       if (entry.type === 'memo') {
-        // Use freight amount instead of net_amount for proper calculation
-        credit = entry.data.freight;
-        detention = entry.data.detention || 0;
-        extraWeight = entry.data.extra || 0;
+        // Calculate net amount payable to supplier (freight - commission - mamool)
+        // Detention and extra are shown separately, so exclude them from credit
+        const freight = entry.data.freight || 0;
         const commission = entry.data.commission || 0;
         const mamul = entry.data.mamool || 0;
+        
+        // Credit = Net amount payable to supplier (freight - commission - mamool)
+        credit = freight - commission - mamul;
+        detention = entry.data.detention || 0;
+        extraWeight = entry.data.extra || 0;
+        
+        console.log(`📊 Supplier memo calculation - Freight: ${freight}, Commission: ${commission}, Mamool: ${mamul}, Net Credit: ${credit}`);
         
         // Check if there was an advance for this memo
         const memoAdvances = allPaymentEntries.filter(be => 
@@ -148,8 +190,8 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         const totalAdvance = memoAdvances.reduce((sum, adv) => sum + adv.amount, 0);
         debitAdvance = totalAdvance;
         
-        // Correct formula: Balance = Freight - Advance - Commission - Mamul + Extra + Detention
-        runningBalance += credit - debitAdvance - commission - mamul + extraWeight + detention;
+        // Running balance: Net Credit + Detention + Extra - Advance
+        runningBalance += credit + detention + extraWeight - debitAdvance;
         remarks = totalAdvance > 0 ? 'Memo Created (Advance Paid)' : 'Memo Created';
       } else if (entry.type === 'payment') {
         debitPayment = entry.data.amount;
@@ -183,6 +225,16 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       });
     });
 
+    console.log(`📊 Generated ${entries.length} total ledger entries for supplier ${supplierFilter}`);
+    
+    // Summary debug info
+    console.log(`🎯 SUPPLIER LEDGER DEBUG SUMMARY:`);
+    console.log(`   - Supplier: ${supplierFilter}`);
+    console.log(`   - Memos found: ${supplierMemos.length}`);
+    console.log(`   - Banking entries: ${supplierBankingEntries.length}`);
+    console.log(`   - Cashbook entries: ${supplierCashbookEntries.length}`);
+    console.log(`   - Total ledger entries generated: ${entries.length}`);
+    
     return entries;
   }, [supplierFilter, memos, bankingEntries, cashbookEntries, loadingSlips]);
 
@@ -198,6 +250,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       filtered = filtered.filter(entry => entry.date <= dateTo);
     }
 
+    console.log(`🔍 After date filtering: ${filtered.length} entries (from ${ledgerEntries.length} total)`);
     return filtered;
   }, [ledgerEntries, dateFrom, dateTo]);
 
@@ -217,7 +270,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
   const exportToCSV = () => {
     if (!filteredEntries.length) return;
 
-    const headers = ['Date', 'Memo No', 'Trip Details', 'Detention (₹)', 'Extra Weight (₹)', 'Credit (₹)', 'Debit - Payment (₹)', 'Debit - Advance (₹)', 'Running Balance (₹)', 'Remarks'];
+    const headers = ['Date', 'Memo No', 'Trip Details', 'Detention (₹)', 'Extra Weight (₹)', 'Net Credit (₹)', 'Debit - Payment (₹)', 'Debit - Advance (₹)', 'Running Balance (₹)', 'Remarks'];
     const csvContent = [
       headers.join(','),
       ...filteredEntries.map(entry => [
@@ -456,7 +509,10 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
             </h3>
           </div>
           
-          {filteredEntries.length > 0 ? (
+          {(() => {
+            console.log(`🎯 Table rendering check - filteredEntries.length: ${filteredEntries.length}`);
+            return filteredEntries.length > 0;
+          })() ? (
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead className="bg-gray-50">
@@ -466,7 +522,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trip Details</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Detention (₹)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Extra Weight (₹)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Net Credit (₹)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit - Payment (₹)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit - Advance (₹)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Running Balance (₹)</th>

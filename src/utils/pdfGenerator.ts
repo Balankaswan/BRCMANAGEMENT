@@ -42,8 +42,8 @@ export const COMPANY_INFO = {
   tagline: 'DIRECT TO AHMEDABAD JURISDICTION'
 };
 
-// Utility function to format currency
-export const formatCurrency = (amount: number): string => {
+// Utility function to format currency for PDFs
+export const formatCurrencyForPDF = (amount: number): string => {
   return `Rs. ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
@@ -180,13 +180,13 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
 
   // Financial table - matching image style with proper borders
   const financialRows = [
-    ['Freight Amount:', formatCurrency(memo.freight)],
-    ['Add: Detention:', formatCurrency(memo.detention || 0)],
-    ['Add: Extra Weight:', formatCurrency(memo.extra || 0)],
-    ['Add: RTO:', formatCurrency(memo.rto || 0)],
-    ['Less: Commission:', formatCurrency(memo.commission || 0)],
-    ['Less: Mamool:', formatCurrency(memo.mamool || 0)],
-    ['Less: Advance Paid:', formatCurrency(totalAdvances)]
+    ['Freight Amount:', formatCurrencyForPDF(memo.freight)],
+    ['Add: Detention:', formatCurrencyForPDF(memo.detention || 0)],
+    ['Add: Extra Weight:', formatCurrencyForPDF(memo.extra || 0)],
+    ['Add: RTO:', formatCurrencyForPDF(memo.rto || 0)],
+    ['Less: Commission:', formatCurrencyForPDF(memo.commission || 0)],
+    ['Less: Mamool:', formatCurrencyForPDF(memo.mamool || 0)],
+    ['Less: Advance Paid:', formatCurrencyForPDF(totalAdvances)]
   ];
 
   financialRows.forEach((row, index) => {
@@ -207,7 +207,7 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
   pdf.setTextColor(255, 255, 255);
   pdf.text('NET AMOUNT PAYABLE:', 15, netAmountY + 5);
   const actualNetAmount = memo.net_amount - totalAdvances;
-  pdf.text(formatCurrency(actualNetAmount), pageWidth - 15, netAmountY + 5, { align: 'right' });
+  pdf.text(formatCurrencyForPDF(actualNetAmount), pageWidth - 15, netAmountY + 5, { align: 'right' });
   pdf.setTextColor(0, 0, 0);
 
   // Advance Details Section with blue background
@@ -246,7 +246,7 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
     allAdvancePayments.forEach((payment, index) => {
       currentAdvanceY += 6;
       const paymentMode = payment.source || payment.mode || 'CASH';
-      pdf.text(`${index + 1}. Date: ${formatDate(payment.date)} - Amount: ${formatCurrency(payment.amount)} - Mode: ${paymentMode.toUpperCase()}`, 15, currentAdvanceY);
+      pdf.text(`${index + 1}. Date: ${formatDate(payment.date)} - Amount: ${formatCurrencyForPDF(payment.amount)} - Mode: ${paymentMode.toUpperCase()}`, 15, currentAdvanceY);
     });
   } else {
     pdf.setFontSize(8);
@@ -396,10 +396,10 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   const calculatedBalance = (loadingSlip.freight || 0) - (loadingSlip.advance || 0) + (loadingSlip.rto || 0);
   
   const financialData = [
-    ['Freight Amount:', formatCurrency(loadingSlip.freight)],
-    ['Advance Amount:', formatCurrency(loadingSlip.advance)],
-    ['RTO Amount:', formatCurrency(loadingSlip.rto)],
-    ['Balance Amount:', formatCurrency(calculatedBalance)]
+    ['Freight Amount:', formatCurrencyForPDF(loadingSlip.freight)],
+    ['Advance Amount:', formatCurrencyForPDF(loadingSlip.advance)],
+    ['RTO Amount:', formatCurrencyForPDF(loadingSlip.rto)],
+    ['Balance Amount:', formatCurrencyForPDF(calculatedBalance)]
   ];
 
   pdf.setFontSize(9);
@@ -605,12 +605,12 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
     (loadingSlip.to_location || 'N/A').substring(0, 8),
     loadingSlip.vehicle_no || 'N/A',
     `${loadingSlip.weight || 0}MT`,
-    formatCurrency(originalFreight).replace('Rs. ', ''), // Show original freight only
-    formatCurrency(rto).replace('Rs. ', ''),
-    formatCurrency(detention).replace('Rs. ', ''),
-    formatCurrency(extra).replace('Rs. ', ''),
-    formatCurrency(totalAdvance).replace('Rs. ', ''),
-    formatCurrency(balance).replace('Rs. ', '')
+    formatCurrencyForPDF(originalFreight).replace('Rs. ', ''), // Show original freight only
+    formatCurrencyForPDF(rto).replace('Rs. ', ''),
+    formatCurrencyForPDF(detention).replace('Rs. ', ''),
+    formatCurrencyForPDF(extra).replace('Rs. ', ''),
+    formatCurrencyForPDF(totalAdvance).replace('Rs. ', ''),
+    formatCurrencyForPDF(balance).replace('Rs. ', '')
   ];
 
   rowData.forEach((data, index) => {
@@ -628,9 +628,9 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.rect(margin, totalY, pageWidth - (2 * margin), rowHeight);
   pdf.setFont('helvetica', 'bold');
   pdf.text('TOTAL', margin + 5, totalY + 8);
-  pdf.text(formatCurrency(originalFreight).replace('Rs. ', ''), colX[6] + 2, totalY + 8); // Show original freight only
-  pdf.text(formatCurrency(totalAdvance).replace('Rs. ', ''), colX[10] + 2, totalY + 8);
-  pdf.text(formatCurrency(balance).replace('Rs. ', ''), colX[11] + 2, totalY + 8);
+  pdf.text(formatCurrencyForPDF(originalFreight).replace('Rs. ', ''), colX[6] + 2, totalY + 8); // Show original freight only
+  pdf.text(formatCurrencyForPDF(totalAdvance).replace('Rs. ', ''), colX[10] + 2, totalY + 8);
+  pdf.text(formatCurrencyForPDF(balance).replace('Rs. ', ''), colX[11] + 2, totalY + 8);
 
   // Vertical lines for total row
   colX.forEach((x, index) => {
@@ -650,7 +650,7 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
     pdf.setFontSize(8);
     bill.advance_payments.forEach((payment, index) => {
       advanceY += 8;
-      pdf.text(`${index + 1}. Date: ${new Date(payment.date).toLocaleDateString('en-GB')} - Amount: ${formatCurrency(payment.amount)} - Mode: ${payment.mode?.toUpperCase() || 'CASH'}`, margin, advanceY);
+      pdf.text(`${index + 1}. Date: ${new Date(payment.date).toLocaleDateString('en-GB')} - Amount: ${formatCurrencyForPDF(payment.amount)} - Mode: ${payment.mode?.toUpperCase() || 'CASH'}`, margin, advanceY);
     });
     advanceY += 10;
   }
@@ -824,9 +824,9 @@ export const generatePartyCommissionLedgerPDF = async (entries: any[], summary: 
   
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(8);
-  pdf.text(`Total Credits: ${formatCurrency(summary.totalCredits)}`, 15, currentY + 12);
-  pdf.text(`Total Debits: ${formatCurrency(summary.totalDebits)}`, 15, currentY + 16);
-  pdf.text(`Outstanding Balance: ${formatCurrency(summary.balance)}`, pageWidth - 15, currentY + 12, { align: 'right' });
+  pdf.text(`Total Credits: ${formatCurrencyForPDF(summary.totalCredits)}`, 15, currentY + 12);
+  pdf.text(`Total Debits: ${formatCurrencyForPDF(summary.totalDebits)}`, 15, currentY + 16);
+  pdf.text(`Outstanding Balance: ${formatCurrencyForPDF(summary.balance)}`, pageWidth - 15, currentY + 12, { align: 'right' });
   pdf.text(`Total Entries: ${summary.totalEntries}`, pageWidth - 15, currentY + 16, { align: 'right' });
 
   // Table header
@@ -866,9 +866,9 @@ export const generatePartyCommissionLedgerPDF = async (entries: any[], summary: 
       new Date(entry.date).toLocaleDateString('en-GB'),
       entry.bill_number || entry.reference_id || '',
       entry.narration.length > 35 ? entry.narration.substring(0, 32) + '...' : entry.narration,
-      entry.entry_type === 'credit' ? formatCurrency(entry.amount) : '-',
-      entry.entry_type === 'debit' ? formatCurrency(entry.amount) : '-',
-      formatCurrency(entry.running_balance)
+      entry.entry_type === 'credit' ? formatCurrencyForPDF(entry.amount) : '-',
+      entry.entry_type === 'debit' ? formatCurrencyForPDF(entry.amount) : '-',
+      formatCurrencyForPDF(entry.running_balance)
     ];
 
     // Alternate row colors

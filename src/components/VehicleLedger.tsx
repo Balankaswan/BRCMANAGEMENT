@@ -5,21 +5,39 @@ import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 
 const VehicleLedger: React.FC = () => {
-  const { ledgerEntries, vehicles, setLedgerEntries, memos } = useDataStore();
+  const { ledgerEntries, vehicles, setLedgerEntries, memos, loadingSlips } = useDataStore();
   
   // Force refresh ledger data on component mount and periodically
   useEffect(() => {
     const refreshLedgerData = async () => {
       try {
-        const data = await apiService.getLedgerEntries({ limit: 1000 });
+        const data = await apiService.getLedgerEntries({ limit: 10000 });
         if (data && data.ledgerEntries) {
           setLedgerEntries(data.ledgerEntries);
           console.log('💰 Ledger data refreshed:', data.ledgerEntries.length, 'entries');
           
-          // Debug vehicle expense entries
-          const vehicleExpenseEntries = data.ledgerEntries.filter((e: any) => e.ledger_type === 'vehicle_expense');
-          console.log('🚛 Vehicle Expense Entries:', vehicleExpenseEntries.length);
-          console.log('GJ27TG9764 vehicle expenses:', vehicleExpenseEntries.filter((e: any) => e.vehicle_no === 'GJ27TG9764').length);
+          // Debug vehicle entries for GJ27TG9764
+          const gj27tg9764Entries = data.ledgerEntries.filter((e: any) => e.vehicle_no === 'GJ27TG9764');
+          console.log('🎯 GJ27TG9764 ALL ENTRIES:', gj27tg9764Entries.length);
+          console.log('🎯 GJ27TG9764 INCOME ENTRIES:', gj27tg9764Entries.filter((e: any) => e.ledger_type === 'vehicle_income').length);
+          console.log('🎯 GJ27TG9764 EXPENSE ENTRIES:', gj27tg9764Entries.filter((e: any) => e.ledger_type === 'vehicle_expense').length);
+          
+          // Debug vehicle entries for DD01Y9406
+          const dd01y9406Entries = data.ledgerEntries.filter((e: any) => e.vehicle_no === 'DD01Y9406');
+          console.log('🚛 DD01Y9406 ALL ENTRIES:', dd01y9406Entries.length);
+          console.log('🚛 DD01Y9406 INCOME ENTRIES:', dd01y9406Entries.filter((e: any) => e.ledger_type === 'vehicle_income').length);
+          console.log('🚛 DD01Y9406 EXPENSE ENTRIES:', dd01y9406Entries.filter((e: any) => e.ledger_type === 'vehicle_expense').length);
+          console.log('🚛 DD01Y9406 MEMO ENTRIES:', dd01y9406Entries.filter((e: any) => e.source_type === 'memo').length);
+          
+          if (dd01y9406Entries.length > 0) {
+            console.log('🚛 DD01Y9406 SAMPLE MEMO ENTRIES:', dd01y9406Entries.filter(e => e.source_type === 'memo').slice(0, 5).map(e => ({
+              type: e.ledger_type,
+              credit: e.credit,
+              debit: e.debit,
+              memo: e.description?.split(' ')[1],
+              date: e.date
+            })));
+          }
         }
       } catch (error) {
         console.error('Failed to refresh ledger data:', error);
@@ -35,30 +53,7 @@ const VehicleLedger: React.FC = () => {
     const interval = setInterval(refreshLedgerData, 10000);
     
     return () => clearInterval(interval);
-  }, [setLedgerEntries]);
-
-  // Refresh ledger data when memos change (for real-time sync)
-  useEffect(() => {
-    const refreshLedgerAfterMemoChange = async () => {
-      try {
-        console.log('🔄 Memo data changed, refreshing vehicle ledger...');
-        console.log('Current memos count:', memos.length);
-        const data = await apiService.getLedgerEntries({ limit: 1000 });
-        if (data && data.ledgerEntries) {
-          const vehicleIncomeEntries = data.ledgerEntries.filter((e: any) => e.ledger_type === 'vehicle_income');
-          console.log('Vehicle income entries:', vehicleIncomeEntries.length);
-          setLedgerEntries(data.ledgerEntries);
-          console.log('✅ Vehicle ledger refreshed after memo change - Total:', data.ledgerEntries.length);
-        }
-      } catch (error) {
-        console.error('Failed to refresh ledger after memo change:', error);
-      }
-    };
-
-    // Debounce the refresh to avoid too many calls
-    const timeoutId = setTimeout(refreshLedgerAfterMemoChange, 500);
-    return () => clearTimeout(timeoutId);
-  }, [memos, setLedgerEntries]);
+  }, [setLedgerEntries, ledgerEntries.length]);
   const [selectedVehicle, setSelectedVehicle] = useState<string>('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -110,23 +105,18 @@ const VehicleLedger: React.FC = () => {
       cashbookExpenseEntries: vehicleLedgerEntries.filter(e => e.source_type === 'cashbook').length,
       allVehicleExpenses: vehicleLedgerEntries.filter(e => e.ledger_type === 'vehicle_expense').map(e => ({
         source: e.source_type,
-        vehicle: e.vehicle_no,
-        debit: e.debit,
-        description: e.description,
-        date: e.date,
-        id: e.id
-      })),
-      dateFilter: { from: dateFrom, to: dateTo },
-      allLedgerEntries: ledgerEntries.map(e => ({
         type: e.ledger_type,
         source: e.source_type,
-        vehicle: e.vehicle_no || e.vehicleNo,
         credit: e.credit,
         debit: e.debit,
-        ref: e.reference_id,
         date: e.date,
-        desc: e.description
+        desc: e.description?.substring(0, 50)
       })),
+      
+      // Check DD01Y9406 memo entries specifically
+      dd01y9406MemoEntries: ledgerEntries.filter(e => 
+        (e.vehicle_no === 'DD01Y9406' || e.vehicleNo === 'DD01Y9406') && e.source_type === 'memo'
+      ).length,
       filteredEntries: vehicleLedgerEntries.map(e => ({
         type: e.ledger_type,
         source: e.source_type,
@@ -148,16 +138,26 @@ const VehicleLedger: React.FC = () => {
         
         // Enhanced description with memo number and trip details
         let enhancedDescription = entry.description || '';
-        const memoNumber = entry.reference_id || entry.referenceId || entry.memoNumber;
         
-        if (memoNumber && memoNumber.startsWith('MO-')) {
-          // Find the memo to get loading slip details
-          const memo = memos.find((m: any) => m.memo_number === memoNumber);
-          if (memo && memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
-            const ls = memo.loading_slip_id as any;
-            enhancedDescription = `${memoNumber} - ${ls.from_location} to ${ls.to_location} (${entry.description})`;
-          } else {
-            enhancedDescription = `${memoNumber} - ${entry.description}`;
+        // Extract memo number from description if it's a memo entry
+        if (entry.source_type === 'memo' && entry.description) {
+          const memoMatch = entry.description.match(/Memo (MO-\d+)/);
+          if (memoMatch) {
+            const memoNumber = memoMatch[1];
+            // Find the memo to get loading slip details
+            const memo = memos.find((m: any) => m.memo_number === memoNumber);
+            if (memo && memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
+              const ls = memo.loading_slip_id as any;
+              enhancedDescription = `${memoNumber} - ${ls.from_location} to ${ls.to_location}`;
+            } else if (memo) {
+              // Try to find loading slip by memo number
+              const loadingSlip = loadingSlips.find((ls: any) => ls.memo_number === memoNumber);
+              if (loadingSlip) {
+                enhancedDescription = `${memoNumber} - ${loadingSlip.from_location} to ${loadingSlip.to_location}`;
+              } else {
+                enhancedDescription = `${memoNumber} - Vehicle Income`;
+              }
+            }
           }
         }
         
@@ -302,12 +302,9 @@ const VehicleLedger: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center space-x-3 mb-6">
-        <Truck className="w-6 h-6 text-blue-600" />
-        <h2 className="text-2xl font-bold text-gray-900">Vehicle Ledger</h2>
-      </div>
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Vehicle Ledger</h1>
         <div className="flex items-center space-x-2">

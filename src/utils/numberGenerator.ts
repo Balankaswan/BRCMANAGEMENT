@@ -23,12 +23,44 @@ export const generateBillNumber = (): string => {
 };
 
 export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-IN', {
+  // Debug the input and output
+  console.log(`💰 formatCurrency input: ${amount}, type: ${typeof amount}`);
+  
+  // Check for string inputs that might cause issues
+  if (typeof amount === 'string') {
+    console.warn(`⚠️ String passed to formatCurrency: "${amount}"`);
+    // Try to parse the string
+    const parsed = parseFloat(amount);
+    if (isNaN(parsed)) {
+      console.error(`❌ Cannot parse string to number: "${amount}"`);
+      return '₹0';
+    }
+    amount = parsed;
+  }
+  
+  // Ensure amount is a valid number
+  const numAmount = Number(amount);
+  if (isNaN(numAmount)) {
+    console.warn(`⚠️ Invalid amount passed to formatCurrency: ${amount}`);
+    return '₹0';
+  }
+  
+  const formatted = new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(numAmount);
+  
+  console.log(`💰 formatCurrency output: ${formatted}`);
+  
+  // Check if the output has unexpected prefixes
+  if (formatted.includes('1₹') || formatted.startsWith('1₹')) {
+    console.error(`🚨 FOUND "1" PREFIX ISSUE! Input: ${amount}, Output: ${formatted}`);
+    console.error(`🔍 Stack trace:`, new Error().stack);
+  }
+  
+  return formatted;
 };
 
 export const formatNumber = (num: number): string => {

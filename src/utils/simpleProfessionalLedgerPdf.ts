@@ -73,6 +73,9 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     let currentY = 60;
     let currentPage = 1;
     
+    // Debug page dimensions
+    console.log(`📄 PDF Page dimensions: ${pageWidth} x ${pageHeight}`);
+    
     // Add header
     const addHeader = () => {
       // Company Name - Bold & Uppercase
@@ -122,6 +125,7 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     
     // Table Headers
     const drawTableHeader = () => {
+      console.log(`📋 Drawing table header at currentY: ${currentY}`);
       doc.setFillColor(50, 50, 50);
       doc.rect(10, currentY, pageWidth - 20, 10, 'F');
       
@@ -140,6 +144,7 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
       doc.text('Remarks', 245, currentY + 7);
       
       currentY += 12;
+      console.log(`📋 Table header drawn, currentY updated to: ${currentY}`);
     };
     
     drawTableHeader();
@@ -151,12 +156,20 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     
     options.entries.forEach((entry, index) => {
       // Check if we need a new page (more conservative spacing)
-      if (currentY > pageHeight - 50) {
+      // Account for row height (8) + margin (50) = need at least 58mm from bottom
+      if (currentY > pageHeight - 58) {
+        console.log(`📄 Adding new page at entry ${index}, currentY: ${currentY}, pageHeight: ${pageHeight}`);
         doc.addPage();
         currentPage++;
-        currentY = 60;
+        currentY = 60; // Reset Y position for new page
         addHeader();
         drawTableHeader();
+        console.log(`📄 New page ${currentPage} created, currentY reset to: ${currentY}`);
+        
+        // Reset text styles after page break
+        doc.setTextColor(0, 0, 0);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9);
       }
       
       // Alternating row colors
@@ -196,15 +209,29 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
       doc.text(displayRemarks, 245, currentY + 3);
       
       currentY += 8;
+      
+      // Debug every 10 entries
+      if ((index + 1) % 10 === 0) {
+        console.log(`📊 Processed ${index + 1} entries, currentY: ${currentY}, page: ${currentPage}`);
+      }
     });
     
-    // Totals Row
-    if (currentY > pageHeight - 40) {
+    console.log(`📊 Finished processing ${options.entries.length} entries, final currentY: ${currentY}, final page: ${currentPage}`);
+    
+    // Totals Row - ensure enough space for totals and signatures
+    if (currentY > pageHeight - 80) {
+      console.log(`📄 Adding new page for totals, currentY: ${currentY}, pageHeight: ${pageHeight}`);
       doc.addPage();
       currentPage++;
       currentY = 60;
       addHeader();
       drawTableHeader();
+      console.log(`📄 Totals page ${currentPage} created, currentY reset to: ${currentY}`);
+      
+      // Reset text styles after page break
+      doc.setTextColor(0, 0, 0);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
     }
     
     doc.setFillColor(240, 240, 240);

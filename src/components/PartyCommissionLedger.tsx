@@ -272,47 +272,59 @@ const PartyCommissionLedger: React.FC<PartyCommissionLedgerProps> = ({ onNavigat
     }
 
     try {
-      console.log('🔄 Starting Party Commission PDF export...');
+      console.log('🔄 Starting Professional Party Commission PDF export...');
       
-      // Try simple jsPDF first
-      console.log('Testing jsPDF import...');
-      const jsPDF = (await import('jspdf')).default;
-      console.log('jsPDF imported successfully');
+      const { generatePartyCommissionPDF, testPartyCommissionPDFLibraries } = await import('../utils/partyCommissionPdf');
       
-      // Create a simple PDF as fallback
-      const doc = new jsPDF();
-      doc.setFontSize(20);
-      doc.text('BHAVISHYA ROAD CARRIERS', 105, 20, { align: 'center' });
-      doc.setFontSize(16);
-      doc.text('Party Commission Ledger', 105, 40, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text(`Generated on: ${new Date().toLocaleDateString('en-IN')}`, 20, 60);
-      doc.text(`Total Entries: ${filteredEntries.length}`, 20, 70);
-      doc.text(`Total Commission Payments: ₹${formatCurrency(summary.totalDebits)}`, 20, 80);
-      
-      if (selectedParty) {
-        doc.text(`Party: ${selectedParty.name}`, 20, 90);
+      // Test libraries first
+      console.log('🧪 Testing libraries before PDF generation...');
+      const librariesWork = testPartyCommissionPDFLibraries();
+      if (!librariesWork) {
+        throw new Error('Required libraries (jsPDF) are not working properly');
       }
       
-      // Add some entries
-      let yPos = 110;
-      doc.text('Recent Commission Payments:', 20, yPos);
-      yPos += 10;
+      const partyName = selectedParty ? selectedParty.name : 'All Parties';
       
-      filteredEntries.slice(0, 15).forEach((entry, index) => {
-        if (yPos > 280) return; // Avoid page overflow
-        doc.text(`${index + 1}. ${entry.date} - ${entry.reference_name} - ₹${formatCurrency(entry.debit)}`, 20, yPos);
-        yPos += 6;
+      // Sort entries by date (oldest first, latest last) for proper chronological order
+      const sortedEntries = [...filteredEntries].sort((a, b) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateA - dateB; // Ascending order (oldest to newest)
       });
       
-      const partyName = selectedParty ? selectedParty.name.replace(/[^a-zA-Z0-9]/g, '_') : 'All_Parties';
-      const filename = `party-commission-ledger-${partyName}-${new Date().toISOString().split('T')[0]}.pdf`;
+      console.log(`📅 Sorted ${sortedEntries.length} entries chronologically for PDF`);
+      
+      const doc = generatePartyCommissionPDF({
+        partyName: partyName,
+        entries: sortedEntries, // Use sorted entries instead of filteredEntries
+        summary: summary,
+        dateRange: {
+          from: filters.dateFrom,
+          to: filters.dateTo
+        }
+      });
+      
+      const filename = `party-commission-ledger-${partyName.replace(/[^a-zA-Z0-9]/g, '_')}-${new Date().toISOString().split('T')[0]}.pdf`;
       doc.save(filename);
       
-      console.log('✅ Party Commission PDF generated successfully');
-    } catch (error) {
+      console.log('✅ Professional Party Commission PDF generated successfully');
+    } catch (error: any) {
       console.error('❌ Failed to generate Party Commission PDF:', error);
-      alert('Failed to generate PDF. Please check the console for details.');
+      console.error('❌ Error details:', {
+        message: error?.message || 'Unknown error',
+        stack: error?.stack || 'No stack trace',
+        name: error?.name || 'Unknown error type',
+        filteredEntriesLength: filteredEntries.length,
+        summaryExists: !!summary,
+        selectedPartyExists: !!selectedParty
+      });
+      
+      // More specific error message
+      const errorMessage = error?.message 
+        ? `Failed to generate PDF: ${error.message}` 
+        : 'Failed to generate PDF. Please check the console for details and try again.';
+      
+      alert(errorMessage);
     }
   };
 
