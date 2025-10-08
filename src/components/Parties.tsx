@@ -8,7 +8,7 @@ interface PartiesProps {
 }
 
 const Parties: React.FC<PartiesProps> = ({ onNavigate }) => {
-  const { parties, bills, bankingEntries } = useDataStore();
+  const { parties, bills, bankingEntries, cashbookEntries } = useDataStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredParties, setFilteredParties] = useState(parties);
 
@@ -37,9 +37,17 @@ const Parties: React.FC<PartiesProps> = ({ onNavigate }) => {
     let activeTripCount = 0;
 
     partyBills.forEach(bill => {
-      const billPayments = bankingEntries
+      // Calculate bill-specific payments from banking entries
+      const billBankingPayments = bankingEntries
         .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
         .reduce((total, entry) => total + entry.amount, 0);
+      
+      // Calculate bill-specific payments from cashbook entries
+      const billCashbookPayments = cashbookEntries
+        .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
+        .reduce((total, entry) => total + entry.amount, 0);
+      
+      const billPayments = billBankingPayments + billCashbookPayments;
       
       const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
       const pendingAmount = partyOwes - billPayments;
@@ -50,7 +58,38 @@ const Parties: React.FC<PartiesProps> = ({ onNavigate }) => {
       }
     });
 
-    return { totalBalance, activeTripCount };
+    // Subtract party on account payments from total balance
+    const partyOnAccountBankingPayments = bankingEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account' && entry.reference_name === partyName)
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const partyOnAccountCashbookPayments = cashbookEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account' && entry.reference_name === partyName)
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    // Subtract party debit notes from total balance
+    const partyDebitNoteBankingPayments = bankingEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_debit_note' && entry.reference_name === partyName)
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const totalOnAccountPayments = partyOnAccountBankingPayments + partyOnAccountCashbookPayments;
+    const totalDebitNotes = partyDebitNoteBankingPayments;
+    const finalBalance = Math.max(0, totalBalance - totalOnAccountPayments - totalDebitNotes);
+
+    // Debug logging for SHIVAM INFRA and BRC INFRA specifically
+    if (partyName === 'SHIVAM INFRA' || partyName === 'BRC INFRA') {
+      console.log(`🏢 ${partyName} Balance Calculation:`, {
+        billBalance: totalBalance,
+        onAccountPayments: totalOnAccountPayments,
+        onAccountBanking: partyOnAccountBankingPayments,
+        onAccountCashbook: partyOnAccountCashbookPayments,
+        debitNotes: totalDebitNotes,
+        finalBalance: finalBalance,
+        activeTripCount: activeTripCount
+      });
+    }
+
+    return { totalBalance: finalBalance, activeTripCount };
   };
 
   const handlePartyClick = (party: any) => {

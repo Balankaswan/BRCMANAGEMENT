@@ -1,6 +1,5 @@
 import jsPDF from 'jspdf';
 import * as XLSX from 'xlsx';
-import { formatCurrency } from './numberGenerator';
 
 // Test function to verify libraries are working
 export const testLibraries = () => {
@@ -13,9 +12,9 @@ export const testLibraries = () => {
     const testWB = XLSX.utils.book_new();
     console.log('✅ XLSX working:', typeof testWB);
     
-    console.log('🧪 Testing formatCurrency...');
-    const testCurrency = formatCurrency(12345);
-    console.log('✅ formatCurrency working:', testCurrency);
+    console.log('🧪 Testing number formatting...');
+    const testCurrency = `₹${(12345).toLocaleString('en-IN')}`;
+    console.log('✅ Number formatting working:', testCurrency);
     
     return true;
   } catch (error) {
@@ -48,24 +47,25 @@ interface LedgerOptions {
   name: string;
   entries: LedgerEntry[];
   totals: LedgerTotals;
+  currentBalance: number;
   dateRange?: {
     from?: string;
     to?: string;
   };
-  currentBalance: number;
   logoBase64?: string;
 }
 
 export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
   try {
-    console.log('🔄 Starting PDF generation...');
+    console.log('Starting PDF generation with FIXED FORMATTING...');
+    console.log('VERSION: 2025-10-08 13:18 - COLUMN ALIGNMENT FIXED');
     console.log('Options received:', { 
       type: options.type, 
       name: options.name, 
       entriesCount: options.entries.length,
-      totals: options.totals 
+      totals: options.totals,
+      currentBalance: options.currentBalance
     });
-    
     // Create a new PDF document
     const doc = new jsPDF('l', 'mm', 'a4'); // Landscape for better table fit
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -98,7 +98,7 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
       // Balance
       doc.setFontSize(14);
       doc.setTextColor(options.currentBalance >= 0 ? 0 : 255, options.currentBalance >= 0 ? 100 : 0, 0);
-      doc.text(`Balance: ${formatCurrency(Math.abs(options.currentBalance))}`, pageWidth - 20, 45, { align: 'right' });
+      doc.text(`Balance: ${Math.abs(options.currentBalance).toLocaleString('en-IN')}`, pageWidth - 20, 45, { align: 'right' });
       
       // Ledger Period
       doc.setTextColor(0, 0, 0);
@@ -182,33 +182,62 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
       doc.text(new Date(entry.date).toLocaleDateString('en-IN'), 15, currentY + 3);
       doc.text((entry.billNo || entry.memoNo || '-').substring(0, 15), 40, currentY + 3);
       
-      // Trip details - smaller font but longer to show vehicle numbers
+      // Trip details - smaller font with 2-line support for complete information
       doc.setFontSize(8);
       const tripDetails = (entry.tripDetails || '-');
-      const maxTripLength = 40; // Increased to show full vehicle numbers
-      const displayTrip = tripDetails.length > maxTripLength ? 
-        tripDetails.substring(0, maxTripLength - 3) + '...' : 
-        tripDetails;
-      doc.text(displayTrip, 70, currentY + 3);
+      const maxTripLineLength = 35; // Characters per line
+      
+      if (tripDetails.length > maxTripLineLength) {
+        // Split into two lines
+        const line1 = tripDetails.substring(0, maxTripLineLength);
+        const line2 = tripDetails.substring(maxTripLineLength, maxTripLineLength * 2);
+        doc.text(line1, 70, currentY + 2);
+        doc.text(line2, 70, currentY + 6);
+      } else {
+        doc.text(tripDetails, 70, currentY + 3);
+      }
       
       // Reset font size for financial columns
       doc.setFontSize(9);
       
-      // Financial columns with proper currency formatting
-      doc.text(entry.credit > 0 ? formatCurrency(entry.credit) : '-', 145, currentY + 3, { align: 'right' });
-      doc.text(entry.debitPayment > 0 ? formatCurrency(entry.debitPayment) : '-', 175, currentY + 3, { align: 'right' });
-      doc.text(entry.debitAdvance > 0 ? formatCurrency(entry.debitAdvance) : '-', 205, currentY + 3, { align: 'right' });
-      doc.text(formatCurrency(Math.abs(entry.runningBalance)), 235, currentY + 3, { align: 'right' });
+      // Financial columns WITHOUT currency symbols - just numbers
+      const creditText = entry.credit > 0 ? entry.credit.toLocaleString('en-IN') : '-';
+      const debitPaymentText = entry.debitPayment > 0 ? entry.debitPayment.toLocaleString('en-IN') : '-';
+      const debitAdvanceText = entry.debitAdvance > 0 ? entry.debitAdvance.toLocaleString('en-IN') : '-';
+      const balanceText = Math.abs(entry.runningBalance).toLocaleString('en-IN');
       
-      // Remarks - with more space from balance column
+      // Debug first few entries
+      if (index < 3) {
+        console.log(`🔍 Entry ${index + 1} formatting:`, {
+          credit: entry.credit,
+          creditText,
+          debitPayment: entry.debitPayment,
+          debitPaymentText,
+          runningBalance: entry.runningBalance,
+          balanceText
+        });
+      }
+      
+      doc.text(creditText, 145, currentY + 3, { align: 'right' });
+      doc.text(debitPaymentText, 175, currentY + 3, { align: 'right' });
+      doc.text(debitAdvanceText, 205, currentY + 3, { align: 'right' });
+      doc.text(balanceText, 235, currentY + 3, { align: 'right' });
+      
+      // Remarks with 2-line support for complete information
       const remarks = (entry.remarks || '-');
-      const maxRemarksLength = 20; // Reduced to fit better
-      const displayRemarks = remarks.length > maxRemarksLength ? 
-        remarks.substring(0, maxRemarksLength - 3) + '...' : 
-        remarks;
-      doc.text(displayRemarks, 245, currentY + 3);
+      const maxRemarksLineLength = 20; // Characters per line
       
-      currentY += 8;
+      if (remarks.length > maxRemarksLineLength) {
+        // Split into two lines
+        const remarkLine1 = remarks.substring(0, maxRemarksLineLength);
+        const remarkLine2 = remarks.substring(maxRemarksLineLength, maxRemarksLineLength * 2);
+        doc.text(remarkLine1, 245, currentY + 2);
+        doc.text(remarkLine2, 245, currentY + 6);
+      } else {
+        doc.text(remarks, 245, currentY + 3);
+      }
+      
+      currentY += 12; // Increased spacing for 2-line support
       
       // Debug every 10 entries
       if ((index + 1) % 10 === 0) {
@@ -240,10 +269,10 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.text('TOTALS', 15, currentY + 4);
-    doc.text(formatCurrency(options.totals.credit), 145, currentY + 4, { align: 'right' });
-    doc.text(formatCurrency(options.totals.debitPayment), 175, currentY + 4, { align: 'right' });
-    doc.text(formatCurrency(options.totals.debitAdvance), 205, currentY + 4, { align: 'right' });
-    doc.text(formatCurrency(Math.abs(options.currentBalance)), 235, currentY + 4, { align: 'right' });
+    doc.text(options.totals.credit.toLocaleString('en-IN'), 145, currentY + 4, { align: 'right' });
+    doc.text(options.totals.debitPayment.toLocaleString('en-IN'), 175, currentY + 4, { align: 'right' });
+    doc.text(options.totals.debitAdvance.toLocaleString('en-IN'), 205, currentY + 4, { align: 'right' });
+    doc.text(Math.abs(options.currentBalance).toLocaleString('en-IN'), 235, currentY + 4, { align: 'right' });
     
     currentY += 15;
     
@@ -302,7 +331,7 @@ export const exportLedgerToExcel = async (options: LedgerOptions) => {
       ['BHAVISHYA ROAD CARRIERS'],
       [`${options.type} LEDGER`],
       [`${options.type === 'PARTY' ? 'Party' : 'Supplier'}: ${options.name}`],
-      [`Balance: ${formatCurrency(Math.abs(options.currentBalance))}`],
+      [`Balance: ${Math.abs(options.currentBalance).toLocaleString('en-IN')}`],
       [],
       ['Date', options.type === 'PARTY' ? 'Bill No' : 'Memo No', 'Trip Details', 'Credit', 'Debit-Payment', 'Debit-Advance', 'Balance', 'Remarks']
     ];
@@ -313,10 +342,10 @@ export const exportLedgerToExcel = async (options: LedgerOptions) => {
         new Date(entry.date).toLocaleDateString('en-IN'),
         entry.billNo || entry.memoNo || '-',
         entry.tripDetails || '-',
-        entry.credit ? formatCurrency(entry.credit) : '-',
-        entry.debitPayment ? formatCurrency(entry.debitPayment) : '-',
-        entry.debitAdvance ? formatCurrency(entry.debitAdvance) : '-',
-        formatCurrency(Math.abs(entry.runningBalance)),
+        entry.credit ? entry.credit.toLocaleString('en-IN') : '-',
+        entry.debitPayment ? entry.debitPayment.toLocaleString('en-IN') : '-',
+        entry.debitAdvance ? entry.debitAdvance.toLocaleString('en-IN') : '-',
+        Math.abs(entry.runningBalance).toLocaleString('en-IN'),
         entry.remarks || '-'
       ]);
     });
@@ -326,10 +355,10 @@ export const exportLedgerToExcel = async (options: LedgerOptions) => {
       'TOTALS',
       '',
       '',
-      formatCurrency(options.totals.credit),
-      formatCurrency(options.totals.debitPayment),
-      formatCurrency(options.totals.debitAdvance),
-      formatCurrency(Math.abs(options.currentBalance)),
+      options.totals.credit.toLocaleString('en-IN'),
+      options.totals.debitPayment.toLocaleString('en-IN'),
+      options.totals.debitAdvance.toLocaleString('en-IN'),
+      Math.abs(options.currentBalance).toLocaleString('en-IN'),
       ''
     ]);
     

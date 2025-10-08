@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Filter, Download, FileText, Table, FileDown, ExternalLink, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Filter, Download, FileText, Table, FileDown, ExternalLink, ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
+import { apiService } from '../lib/api';
 import type { Memo } from '../types';
 
 interface PartyLedgerEntry {
@@ -22,12 +23,18 @@ interface PartyLedgerProps {
 }
 
 const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) => {
-  const { bills, bankingEntries, loadingSlips } = useDataStore();
+  const { bills, bankingEntries, loadingSlips, addBankingEntry } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [partyFilter, setPartyFilter] = useState(selectedParty || '');
   const [viewMemo, setViewMemo] = useState<Memo | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [showDebitNoteModal, setShowDebitNoteModal] = useState(false);
+  const [debitNoteForm, setDebitNoteForm] = useState({
+    amount: 0,
+    narration: '',
+    date: new Date().toISOString().split('T')[0]
+  });
   const entriesPerPage = 50;
 
   // Reset to first page when party changes
@@ -67,7 +74,7 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
       .filter(bill => bill.party === partyFilter)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    // Get all banking entries for the party (bills and on account)
+    // Get all banking entries for the party (bills, on account, and debit notes)
     const partyBankingEntries = bankingEntries
       .filter(entry => {
         // Include bill payments and advances linked to party bills
@@ -79,13 +86,17 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
         if (entry.category === 'party_on_account' && entry.reference_name === partyFilter) {
           return true;
         }
+        // Include party debit notes
+        if (entry.category === 'party_debit_note' && entry.reference_name === partyFilter) {
+          return true;
+        }
         return false;
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     // Combine and sort all entries by date
     const allEntries: Array<{
-      type: 'bill' | 'payment' | 'advance' | 'on_account';
+      type: 'bill' | 'payment' | 'advance' | 'on_account' | 'debit_note';
       date: string;
       data: any;
     }> = [];
@@ -102,11 +113,13 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
 
     // Add banking entries
     partyBankingEntries.forEach(entry => {
-      let entryType: 'payment' | 'advance' | 'on_account' = 'payment';
+      let entryType: 'payment' | 'advance' | 'on_account' | 'debit_note' = 'payment';
       if (entry.category === 'bill_advance') {
         entryType = 'advance';
       } else if (entry.category === 'party_on_account') {
         entryType = 'on_account';
+      } else if (entry.category === 'party_debit_note') {
+        entryType = 'debit_note';
       }
       
       allEntries.push({
@@ -157,6 +170,10 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
         debitPayment = entry.data.amount;
         runningBalance -= debitPayment;
         remarks = 'On Account Payment Received';
+      } else if (entry.type === 'debit_note') {
+        debitPayment = entry.data.amount;
+        runningBalance -= debitPayment;
+        remarks = `Debit Note - ${entry.data.narration || 'Adjustment'}`;
       }
 
       entries.push({
@@ -206,6 +223,18 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
   }, [filteredEntries]);
 
   const finalBalance = filteredEntries.length > 0 ? filteredEntries[filteredEntries.length - 1].runningBalance : 0;
+
+  // Debug logging for BRC INFRA specifically
+  React.useEffect(() => {
+    if (partyFilter === 'BRC INFRA' && filteredEntries.length > 0) {
+      console.log(`🔍 PartyLedger Debug for ${partyFilter}:`, {
+        totalEntries: filteredEntries.length,
+        finalBalance: finalBalance,
+        totals: totals,
+        lastEntry: filteredEntries[filteredEntries.length - 1]
+      });
+    }
+  }, [partyFilter, filteredEntries, finalBalance, totals]);
 
   const exportToCSV = () => {
     if (!filteredEntries.length) return;
@@ -318,6 +347,58 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
     }
   };
 
+  const handleCreateDebitNote = async () => {
+    if (!partyFilter) {
+      alert('Please select a party first');
+      return;
+    }
+
+    if (!debitNoteForm.amount || debitNoteForm.amount <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    if (!debitNoteForm.narration.trim()) {
+      alert('Please enter a narration for the debit note');
+      return;
+    }
+
+    try {
+      const debitNoteEntry = {
+        type: 'credit' as const,
+        category: 'party_debit_note' as const,
+        amount: debitNoteForm.amount,
+        date: debitNoteForm.date,
+        reference_name: partyFilter,
+        narration: debitNoteForm.narration
+      };
+
+      console.log('🔄 Creating party debit note via API:', debitNoteEntry);
+      const response = await apiService.createBankingEntry(debitNoteEntry);
+      console.log('✅ Party debit note created in backend:', response.bankingEntry);
+      
+      // Add the entry to store with backend ID
+      const backendEntry = {
+        ...response.bankingEntry,
+        id: response.bankingEntry._id || response.bankingEntry.id
+      };
+      addBankingEntry(backendEntry);
+      
+      // Reset form and close modal
+      setDebitNoteForm({
+        amount: 0,
+        narration: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+      setShowDebitNoteModal(false);
+      
+      alert(`Debit note of ₹${debitNoteForm.amount.toLocaleString('en-IN')} created successfully for ${partyFilter}`);
+    } catch (error) {
+      console.error('Failed to create debit note:', error);
+      alert('Failed to create debit note. Please try again.');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -329,6 +410,16 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
             <p className="text-gray-600">Track customer bills, payments, and advances</p>
           </div>
         </div>
+        
+        {partyFilter && (
+          <button
+            onClick={() => setShowDebitNoteModal(true)}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Debit Note</span>
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -599,6 +690,74 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
         </div>
       )}
 
+
+      {/* Debit Note Modal */}
+      {showDebitNoteModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Create Debit Note for {partyFilter}</h3>
+              <button onClick={() => setShowDebitNoteModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  value={debitNoteForm.amount || ''}
+                  onChange={(e) => setDebitNoteForm(prev => ({ ...prev, amount: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="Enter amount"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={debitNoteForm.date}
+                  onChange={(e) => setDebitNoteForm(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Narration
+                </label>
+                <textarea
+                  value={debitNoteForm.narration}
+                  onChange={(e) => setDebitNoteForm(prev => ({ ...prev, narration: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="Enter reason for debit note (e.g., Penalty, Damage charges, etc.)"
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={handleCreateDebitNote}
+                  className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Create Debit Note
+                </button>
+                <button
+                  onClick={() => setShowDebitNoteModal(false)}
+                  className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Memo Detail Modal */}
       {viewMemo && (

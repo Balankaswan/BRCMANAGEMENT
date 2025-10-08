@@ -13,13 +13,14 @@ interface MemoListProps {
 }
 
 const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, highlightMemo }) => {
-  const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, cashbookEntries, addBankingEntry, markMemoAsPaid, setLedgerEntries, loadingSlips, vehicles } = useDataStore();
+  const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, cashbookEntries, markMemoAsPaid, setLedgerEntries, loadingSlips, vehicles } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingMemo, setEditingMemo] = useState<Memo | null>(null);
   const [viewMemo, setViewMemo] = useState<Memo | null>(null);
   const [showPaidModal, setShowPaidModal] = useState<Memo | null>(null);
   const [paidDate, setPaidDate] = useState('');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'pending' | 'paid'>('pending');
 
   const handleCreateMemo = async (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -169,23 +170,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   const confirmMarkAsPaid = async () => {
     if (showPaidModal && paidDate) {
       try {
-        // Add banking entry for full payment
-        const bankingEntry = {
-          id: Date.now().toString(),
-          type: 'debit' as const,
-          date: paidDate,
-          category: 'memo_payment' as const,
-          narration: `Full payment for Memo ${showPaidModal.memo_number}`,
-          amount: showPaidModal.net_amount,
-          reference_id: showPaidModal.memo_number,
-          reference_name: showPaidModal.supplier,
-          created_at: new Date().toISOString()
-        };
-        
-        await apiService.createBankingEntry(bankingEntry);
-        addBankingEntry(bankingEntry);
-        
-        // Update memo status to paid
+        // Only update memo status to paid - no banking entry creation
         const updatedMemoData = {
           ...showPaidModal,
           status: 'paid',
@@ -196,21 +181,10 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         await apiService.updateMemo(showPaidModal.id, updatedMemoData);
         markMemoAsPaid(showPaidModal.id, paidDate, showPaidModal.net_amount);
         
-        console.log('Memo marked as paid successfully');
+        console.log('✅ Memo marked as paid successfully (no banking entry created)');
       } catch (error) {
         console.error('Failed to mark memo as paid:', error);
-        // Fallback to local update
-        addBankingEntry({
-          id: Date.now().toString(),
-          type: 'debit' as const,
-          date: paidDate,
-          category: 'memo_payment' as const,
-          narration: `Full payment for Memo ${showPaidModal.memo_number}`,
-          amount: showPaidModal.net_amount,
-          reference_id: showPaidModal.memo_number,
-          reference_name: showPaidModal.supplier,
-          created_at: new Date().toISOString()
-        });
+        // Fallback to local update only
         markMemoAsPaid(showPaidModal.id, paidDate, showPaidModal.net_amount);
       }
       setShowPaidModal(null);
@@ -218,9 +192,11 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
     }
   };
 
+
   const filteredMemos = useMemo(() => {
-    // Main list shows only pending; Paid Memo view shows only paid
-    let base = showOnlyFullyPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
+    // Use local viewMode state instead of prop for better control
+    const showPaid = showOnlyFullyPaid || viewMode === 'paid';
+    let base = showPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
     
     // Sort memos by document number (numeric part) in descending order, then by date
     base = [...base].sort((a, b) => {
@@ -248,8 +224,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         const paid = bankingEntries
           .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === m.memo_number)
           .reduce((sum, e) => sum + e.amount, 0);
-        // Balance = freight - advance - commission - mamul + detention + extra
-        const calculatedBalance = m.freight - paid - (m.commission || 0) - (m.mamool || 0) + (m.detention || 0) + (m.extra || 0);
+        // Balance = freight - advance - commission - mamul + detention + extra + rto
+        const calculatedBalance = m.freight - paid - (m.commission || 0) - (m.mamool || 0) + (m.detention || 0) + (m.extra || 0) + (m.rto || 0);
         return calculatedBalance <= 0;
       });
     }
@@ -271,12 +247,38 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [memos, bankingEntries, showOnlyFullyPaid, search, loadingSlips]);
+  }, [memos, bankingEntries, showOnlyFullyPaid, viewMode, search, loadingSlips]);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Memo</h1>
+        <div className="flex items-center space-x-4">
+          <h1 className="text-2xl font-bold text-gray-900">Memo</h1>
+          {!showOnlyFullyPaid && (
+            <div className="flex bg-gray-100 rounded-lg p-1">
+              <button
+                onClick={() => setViewMode('pending')}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'pending'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Pending ({memos.filter(m => m.status !== 'paid').length})
+              </button>
+              <button
+                onClick={() => setViewMode('paid')}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                  viewMode === 'paid'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                Paid ({memos.filter(m => m.status === 'paid').length})
+              </button>
+            </div>
+          )}
+        </div>
         <button
           onClick={handleShowForm}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
@@ -312,10 +314,10 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       {/* Header Section */}
       <div className="bg-blue-600 rounded-xl shadow-sm p-6 text-white">
         <h2 className="text-xl font-bold mb-2">
-          {showOnlyFullyPaid ? 'Paid Memos' : 'Broker Memos'}
+          {showOnlyFullyPaid || viewMode === 'paid' ? 'Paid Memos' : 'Broker Memos'}
         </h2>
         <p className="text-blue-100">
-          {showOnlyFullyPaid ? 'Manage settled supplier memos' : 'Manage supplier transportation memos'}
+          {showOnlyFullyPaid || viewMode === 'paid' ? 'Manage settled supplier memos' : 'Manage supplier transportation memos'}
         </p>
         <div className="mt-4 text-sm text-blue-100">
           {filteredMemos.length} of {filteredMemos.length} memos
@@ -339,8 +341,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
             const paid = bankingEntries
               .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
               .reduce((sum, e) => sum + e.amount, 0);
-            // Balance = freight - advance - commission - mamul + detention + extra
-            const calculatedBalance = memo.freight - paid - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
+            // Balance = freight - advance - commission - mamul + detention + extra + rto
+            const calculatedBalance = memo.freight - paid - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0) + (memo.rto || 0);
             const isFullyPaid = calculatedBalance <= 0;
             const balance = Math.max(0, calculatedBalance);
             const isHighlighted = highlightMemo === memo.memo_number;
@@ -371,7 +373,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                           Due
                         </span>
                       )}
-                      {showOnlyFullyPaid && memo.paid_date && (
+                      {(showOnlyFullyPaid || viewMode === 'paid') && memo.paid_date && (
                         <div className="text-xs text-green-600 mt-1">
                           Paid: {new Date(memo.paid_date).toLocaleDateString('en-IN')}
                         </div>
@@ -400,7 +402,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4 text-sm">
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4 text-sm">
                     <div>
                       <span className="text-gray-500">Commission:</span>
                       <span className="ml-1 font-medium">{formatCurrency(memo.commission || 0)}</span>
@@ -416,6 +418,10 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                     <div>
                       <span className="text-gray-500">Extra:</span>
                       <span className="ml-1 font-medium">{formatCurrency(memo.extra || 0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">RTO:</span>
+                      <span className="ml-1 font-medium">{formatCurrency(memo.rto || 0)}</span>
                     </div>
                   </div>
                   
@@ -452,7 +458,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                       >
                         <Download className="w-4 h-4" />
                       </button>
-                      {!showOnlyFullyPaid && !isFullyPaid && (
+                      {!showOnlyFullyPaid && viewMode !== 'paid' && !isFullyPaid && (
                         <button
                           onClick={() => handleMarkAsPaid(memo)}
                           className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"

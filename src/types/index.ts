@@ -92,7 +92,7 @@ export interface BankingEntry {
   id: string;
   _id?: string; // MongoDB ObjectId
   type: 'credit' | 'debit';
-  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_payment' | 'supplier_payment' | 'party_commission' | 'party_on_account' | 'other';
+  category: 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'fuel_wallet_credit' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_payment' | 'supplier_payment' | 'party_commission' | 'party_on_account' | 'supplier_on_account' | 'party_debit_note' | 'supplier_debit_note' | 'other';
   amount: number;
   date: string;
   reference_id?: string; // bill_number or memo_number

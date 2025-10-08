@@ -12,7 +12,7 @@ interface BankingFormProps {
 }
 
 const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEntry }) => {
-  const { memos, bills, ledgerEntries, parties, vehicles, loadingSlips, suppliers } = useDataStore();
+  const { memos, bills, ledgerEntries, parties, vehicles, loadingSlips, suppliers, bankingEntries, cashbookEntries } = useDataStore();
   const [formData, setFormData] = useState({
     type: editingEntry?.type || 'credit' as 'credit' | 'debit',
     category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'party_on_account' | 'supplier_on_account' | 'other',
@@ -47,6 +47,39 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
   }, [ledgerEntries, parties]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Function to calculate actual bill balance
+  const calculateBillBalance = (bill: any) => {
+    // Calculate what party owes: Bill Amount + Detention + Extra + RTO - Mamool - TDS - Penalties
+    const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+    
+    // Find all payments for this bill from banking entries
+    const bankingPayments = bankingEntries
+      .filter(entry => {
+        const matchesReference = entry.reference_id === bill.bill_number;
+        const isCredit = entry.type === 'credit';
+        return matchesReference && isCredit;
+      })
+      .reduce((total, entry) => total + entry.amount, 0);
+    
+    // Find all payments for this bill from cashbook entries
+    const cashbookPayments = cashbookEntries
+      .filter(entry => {
+        const matchesReference = entry.reference_id === bill.bill_number;
+        const isCredit = entry.type === 'credit';
+        return matchesReference && isCredit;
+      })
+      .reduce((total, entry) => total + entry.amount, 0);
+    
+    const totalPayments = bankingPayments + cashbookPayments;
+    const pendingBalance = Math.max(0, partyOwes - totalPayments);
+    
+    return {
+      partyOwes,
+      totalPayments,
+      pendingBalance
+    };
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -404,22 +437,32 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                       <option key="select-bill" value="">Select Bill</option>
                       {bills
                         .filter(bill => bill.party === formData.reference_name)
+                        .filter(bill => {
+                          // Only show bills with pending balance > 0
+                          const { pendingBalance } = calculateBillBalance(bill);
+                          return pendingBalance > 0;
+                        })
                         .map((bill, index) => {
-                          // Calculate balance without party commission for banking transactions
-                          const balanceAmount = bill.bill_amount - (bill.party_commission_cut || 0);
+                          // Calculate actual pending balance
+                          const { pendingBalance } = calculateBillBalance(bill);
                           
                           return (
                             <option 
                               key={bill.id || bill.bill_number || `bill-${index}-${bill.bill_number}`} 
                               value={bill.bill_number}
                             >
-                              {bill.bill_number} - {(bill.loading_slip_id as any)?.vehicle_no || 'No Vehicle'} - ₹{balanceAmount.toLocaleString('en-IN')} (Balance)
+                              {bill.bill_number} - {(bill.loading_slip_id as any)?.vehicle_no || 'No Vehicle'} - ₹{pendingBalance.toLocaleString('en-IN')} (Pending)
                             </option>
                           );
                         })}
                     </select>
-                    {bills.filter(bill => bill.party === formData.reference_name).length === 0 && (
-                      <p className="text-sm text-gray-500 mt-1">No bills found for {formData.reference_name}</p>
+                    {bills.filter(bill => bill.party === formData.reference_name && calculateBillBalance(bill).pendingBalance > 0).length === 0 && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        {bills.filter(bill => bill.party === formData.reference_name).length === 0 
+                          ? `No bills found for ${formData.reference_name}`
+                          : `No pending bills for ${formData.reference_name} (all bills are fully paid)`
+                        }
+                      </p>
                     )}
                   </div>
                 </div>

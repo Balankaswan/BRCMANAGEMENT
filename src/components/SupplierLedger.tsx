@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { Truck, Filter, Download, Table, FileDown } from 'lucide-react';
+import { Truck, Filter, Download, Table, FileDown, Plus } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
+import { apiService } from '../lib/api';
 
 interface SupplierLedgerEntry {
   id: string;
@@ -22,10 +23,16 @@ interface SupplierLedgerProps {
 }
 
 const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => {
-  const { memos, bankingEntries, cashbookEntries, loadingSlips } = useDataStore();
+  const { memos, bankingEntries, cashbookEntries, loadingSlips, addBankingEntry } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [supplierFilter, setSupplierFilter] = useState(selectedSupplier || '');
+  const [showDebitNoteModal, setShowDebitNoteModal] = useState(false);
+  const [debitNoteForm, setDebitNoteForm] = useState({
+    amount: 0,
+    narration: '',
+    date: new Date().toISOString().split('T')[0]
+  });
 
   // Get unique suppliers from memos
   const suppliers = useMemo(() => {
@@ -85,6 +92,11 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
           console.log(`✅ Banking entry matched by supplier on account: ${entry.reference_name}`);
           return true;
         }
+        // Include supplier debit notes
+        if ((entry.category as any) === 'supplier_debit_note' && entry.reference_name === supplierFilter) {
+          console.log(`✅ Banking entry matched by supplier debit note: ${entry.reference_name}`);
+          return true;
+        }
         return false;
       });
 
@@ -116,7 +128,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
     // Combine and sort all entries by date
     const allEntries: Array<{
-      type: 'memo' | 'payment' | 'advance' | 'on_account';
+      type: 'memo' | 'payment' | 'advance' | 'on_account' | 'debit_note';
       date: string;
       data: any;
     }> = [];
@@ -133,12 +145,14 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
     // Add payment entries (banking and cashbook)
     allPaymentEntries.forEach(entry => {
-      let entryType: 'payment' | 'advance' | 'on_account' = 'payment';
+      let entryType: 'payment' | 'advance' | 'on_account' | 'debit_note' = 'payment';
       
       if (entry.category === 'memo_advance') {
         entryType = 'advance';
       } else if ((entry.category as any) === 'supplier_on_account') {
         entryType = 'on_account';
+      } else if ((entry.category as any) === 'supplier_debit_note') {
+        entryType = 'debit_note';
       }
       
       allEntries.push({
@@ -170,18 +184,21 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       let remarks = '';
 
       if (entry.type === 'memo') {
-        // Calculate net amount payable to supplier (freight - commission - mamool)
-        // Detention and extra are shown separately, so exclude them from credit
+        // Calculate net amount payable to supplier (freight - commission - mamool + detention + extra + rto)
         const freight = entry.data.freight || 0;
         const commission = entry.data.commission || 0;
         const mamul = entry.data.mamool || 0;
+        const rto = entry.data.rto || 0;
         
-        // Credit = Net amount payable to supplier (freight - commission - mamool)
+        // Credit = Net amount payable to supplier (freight - commission - mamool + detention + extra + rto)
         credit = freight - commission - mamul;
         detention = entry.data.detention || 0;
         extraWeight = entry.data.extra || 0;
         
-        console.log(`📊 Supplier memo calculation - Freight: ${freight}, Commission: ${commission}, Mamool: ${mamul}, Net Credit: ${credit}`);
+        // Add RTO to the credit amount so it shows in the Net Credit column
+        credit += rto;
+        
+        console.log(`📊 Supplier memo calculation - Freight: ${freight}, Commission: ${commission}, Mamool: ${mamul}, RTO: ${rto}, Net Credit: ${credit}`);
         
         // Check if there was an advance for this memo
         const memoAdvances = allPaymentEntries.filter(be => 
@@ -190,7 +207,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         const totalAdvance = memoAdvances.reduce((sum, adv) => sum + adv.amount, 0);
         debitAdvance = totalAdvance;
         
-        // Running balance: Net Credit + Detention + Extra - Advance
+        // Running balance: Net Credit (includes RTO) + Detention + Extra - Advance
         runningBalance += credit + detention + extraWeight - debitAdvance;
         remarks = totalAdvance > 0 ? 'Memo Created (Advance Paid)' : 'Memo Created';
       } else if (entry.type === 'payment') {
@@ -208,6 +225,12 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         // Deduct on account payment from running balance
         runningBalance -= debitPayment;
         remarks = entry.data.narration || 'On Account Payment';
+      } else if (entry.type === 'debit_note') {
+        debitPayment = entry.data.amount;
+        
+        // Deduct debit note from running balance (reduces what we owe supplier)
+        runningBalance -= debitPayment;
+        remarks = `Debit Note - ${entry.data.narration || 'Adjustment'}`;
       }
 
       entries.push({
@@ -266,6 +289,58 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
   }, [filteredEntries]);
 
   const finalBalance = filteredEntries.length > 0 ? filteredEntries[filteredEntries.length - 1].runningBalance : 0;
+
+  const handleCreateDebitNote = async () => {
+    if (!supplierFilter) {
+      alert('Please select a supplier first');
+      return;
+    }
+
+    if (!debitNoteForm.amount || debitNoteForm.amount <= 0) {
+      alert('Please enter a valid amount');
+      return;
+    }
+
+    if (!debitNoteForm.narration.trim()) {
+      alert('Please enter a narration for the debit note');
+      return;
+    }
+
+    try {
+      const debitNoteEntry = {
+        type: 'credit' as const,
+        category: 'supplier_debit_note' as const,
+        amount: debitNoteForm.amount,
+        date: debitNoteForm.date,
+        reference_name: supplierFilter,
+        narration: debitNoteForm.narration
+      };
+
+      console.log('🔄 Creating supplier debit note via API:', debitNoteEntry);
+      const response = await apiService.createBankingEntry(debitNoteEntry);
+      console.log('✅ Supplier debit note created in backend:', response.bankingEntry);
+      
+      // Add the entry to store with backend ID
+      const backendEntry = {
+        ...response.bankingEntry,
+        id: response.bankingEntry._id || response.bankingEntry.id
+      };
+      addBankingEntry(backendEntry);
+      
+      // Reset form and close modal
+      setDebitNoteForm({
+        amount: 0,
+        narration: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+      setShowDebitNoteModal(false);
+      
+      alert(`Debit note of ₹${debitNoteForm.amount.toLocaleString('en-IN')} created successfully for ${supplierFilter}`);
+    } catch (error) {
+      console.error('Failed to create debit note:', error);
+      alert('Failed to create debit note. Please try again.');
+    }
+  };
 
   const exportToCSV = () => {
     if (!filteredEntries.length) return;
@@ -391,6 +466,16 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
             <p className="text-gray-600">Track supplier memos, payments, and advances</p>
           </div>
         </div>
+        
+        {supplierFilter && (
+          <button
+            onClick={() => setShowDebitNoteModal(true)}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create Debit Note</span>
+          </button>
+        )}
       </div>
 
       {/* Filters */}
@@ -607,6 +692,74 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
           <Truck className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 mb-2">Select a Supplier</h3>
           <p className="text-gray-500">Choose a supplier from the dropdown to view their ledger</p>
+        </div>
+      )}
+
+      {/* Debit Note Modal */}
+      {showDebitNoteModal && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-md">
+            <div className="px-6 py-4 border-b flex items-center justify-between">
+              <h3 className="text-lg font-semibold">Create Debit Note for {supplierFilter}</h3>
+              <button onClick={() => setShowDebitNoteModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  value={debitNoteForm.amount || ''}
+                  onChange={(e) => setDebitNoteForm(prev => ({ ...prev, amount: Number(e.target.value) }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="Enter amount"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date
+                </label>
+                <input
+                  type="date"
+                  value={debitNoteForm.date}
+                  onChange={(e) => setDebitNoteForm(prev => ({ ...prev, date: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Narration
+                </label>
+                <textarea
+                  value={debitNoteForm.narration}
+                  onChange={(e) => setDebitNoteForm(prev => ({ ...prev, narration: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                  placeholder="Enter reason for debit note (e.g., Quality issues, Delivery delay, etc.)"
+                  rows={3}
+                />
+              </div>
+              
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={handleCreateDebitNote}
+                  className="flex-1 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+                >
+                  Create Debit Note
+                </button>
+                <button
+                  onClick={() => setShowDebitNoteModal(false)}
+                  className="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

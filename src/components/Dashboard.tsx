@@ -109,10 +109,41 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       return sum + pendingAmount;
     }, 0);
     
+    // Subtract party on account payments from total balance
+    const partyOnAccountPayments = bankingEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const partyOnAccountCashPayments = cashbookEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    // Subtract party debit notes from total balance (debit notes reduce what party owes us)
+    const partyDebitNotes = bankingEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_debit_note')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const totalOnAccountPayments = partyOnAccountPayments + partyOnAccountCashPayments;
+    const totalDebitNotes = partyDebitNotes;
+    const finalBalance = Math.max(0, balance - totalOnAccountPayments - totalDebitNotes);
+    
     console.log('📊 Party Balance Summary:');
     console.log(`  Total Bill Amount: ₹${totalBillAmount}`);
     console.log(`  Total Payments: ₹${totalPayments}`);
-    console.log(`  💰 Total Pending (Party Balance): ₹${balance}`);
+    console.log(`  Total On Account Payments: ₹${totalOnAccountPayments}`);
+    console.log(`  Total Debit Notes: ₹${totalDebitNotes}`);
+    console.log(`  💰 Total Pending (Party Balance): ₹${finalBalance}`);
+    
+    // Debug: Show breakdown of on-account payments by party
+    const onAccountByParty = bankingEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
+      .reduce((acc, entry) => {
+        const party = entry.reference_name || 'Unknown';
+        acc[party] = (acc[party] || 0) + entry.amount;
+        return acc;
+      }, {} as Record<string, number>);
+    
+    console.log('🏦 On Account Payments by Party:', onAccountByParty);
     
     // Verification: Simple calculation
     const simpleTotalBills = bills.reduce((sum, bill) => {
@@ -128,14 +159,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       .filter(entry => entry.type === 'credit' && bills.some(bill => bill.bill_number === entry.reference_id))
       .reduce((sum, entry) => sum + entry.amount, 0);
     
-    const simpleTotalPayments = simpleBankingPayments + simpleCashbookPayments;
+    // Add party on account payments (these should reduce party balance)
+    const verifyPartyOnAccountPayments = bankingEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const verifyPartyOnAccountCashPayments = cashbookEntries
+      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const simpleTotalPayments = simpleBankingPayments + simpleCashbookPayments + verifyPartyOnAccountPayments + verifyPartyOnAccountCashPayments;
     
     console.log('🔍 Verification:');
     console.log(`  Simple Total Bills: ₹${simpleTotalBills}`);
     console.log(`  Simple Total Payments: ₹${simpleTotalPayments}`);
     console.log(`  Simple Balance: ₹${Math.max(0, simpleTotalBills - simpleTotalPayments)}`);
     
-    return balance;
+    return finalBalance;
   }, [bills, bankingEntries, cashbookEntries]);
 
   // Calculate supplier balance (memos due to suppliers - ONLY market vehicles) - OVERALL, not filtered by month
@@ -215,8 +255,31 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       return sum + memoBalance;
     }, 0);
     
-    console.log('💰 Total Supplier Balance:', balance);
-    return balance;
+    // Subtract supplier on account payments from total balance
+    const supplierOnAccountPayments = bankingEntries
+      .filter(entry => entry.type === 'debit' && (entry.category as any) === 'supplier_on_account')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const supplierOnAccountCashPayments = cashbookEntries
+      .filter(entry => entry.type === 'debit' && entry.category === 'supplier_on_account')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    // Subtract supplier debit notes from total balance (debit notes reduce what we owe suppliers)
+    const supplierDebitNotes = bankingEntries
+      .filter(entry => entry.type === 'credit' && (entry.category as any) === 'supplier_debit_note')
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const totalSupplierOnAccountPayments = supplierOnAccountPayments + supplierOnAccountCashPayments;
+    const totalSupplierDebitNotes = supplierDebitNotes;
+    const finalSupplierBalance = Math.max(0, balance - totalSupplierOnAccountPayments - totalSupplierDebitNotes);
+    
+    console.log('💰 Supplier Balance Summary:');
+    console.log(`  Total Memo Balance: ₹${balance}`);
+    console.log(`  Total On Account Payments: ₹${totalSupplierOnAccountPayments}`);
+    console.log(`  Total Debit Notes: ₹${totalSupplierDebitNotes}`);
+    console.log(`  💰 Final Supplier Balance: ₹${finalSupplierBalance}`);
+    
+    return finalSupplierBalance;
   }, [memos, loadingSlips, vehicles, bankingEntries, cashbookEntries]);
 
   // Calculate monthly revenue (total bill amounts)

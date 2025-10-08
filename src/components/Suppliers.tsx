@@ -93,7 +93,15 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       });
     }
 
-    return { totalBalance, activeTripCount };
+    // Subtract supplier debit notes from total balance
+    const supplierDebitNoteBankingPayments = bankingEntries
+      .filter(entry => entry.type === 'credit' && (entry.category as any) === 'supplier_debit_note' && entry.reference_name === supplierName)
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    
+    const totalDebitNotes = supplierDebitNoteBankingPayments;
+    const finalBalance = Math.max(0, totalBalance - totalDebitNotes);
+
+    return { totalBalance: finalBalance, activeTripCount };
   };
 
   const handleSupplierClick = (supplier: any) => {

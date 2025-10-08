@@ -45,20 +45,13 @@ export const formatCurrency = (amount: number): string => {
     return '₹0';
   }
   
-  const formatted = new Intl.NumberFormat('en-IN', {
-    style: 'currency',
-    currency: 'INR',
+  // Use direct formatting to avoid "1" prefix issues with Intl.NumberFormat
+  const formatted = `₹${numAmount.toLocaleString('en-IN', {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
-  }).format(numAmount);
+  })}`;
   
   console.log(`💰 formatCurrency output: ${formatted}`);
-  
-  // Check if the output has unexpected prefixes
-  if (formatted.includes('1₹') || formatted.startsWith('1₹')) {
-    console.error(`🚨 FOUND "1" PREFIX ISSUE! Input: ${amount}, Output: ${formatted}`);
-    console.error(`🔍 Stack trace:`, new Error().stack);
-  }
   
   return formatted;
 };

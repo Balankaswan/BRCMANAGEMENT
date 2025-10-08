@@ -11,7 +11,8 @@ const bankingEntrySchema = new mongoose.Schema({
     enum: [
       'bill_advance', 'bill_payment', 'memo_advance', 'memo_payment', 
       'expense', 'fuel_wallet', 'fuel_wallet_credit', 'vehicle_expense', 
-      'vehicle_credit_note', 'party_payment', 'supplier_payment', 'party_commission', 'party_on_account', 'supplier_on_account', 'other'
+      'vehicle_credit_note', 'party_payment', 'supplier_payment', 'party_commission', 
+      'party_on_account', 'supplier_on_account', 'party_debit_note', 'supplier_debit_note', 'other'
     ],
     required: true
   },

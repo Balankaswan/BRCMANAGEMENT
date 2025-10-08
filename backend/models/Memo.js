@@ -86,7 +86,7 @@ const memoSchema = new mongoose.Schema({
 
 // Calculate net amount before saving
 memoSchema.pre('save', function(next) {
-  this.net_amount = this.freight - this.commission - this.mamool + this.detention + this.extra;
+  this.net_amount = this.freight - this.commission - this.mamool + this.detention + this.extra + this.rto;
   next();
 });
 
