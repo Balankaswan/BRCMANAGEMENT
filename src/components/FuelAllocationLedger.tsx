@@ -62,18 +62,32 @@ const FuelAllocationLedger: React.FC = () => {
   const fetchFuelTransactions = async () => {
     try {
       setLoading(true);
-      const response = await apiService.getFuelTransactions();
+      console.log('🔄 Fetching fuel transactions...');
       
-      // Filter fuel allocation transactions (type: 'fuel_allocation' or 'debit')
+      // Fetch with higher limit to get all transactions
+      const response = await apiService.getFuelTransactions({ limit: 1000 });
+      
+      console.log('📊 Raw API response:', response);
+      console.log('📊 Total transactions fetched:', response.transactions?.length);
+      
+      // Filter fuel allocation transactions (type: 'fuel_allocation' only - these are actual allocations)
       const allocations = response.transactions?.filter((t: FuelTransaction) => 
-        t.type === 'debit' || t.type === 'fuel_allocation'
+        t.type === 'fuel_allocation'
       ) || [];
-      console.log('🔍 Fetched fuel transactions:', response.transactions?.length);
-      console.log('🔍 Filtered allocations:', allocations.length);
+      
+      console.log('🔍 Fuel allocation transactions found:', allocations.length);
+      console.log('🔍 Allocation details:', allocations.map(a => ({
+        id: a._id,
+        vehicle: a.vehicle_no,
+        amount: a.amount,
+        date: a.date,
+        wallet: a.wallet_name
+      })));
+      
       setTransactions(allocations);
       setError(null);
     } catch (err) {
-      console.error('Error fetching fuel transactions:', err);
+      console.error('❌ Error fetching fuel transactions:', err);
       setError('Failed to load fuel allocation data');
     } finally {
       setLoading(false);
@@ -324,6 +338,14 @@ const FuelAllocationLedger: React.FC = () => {
           <p className="text-gray-600 mt-1">Detailed fuel allocation records with filtering and export options</p>
         </div>
         <div className="flex space-x-2">
+          <button
+            onClick={fetchFuelTransactions}
+            className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            disabled={loading}
+          >
+            <Fuel className="mr-2 h-4 w-4" />
+            {loading ? 'Refreshing...' : 'Refresh Data'}
+          </button>
           <button
             onClick={exportToPDF}
             className="flex items-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"

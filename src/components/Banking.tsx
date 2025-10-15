@@ -6,7 +6,7 @@ import { formatCurrency } from '../utils/numberGenerator';
 import BankingForm from './forms/BankingForm';
 import type { BankingEntry } from '../types';
 
-type DateFilter = 'all' | 'today' | 'week' | 'month' | 'custom';
+type DateFilter = 'all' | 'today' | 'week' | 'month' | 'specific' | 'custom';
 
 const BankingComponent: React.FC = () => {
   const { bankingEntries: entries, addBankingEntry, updateBankingEntry, deleteBankingEntry } = useDataStore();
@@ -15,6 +15,7 @@ const BankingComponent: React.FC = () => {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
+  const [specificDate, setSpecificDate] = useState('');
   const [viewMode, setViewMode] = useState<'statement' | 'list'>('statement');
 
 
@@ -136,6 +137,11 @@ const BankingComponent: React.FC = () => {
             return entryDateOnly >= weekAgo;
           case 'month':
             return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
+          case 'specific':
+            if (!specificDate) return true;
+            const selectedDate = new Date(specificDate);
+            const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+            return entryDateOnly.getTime() === selectedDateOnly.getTime();
           case 'custom':
             if (!customDateRange.start || !customDateRange.end) return true;
             const startDate = new Date(customDateRange.start);
@@ -172,7 +178,7 @@ const BankingComponent: React.FC = () => {
 
     // Sort banking entries by date (descending - latest first) for better transaction visibility
     return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [entries, search, dateFilter, customDateRange]);
+  }, [entries, search, dateFilter, customDateRange, specificDate]);
 
   // Calculate balances for bank entries only (exclude cash)
   const bankEntries = filteredEntries.filter(entry => entry.payment_mode !== 'cash');
@@ -296,9 +302,24 @@ const BankingComponent: React.FC = () => {
               <option value="today">Today</option>
               <option value="week">This Week</option>
               <option value="month">This Month</option>
+              <option value="specific">Specific Day</option>
               <option value="custom">Custom Range</option>
             </select>
           </div>
+          
+          {/* Specific Date */}
+          {dateFilter === 'specific' && (
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <input
+                type="date"
+                value={specificDate}
+                onChange={(e) => setSpecificDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                placeholder="Select specific date"
+              />
+            </div>
+          )}
           
           {/* Custom Date Range */}
           {dateFilter === 'custom' && (

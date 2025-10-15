@@ -48,12 +48,18 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const partyBalance = useMemo(() => {
     console.log('🔄 Calculating Party Balance...');
     console.log('Total bills:', bills.length);
+    const pendingBills = bills.filter(bill => bill.status !== 'received');
+    const receivedBills = bills.filter(bill => bill.status === 'received');
+    console.log('Pending bills (included):', pendingBills.length);
+    console.log('Received bills (excluded):', receivedBills.length);
     console.log('Total banking entries:', bankingEntries.length);
     
     let totalBillAmount = 0;
     let totalPayments = 0;
     
-    const balance = bills.reduce((sum, bill) => {
+    const balance = bills
+      .filter(bill => bill.status !== 'received') // Exclude paid/received bills
+      .reduce((sum, bill) => {
       // Calculate total bill amount (what party owes)
       const billAmount = bill.bill_amount || 0;
       const detention = bill.detention || 0;
@@ -182,10 +188,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const supplierBalance = useMemo(() => {
     console.log('🔄 Calculating Supplier Balance...');
     console.log('Total memos:', memos.length);
+    const pendingMemos = memos.filter(memo => memo.status !== 'paid');
+    const paidMemos = memos.filter(memo => memo.status === 'paid');
+    console.log('Pending memos (included):', pendingMemos.length);
+    console.log('Paid memos (excluded):', paidMemos.length);
     console.log('Total loading slips:', loadingSlips.length);
     console.log('Total vehicles:', vehicles.length);
     
-    const balance = memos.reduce((sum, memo) => {
+    const balance = memos
+      .filter(memo => memo.status !== 'paid') // Exclude paid memos
+      .reduce((sum, memo) => {
       // Handle both string loading_slip_id and populated object
       let loadingSlipId: string;
       if (typeof memo.loading_slip_id === 'string') {

@@ -13,11 +13,34 @@ interface BankingFormProps {
 
 const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEntry }) => {
   const { memos, bills, ledgerEntries, parties, vehicles, loadingSlips, suppliers, bankingEntries, cashbookEntries } = useDataStore();
+  
+  // Load saved preferences from localStorage
+  const getSavedPreferences = () => {
+    if (editingEntry) {
+      // If editing, use existing entry data
+      return {
+        type: editingEntry.type,
+        date: editingEntry.date
+      };
+    }
+    
+    // For new entries, load from localStorage
+    const savedType = localStorage.getItem('banking_last_type') as 'credit' | 'debit' || 'credit';
+    const savedDate = localStorage.getItem('banking_last_date') || new Date().toISOString().split('T')[0];
+    
+    return {
+      type: savedType,
+      date: savedDate
+    };
+  };
+
+  const preferences = getSavedPreferences();
+  
   const [formData, setFormData] = useState({
-    type: editingEntry?.type || 'credit' as 'credit' | 'debit',
+    type: preferences.type,
     category: editingEntry?.category || 'other' as 'bill_advance' | 'bill_payment' | 'memo_advance' | 'memo_payment' | 'expense' | 'fuel_wallet' | 'vehicle_expense' | 'vehicle_credit_note' | 'party_commission' | 'party_on_account' | 'supplier_on_account' | 'other',
     amount: editingEntry?.amount || 0,
-    date: editingEntry?.date || new Date().toISOString().split('T')[0],
+    date: preferences.date,
     reference_id: editingEntry?.reference_id || '',
     reference_name: editingEntry?.reference_name || '',
     narration: editingEntry?.narration || '',
@@ -101,6 +124,14 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     
     try {
       await onSubmit(formData as any);
+      
+      // Save preferences to localStorage for next time (only for new entries, not edits)
+      if (!editingEntry) {
+        localStorage.setItem('banking_last_type', formData.type);
+        localStorage.setItem('banking_last_date', formData.date);
+        console.log('💾 Saved banking preferences:', { type: formData.type, date: formData.date });
+      }
+      
     } catch (error) {
       console.error('❌ Form submission failed:', error);
     } finally {

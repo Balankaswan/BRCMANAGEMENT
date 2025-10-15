@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
-import { Plus, CreditCard, TrendingUp, TrendingDown, Calendar, Trash, Edit } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Plus, CreditCard, TrendingUp, TrendingDown, Calendar, Trash, Edit, Search, Filter } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import BankingForm from './forms/BankingForm';
 import type { BankingEntry } from '../types';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
+
+type DateFilter = 'all' | 'today' | 'week' | 'month' | 'specific' | 'custom';
 
 export default function Cashbook() {
   const { 
@@ -15,6 +17,10 @@ export default function Cashbook() {
   } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingEntry, setEditingEntry] = useState<BankingEntry | null>(null);
+  const [search, setSearch] = useState('');
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+  const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
+  const [specificDate, setSpecificDate] = useState('');
 
   // Force refresh cashbook data on component mount to ensure data persistence
   useEffect(() => {
@@ -101,11 +107,75 @@ export default function Cashbook() {
     setShowForm(false);
   };
 
-  const totalCredits = entries
+  const filteredEntries = useMemo(() => {
+    let filtered = [...entries];
+
+    // Apply date filter
+    if (dateFilter !== 'all') {
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      filtered = filtered.filter(entry => {
+        const entryDate = new Date(entry.date);
+        const entryDateOnly = new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate());
+        
+        switch (dateFilter) {
+          case 'today':
+            return entryDateOnly.getTime() === today.getTime();
+          case 'week':
+            const weekAgo = new Date(today);
+            weekAgo.setDate(weekAgo.getDate() - 7);
+            return entryDateOnly >= weekAgo;
+          case 'month':
+            return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
+          case 'specific':
+            if (!specificDate) return true;
+            const selectedDate = new Date(specificDate);
+            const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
+            return entryDateOnly.getTime() === selectedDateOnly.getTime();
+          case 'custom':
+            if (!customDateRange.start || !customDateRange.end) return true;
+            const startDate = new Date(customDateRange.start);
+            const endDate = new Date(customDateRange.end);
+            return entryDateOnly >= startDate && entryDateOnly <= endDate;
+          default:
+            return true;
+        }
+      });
+    }
+
+    // Apply search filter
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      filtered = filtered.filter((entry) => {
+        const dateStr = new Date(entry.date).toLocaleDateString('en-IN');
+        const amountStr = String(entry.amount);
+        const formattedAmount = formatCurrency(entry.amount);
+        const haystack = [
+          dateStr,
+          entry.type,
+          entry.category,
+          entry.reference_id || '',
+          entry.reference_name || '',
+          amountStr,
+          formattedAmount,
+          entry.narration || '',
+        ]
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(q);
+      });
+    }
+
+    // Sort cashbook entries by date (descending - latest first)
+    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [entries, search, dateFilter, customDateRange, specificDate]);
+
+  const totalCredits = filteredEntries
     .filter(entry => entry.type === 'credit')
     .reduce((sum, entry) => sum + entry.amount, 0);
 
-  const totalDebits = entries
+  const totalDebits = filteredEntries
     .filter(entry => entry.type === 'debit')
     .reduce((sum, entry) => sum + entry.amount, 0);
 
@@ -216,6 +286,75 @@ export default function Cashbook() {
         />
       )}
 
+      {/* Search and Filter Controls */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
+        <div className="flex flex-col md:flex-row gap-4 items-center">
+          {/* Search */}
+          <div className="flex-1">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by narration, category, type, amount, reference, date"
+                className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+            </div>
+          </div>
+          
+          {/* Date Filter */}
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-gray-400" />
+            <select
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value as DateFilter)}
+              className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+            >
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="week">This Week</option>
+              <option value="month">This Month</option>
+              <option value="specific">Specific Day</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+          
+          {/* Specific Date */}
+          {dateFilter === 'specific' && (
+            <div className="flex items-center gap-2">
+              <Calendar className="w-4 h-4 text-gray-400" />
+              <input
+                type="date"
+                value={specificDate}
+                onChange={(e) => setSpecificDate(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                placeholder="Select specific date"
+              />
+            </div>
+          )}
+          
+          {/* Custom Date Range */}
+          {dateFilter === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customDateRange.start}
+                onChange={(e) => setCustomDateRange(prev => ({ ...prev, start: e.target.value }))}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+              <span className="text-gray-400">to</span>
+              <input
+                type="date"
+                value={customDateRange.end}
+                onChange={(e) => setCustomDateRange(prev => ({ ...prev, end: e.target.value }))}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* Quick Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -262,7 +401,7 @@ export default function Cashbook() {
           <h3 className="text-lg font-semibold text-gray-900">Cashbook Entries</h3>
         </div>
         <div className="overflow-x-auto">
-          {entries.length === 0 ? (
+          {filteredEntries.length === 0 ? (
             <div className="text-center text-gray-500 py-12">
               <CreditCard className="w-12 h-12 mx-auto mb-4 text-gray-300" />
               <p>No cashbook entries found</p>
@@ -296,7 +435,7 @@ export default function Cashbook() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {entries.map((entry) => (
+                {filteredEntries.map((entry) => (
                   <tr key={entry._id || entry.id || `cashbook-${Date.now()}-${Math.random()}`} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       <div className="flex items-center space-x-2">

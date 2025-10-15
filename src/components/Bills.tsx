@@ -13,13 +13,14 @@ interface BillsListProps {
 }
 
 const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = false, highlightBill }) => {
-  const { bills, addBill, updateBill, deleteBill, bankingEntries, cashbookEntries, addBankingEntry, loadingSlips, markBillAsReceived } = useDataStore();
+  const { bills, addBill, updateBill, deleteBill, bankingEntries, cashbookEntries, loadingSlips, markBillAsReceived } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
   const [showReceivedModal, setShowReceivedModal] = useState<Bill | null>(null);
   const [receivedDate, setReceivedDate] = useState('');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState<'pending' | 'received'>('pending');
 
   const handleCreateBill = async (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -136,23 +137,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   const confirmMarkAsReceived = async () => {
     if (showReceivedModal && receivedDate) {
       try {
-        // Add banking entry for full payment received
-        const bankingEntry = {
-          id: Date.now().toString(),
-          type: 'credit' as const,
-          date: receivedDate,
-          category: 'bill_payment' as const,
-          narration: `Full payment received for Bill ${showReceivedModal.bill_number}`,
-          amount: showReceivedModal.bill_amount,
-          reference_id: showReceivedModal.bill_number,
-          reference_name: showReceivedModal.party,
-          created_at: new Date().toISOString()
-        };
-        
-        await apiService.createBankingEntry(bankingEntry);
-        addBankingEntry(bankingEntry);
-        
-        // Update bill status to received
+        // Only update bill status to received - no banking entry creation
         const updatedBillData = {
           ...showReceivedModal,
           status: 'received',
@@ -163,21 +148,10 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         await apiService.updateBill(showReceivedModal.id, updatedBillData);
         markBillAsReceived(showReceivedModal.id, receivedDate, showReceivedModal.bill_amount);
         
-        console.log('Bill marked as received successfully');
+        console.log('Bill marked as received successfully (no banking entry created)');
       } catch (error) {
         console.error('Failed to mark bill as received:', error);
-        // Fallback to local update
-        addBankingEntry({
-          id: Date.now().toString(),
-          type: 'credit' as const,
-          date: receivedDate,
-          category: 'bill_payment' as const,
-          narration: `Full payment received for Bill ${showReceivedModal.bill_number}`,
-          amount: showReceivedModal.bill_amount,
-          reference_id: showReceivedModal.bill_number,
-          reference_name: showReceivedModal.party,
-          created_at: new Date().toISOString()
-        });
+        // Fallback to local update only
         markBillAsReceived(showReceivedModal.id, receivedDate, showReceivedModal.bill_amount);
       }
       setShowReceivedModal(null);
@@ -200,8 +174,9 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   };
 
   const filteredBills = useMemo(() => {
-    // Main list shows only pending; Received Bills view shows only received
-    let base = showOnlyFullyReceived ? bills.filter((b: any) => b.status === 'received') : bills.filter((b: any) => b.status !== 'received');
+    // Use local viewMode state instead of prop for better control
+    const showReceived = showOnlyFullyReceived || viewMode === 'received';
+    let base = showReceived ? bills.filter((b: any) => b.status === 'received') : bills.filter((b: any) => b.status !== 'received');
     
     // Sort bills by document number (numeric part) in descending order, then by date
     base = [...base].sort((a, b) => {
@@ -251,7 +226,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [bills, bankingEntries, showOnlyFullyReceived, search, loadingSlips]);
+  }, [bills, bankingEntries, showOnlyFullyReceived, viewMode, search, loadingSlips]);
 
   return (
     <div className="space-y-6">
@@ -265,6 +240,34 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
           <span>New Bill</span>
         </button>
       </div>
+
+      {/* Tab Navigation */}
+      {!showOnlyFullyReceived && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-1">
+          <div className="flex space-x-1">
+            <button
+              onClick={() => setViewMode('pending')}
+              className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                viewMode === 'pending'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Pending ({bills.filter(b => b.status !== 'received').length})
+            </button>
+            <button
+              onClick={() => setViewMode('received')}
+              className={`flex-1 px-4 py-2 text-sm font-medium rounded-md transition-colors ${
+                viewMode === 'received'
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Received ({bills.filter(b => b.status === 'received').length})
+            </button>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <BillForm
@@ -337,7 +340,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
                       </div>
                       <div className="text-sm text-gray-500 mb-2">
                         {new Date(bill.date).toLocaleDateString('en-IN')} • {bill.party}
-                        {showOnlyFullyReceived && bill.received_date && (
+                        {(showOnlyFullyReceived || viewMode === 'received') && bill.received_date && (
                           <span className="text-green-600 ml-2">
                             • Received: {new Date(bill.received_date).toLocaleDateString('en-IN')}
                           </span>
@@ -374,7 +377,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
                       >
                         <Download className="w-4 h-4" />
                       </button>
-                      {!showOnlyFullyReceived && (
+                      {!showOnlyFullyReceived && viewMode === 'pending' && (
                         <button
                           onClick={() => handleMarkAsReceived(bill)}
                           className="px-3 py-1 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors"
