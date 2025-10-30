@@ -23,7 +23,7 @@ interface SupplierLedgerProps {
 }
 
 const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => {
-  const { memos, bankingEntries, cashbookEntries, loadingSlips, addBankingEntry } = useDataStore();
+  const { memos, bankingEntries, cashbookEntries, loadingSlips, ledgerEntries: allLedgerEntries } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [supplierFilter, setSupplierFilter] = useState(selectedSupplier || '');
@@ -54,7 +54,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
   }, [memos, bankingEntries, cashbookEntries]);
 
   // Generate ledger entries for selected supplier
-  const ledgerEntries = useMemo(() => {
+  const supplierLedgerEntries = useMemo(() => {
     if (!supplierFilter) {
       console.log(`⚠️ No supplier selected, returning empty array`);
       return [];
@@ -128,7 +128,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
     // Combine and sort all entries by date
     const allEntries: Array<{
-      type: 'memo' | 'payment' | 'advance' | 'on_account' | 'debit_note';
+      type: 'memo' | 'payment' | 'advance' | 'on_account' | 'debit_note' | 'fuel';
       date: string;
       data: any;
     }> = [];
@@ -162,6 +162,21 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       });
     });
 
+    // Add fuel allocation ledger entries for this supplier
+    const supplierFuelEntries = allLedgerEntries.filter(entry => 
+      entry.ledger_type === 'supplier' && 
+      entry.reference_name === supplierFilter &&
+      entry.source_type === 'fuel'
+    );
+    
+    supplierFuelEntries.forEach(entry => {
+      allEntries.push({
+        type: 'fuel',
+        date: entry.date,
+        data: entry
+      });
+    });
+
     // Sort by date
     allEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -171,7 +186,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         supplierMemos.find(m => m.memo_number === entry.data.reference_id);
       
       const loadingSlip = memo?.loadingSlip || loadingSlips.find(ls => ls.id === memo?.loading_slip_id);
-      const tripDetails = loadingSlip ? 
+      let tripDetails = loadingSlip ? 
         `${loadingSlip.from_location} – ${loadingSlip.to_location} / ${loadingSlip.vehicle_no}` : 
         memo?.loading_slip_id?.from_location ? 
         `${memo.loading_slip_id.from_location} – ${memo.loading_slip_id.to_location} / ${memo.loading_slip_id.vehicle_no}` : '';
@@ -231,6 +246,13 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         // Deduct debit note from running balance (reduces what we owe supplier)
         runningBalance -= debitPayment;
         remarks = `Debit Note - ${entry.data.narration || 'Adjustment'}`;
+      } else if (entry.type === 'fuel') {
+        debitPayment = entry.data.debit || 0;
+        
+        // Deduct fuel allocation from running balance
+        runningBalance -= debitPayment;
+        remarks = entry.data.description || 'Fuel Being Allocated';
+        tripDetails = entry.data.vehicle_no || '';
       }
 
       entries.push({
@@ -259,11 +281,11 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     console.log(`   - Total ledger entries generated: ${entries.length}`);
     
     return entries;
-  }, [supplierFilter, memos, bankingEntries, cashbookEntries, loadingSlips]);
+  }, [supplierFilter, memos, bankingEntries, cashbookEntries, loadingSlips, allLedgerEntries]);
 
   // Filter by date range
   const filteredEntries = useMemo(() => {
-    let filtered = ledgerEntries;
+    let filtered = supplierLedgerEntries;
 
     if (dateFrom) {
       filtered = filtered.filter(entry => entry.date >= dateFrom);
@@ -273,9 +295,9 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       filtered = filtered.filter(entry => entry.date <= dateTo);
     }
 
-    console.log(`🔍 After date filtering: ${filtered.length} entries (from ${ledgerEntries.length} total)`);
+    console.log(`🔍 After date filtering: ${filtered.length} entries (from ${supplierLedgerEntries.length} total)`);
     return filtered;
-  }, [ledgerEntries, dateFrom, dateTo]);
+  }, [supplierLedgerEntries, dateFrom, dateTo]);
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -307,25 +329,19 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     }
 
     try {
-      const debitNoteEntry = {
-        type: 'credit' as const,
-        category: 'supplier_debit_note' as const,
+      const debitNoteData = {
+        supplier_name: supplierFilter,
         amount: debitNoteForm.amount,
         date: debitNoteForm.date,
-        reference_name: supplierFilter,
         narration: debitNoteForm.narration
       };
 
-      console.log('🔄 Creating supplier debit note via API:', debitNoteEntry);
-      const response = await apiService.createBankingEntry(debitNoteEntry);
-      console.log('✅ Supplier debit note created in backend:', response.bankingEntry);
+      console.log('🔄 Creating supplier debit note (ledger only):', debitNoteData);
+      const response = await apiService.createSupplierDebitNote(debitNoteData);
+      console.log('✅ Supplier debit note created in backend:', response.ledgerEntry);
       
-      // Add the entry to store with backend ID
-      const backendEntry = {
-        ...response.bankingEntry,
-        id: response.bankingEntry._id || response.bankingEntry.id
-      };
-      addBankingEntry(backendEntry);
+      // No banking entry is created - only ledger entry
+      // The ledger will be refreshed automatically by the sync system
       
       // Reset form and close modal
       setDebitNoteForm({

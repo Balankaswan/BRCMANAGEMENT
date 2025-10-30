@@ -307,6 +307,13 @@ class ApiService {
     return this.request(`/parties/${id}`, { method: 'DELETE' });
   }
 
+  async createPartyDebitNote(data: {party_name: string, amount: number, narration: string, date: string}) {
+    return this.request<{ledgerEntry: any}>('/parties/debit-note', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
   // Suppliers
   async getSuppliers(params?: {search?: string, page?: number, limit?: number}) {
     const queryString = params ? '?' + new URLSearchParams(params as any).toString() : '';
@@ -329,6 +336,13 @@ class ApiService {
 
   async deleteSupplier(id: string) {
     return this.request(`/suppliers/${id}`, { method: 'DELETE' });
+  }
+
+  async createSupplierDebitNote(data: {supplier_name: string, amount: number, narration: string, date: string}) {
+    return this.request<{ledgerEntry: any}>('/suppliers/debit-note', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
   }
 
   // Vehicles
@@ -418,7 +432,8 @@ class ApiService {
     rate_per_liter?: number,
     odometer_reading?: number,
     fuel_type?: string,
-    allocated_by?: string
+    allocated_by?: string,
+    supplier_name?: string
   }) {
     return this.request<{transaction: any, wallet: any}>('/fuel/allocate', {
       method: 'POST',
@@ -483,7 +498,7 @@ class ApiService {
 }
 
 // Create and export the API service instance
-export const apiService = new ApiService(API_URL);
+export const apiService = new ApiService();
 
 // Export types for better TypeScript support
 export type { ApiResponse };

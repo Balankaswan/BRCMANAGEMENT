@@ -216,6 +216,7 @@ export interface FuelTransaction {
   vehicle_no?: string; // For fuel allocation
   reference_id?: string;
   narration: string;
+  supplier_name?: string; // For fuel allocation with supplier
   created_at: string;
 }
 

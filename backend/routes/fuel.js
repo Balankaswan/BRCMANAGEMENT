@@ -142,7 +142,8 @@ router.post('/allocate', async (req, res) => {
       rate_per_liter, 
       odometer_reading,
       fuel_type,
-      allocated_by 
+      allocated_by,
+      supplier_name
     } = req.body;
 
     // Check wallet balance
@@ -167,7 +168,8 @@ router.post('/allocate', async (req, res) => {
       rate_per_liter,
       odometer_reading,
       fuel_type: fuel_type || 'Diesel',
-      allocated_by: allocated_by || 'System'
+      allocated_by: allocated_by || 'System',
+      supplier_name: supplier_name || undefined
     });
 
     await fuelTransaction.save();
@@ -176,10 +178,10 @@ router.post('/allocate', async (req, res) => {
     wallet.balance -= amount;
     await wallet.save();
 
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+
     // Create corresponding ledger entry for vehicle fuel expense
     if (vehicle_no) {
-      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-      
       const vehicleFuelExpenseEntry = new LedgerEntry({
         referenceId: fuelTransaction._id,
         reference_id: fuelTransaction._id.toString(),
@@ -197,6 +199,38 @@ router.post('/allocate', async (req, res) => {
       
       await vehicleFuelExpenseEntry.save();
       console.log('✅ Created vehicle ledger entry for fuel expense:', vehicleFuelExpenseEntry._id);
+    }
+
+    // Create supplier ledger entry if supplier is specified
+    if (supplier_name) {
+      const Supplier = (await import('../models/Supplier.js')).default;
+      
+      // Find supplier by name
+      const supplier = await Supplier.findOne({ name: supplier_name });
+      
+      if (supplier) {
+        // Create supplier ledger entry for fuel allocation
+        const supplierFuelEntry = new LedgerEntry({
+          referenceId: supplier._id,
+          reference_id: fuelTransaction._id.toString(),
+          ledger_type: 'supplier',
+          reference_name: supplier_name,
+          source_type: 'fuel',
+          type: 'expense',
+          date: date,
+          description: `Fuel Being Allocated - Vehicle: ${vehicle_no}${narration ? ' - ' + narration : ''}`,
+          debit: amount,
+          credit: 0,
+          balance: 0,
+          supplierId: supplier._id,
+          vehicle_no: vehicle_no
+        });
+        
+        await supplierFuelEntry.save();
+        console.log('✅ Created supplier ledger entry for fuel allocation:', supplierFuelEntry._id, 'Supplier:', supplier_name);
+      } else {
+        console.warn('⚠️ Supplier not found for fuel allocation:', supplier_name);
+      }
     }
 
     res.status(201).json({

@@ -53,6 +53,10 @@ const fuelTransactionSchema = new mongoose.Schema({
   allocated_by: {
     type: String,
     trim: true
+  },
+  supplier_name: {
+    type: String,
+    trim: true
   }
 }, {
   timestamps: true

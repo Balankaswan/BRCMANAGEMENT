@@ -10,6 +10,7 @@ const FuelManagement: React.FC = () => {
     fuelWallets, 
     vehicleFuelExpenses, 
     vehicles, 
+    suppliers,
     addBankingEntry, 
     allocateFuelToVehicle,
     getVehicleFuelExpenses,
@@ -19,6 +20,7 @@ const FuelManagement: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'allocate' | 'wallets' | 'vehicles' | 'add-vehicle' | 'ledger'>('dashboard');
   const [selectedWallet, setSelectedWallet] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
+  const [selectedSupplier, setSelectedSupplier] = useState('');
   const [allocationForm, setAllocationForm] = useState({
     amount: '',
     fuelQuantity: '',
@@ -99,8 +101,18 @@ const FuelManagement: React.FC = () => {
 
   // Handle fuel allocation to vehicle
   const handleFuelAllocation = async () => {
-    if (!selectedVehicle || !selectedWallet || !allocationForm.amount) {
-      alert('Please fill in all required fields');
+    if (!selectedWallet || !allocationForm.amount) {
+      alert('Please select a fuel wallet and enter an amount');
+      return;
+    }
+
+    if (!selectedVehicle && !selectedSupplier) {
+      alert('Please select either a Vehicle or a Supplier');
+      return;
+    }
+
+    if (selectedVehicle && selectedSupplier) {
+      alert('Please select either a Vehicle OR a Supplier, not both');
       return;
     }
 
@@ -113,13 +125,14 @@ const FuelManagement: React.FC = () => {
       console.log('🚛 Fuel allocation started:', {
         selectedVehicle,
         selectedWallet,
+        selectedSupplier,
         amount,
         date: allocationForm.date,
         narration: allocationForm.narration
       });
 
       await allocateFuelToVehicle(
-        selectedVehicle,
+        selectedVehicle || 'N/A',
         selectedWallet,
         amount,
         allocationForm.date,
@@ -128,7 +141,8 @@ const FuelManagement: React.FC = () => {
         ratePerLiter || 0,
         odometerReading || 0,
         'Diesel',
-        'System'
+        'System',
+        selectedSupplier || undefined
       );
 
       // Reset form on success
@@ -142,6 +156,7 @@ const FuelManagement: React.FC = () => {
       });
       setSelectedVehicle('');
       setSelectedWallet('');
+      setSelectedSupplier('');
       
       alert('✅ Fuel allocated successfully!');
     } catch (error) {
@@ -311,17 +326,20 @@ const FuelManagement: React.FC = () => {
       {activeTab === 'allocate' && (
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-6">Allocate Fuel to Vehicle</h3>
+            <h3 className="text-lg font-semibold text-gray-900 mb-6">Allocate Fuel</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle (Own Vehicles)</label>
                 <select
                   value={selectedVehicle}
-                  onChange={(e) => setSelectedVehicle(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedVehicle(e.target.value);
+                    if (e.target.value) setSelectedSupplier(''); // Clear supplier when vehicle is selected
+                  }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
-                  <option value="">Select Vehicle</option>
+                  <option value="">Select Vehicle (Optional)</option>
                   {vehicles.filter(v => v.ownership_type === 'own').map((vehicle, index) => (
                     <option key={vehicle._id || vehicle.id || `vehicle-${vehicle.vehicle_no}-${index}`} value={vehicle.vehicle_no}>{vehicle.vehicle_no}</option>
                   ))}
@@ -329,7 +347,7 @@ const FuelManagement: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Fuel Wallet</label>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Fuel Wallet *</label>
                 <select
                   value={selectedWallet}
                   onChange={(e) => setSelectedWallet(e.target.value)}
@@ -339,6 +357,25 @@ const FuelManagement: React.FC = () => {
                   {fuelWallets.map((wallet, index) => (
                     <option key={wallet.id || wallet.name || `wallet-${index}`} value={wallet.name}>
                       {wallet.name} - {formatCurrency(wallet.balance)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Supplier (Market Vehicles)</label>
+                <select
+                  value={selectedSupplier}
+                  onChange={(e) => {
+                    setSelectedSupplier(e.target.value);
+                    if (e.target.value) setSelectedVehicle(''); // Clear vehicle when supplier is selected
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select Supplier (Optional)</option>
+                  {suppliers.map((supplier, index) => (
+                    <option key={supplier._id || supplier.id || `supplier-${index}`} value={supplier.name}>
+                      {supplier.name}
                     </option>
                   ))}
                 </select>
@@ -413,7 +450,7 @@ const FuelManagement: React.FC = () => {
             <div className="mt-6">
               <button
                 onClick={handleFuelAllocation}
-                disabled={!selectedVehicle || !selectedWallet || !allocationForm.amount}
+                disabled={(!selectedVehicle && !selectedSupplier) || !selectedWallet || !allocationForm.amount}
                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 <Fuel className="w-4 h-4" />

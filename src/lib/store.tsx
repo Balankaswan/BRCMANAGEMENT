@@ -60,7 +60,7 @@ interface DataStoreState {
   addPODFile: (file: PODFile) => void;
   deletePODFile: (id: string) => void;
   getPODFiles: () => PODFile[];
-  allocateFuelToVehicle: (vehicleNo: string, walletName: string, amount: number, date: string, narration: string, fuelQuantity: number, ratePerLiter: number, odometerReading: number, fuelType: string, allocatedBy: string) => void;
+  allocateFuelToVehicle: (vehicleNo: string, walletName: string, amount: number, date: string, narration: string, fuelQuantity: number, ratePerLiter: number, odometerReading: number, fuelType: string, allocatedBy: string, supplier?: string) => void;
   bulkPaySupplierMemos: (memoIds: string[], paymentData: any) => void;
   bulkPayBills: (billIds: string[], paymentData: any) => void;
   cleanupSupplierLedgerForOwnVehicles: () => void;
@@ -204,9 +204,9 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setPODFiles: (files) => setPodFiles(files),
 
     // Complex operations
-    allocateFuelToVehicle: async (vehicleNo: string, walletName: string, amount: number, date: string, narration: string, fuelQuantity?: number, ratePerLiter?: number, odometerReading?: number, fuelType?: string, allocatedBy?: string) => {
+    allocateFuelToVehicle: async (vehicleNo: string, walletName: string, amount: number, date: string, narration: string, fuelQuantity?: number, ratePerLiter?: number, odometerReading?: number, fuelType?: string, allocatedBy?: string, supplier?: string) => {
       try {
-        console.log('🚛 Starting fuel allocation:', { vehicleNo, walletName, amount });
+        console.log('🚛 Starting fuel allocation:', { vehicleNo, walletName, amount, supplier });
         
         const response = await apiService.allocateFuel({
           vehicle_no: vehicleNo,
@@ -218,7 +218,8 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           rate_per_liter: ratePerLiter,
           odometer_reading: odometerReading,
           fuel_type: fuelType,
-          allocated_by: allocatedBy
+          allocated_by: allocatedBy,
+          supplier_name: supplier
         });
         
         console.log('✅ Fuel allocation successful:', response);
