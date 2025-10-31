@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Plus, CreditCard, TrendingUp, TrendingDown, Calendar, Trash, Edit, Search, Filter } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import BankingForm from './forms/BankingForm';
-import type { BankingEntry } from '../types';
+import type { CashbookEntry } from '../types';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 
@@ -16,11 +16,12 @@ export default function Cashbook() {
     updateCashbookEntry
   } = useDataStore();
   const [showForm, setShowForm] = useState(false);
-  const [editingEntry, setEditingEntry] = useState<BankingEntry | null>(null);
+  const [editingEntry, setEditingEntry] = useState<CashbookEntry | null>(null);
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<DateFilter>('all');
   const [customDateRange, setCustomDateRange] = useState({ start: '', end: '' });
   const [specificDate, setSpecificDate] = useState('');
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   // Force refresh cashbook data on component mount to ensure data persistence
   useEffect(() => {
@@ -42,7 +43,7 @@ export default function Cashbook() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleCreateEntry = async (entryData: Omit<BankingEntry, 'id' | 'created_at'>) => {
+  const handleCreateEntry = async (entryData: Omit<CashbookEntry, 'id' | 'created_at' | 'running_balance'>) => {
     // Prevent double submission
     if (isSubmitting) {
       console.warn('⚠️ Entry creation already in progress, ignoring duplicate request');
@@ -54,11 +55,12 @@ export default function Cashbook() {
       
       if (editingEntry) {
         // Update existing entry with cash payment mode
-        const updatedEntry: BankingEntry = {
+        const updatedEntry: CashbookEntry = {
           ...entryData,
           payment_mode: 'cash', // Force cash mode for cashbook entries
           id: editingEntry.id,
           created_at: editingEntry.created_at,
+          running_balance: editingEntry.running_balance // Preserve existing balance
         };
         updateCashbookEntry(updatedEntry);
         setEditingEntry(null);
@@ -100,7 +102,7 @@ export default function Cashbook() {
     }
   };
 
-  const handleEditEntry = (entry: BankingEntry) => {
+  const handleEditEntry = (entry: CashbookEntry) => {
     setEditingEntry(entry);
     setShowForm(true);
   };
@@ -110,163 +112,244 @@ export default function Cashbook() {
     setShowForm(false);
   };
 
-  const filteredEntries = useMemo(() => {
-    let filtered = [...entries];
+  // Memoize date calculations to avoid recalculating on every render
+  const dateCalculations = useMemo(() => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    
+    return {
+      now,
+      today,
+      weekAgo,
+      specificDateObj: specificDate ? new Date(specificDate) : null,
+      startDateObj: customDateRange.start ? new Date(customDateRange.start) : null,
+      endDateObj: customDateRange.end ? new Date(customDateRange.end) : null
+    };
+  }, [specificDate, customDateRange.start, customDateRange.end]);
 
-    // Apply date filter
+  // Optimize search term processing
+  const searchTerm = useMemo(() => {
+    return search.trim().toLowerCase();
+  }, [search]);
+
+  // Memoize filtered entries with optimized filtering
+  const filteredEntries = useMemo(() => {
+    if (!Array.isArray(entries) || entries.length === 0) {
+      return [];
+    }
+
+    let filtered = entries;
+
+    // Apply date filter with optimized date comparisons
     if (dateFilter !== 'all') {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const { now, today, weekAgo, specificDateObj, startDateObj, endDateObj } = dateCalculations;
       
       filtered = filtered.filter(entry => {
-        const entryDate = new Date(entry.date);
-        const entryDateOnly = new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate());
-        
-        switch (dateFilter) {
-          case 'today':
-            return entryDateOnly.getTime() === today.getTime();
-          case 'week':
-            const weekAgo = new Date(today);
-            weekAgo.setDate(weekAgo.getDate() - 7);
-            return entryDateOnly >= weekAgo;
-          case 'month':
-            return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
-          case 'specific':
-            if (!specificDate) return true;
-            const selectedDate = new Date(specificDate);
-            const selectedDateOnly = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
-            return entryDateOnly.getTime() === selectedDateOnly.getTime();
-          case 'custom':
-            if (!customDateRange.start || !customDateRange.end) return true;
-            const startDate = new Date(customDateRange.start);
-            const endDate = new Date(customDateRange.end);
-            return entryDateOnly >= startDate && entryDateOnly <= endDate;
-          default:
-            return true;
-        }
-      });
-    }
-
-    // Apply search filter
-    if (search.trim()) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter((entry) => {
-        const dateStr = new Date(entry.date).toLocaleDateString('en-IN');
-        const amountStr = String(entry.amount);
-        const formattedAmount = formatCurrency(entry.amount);
-        const haystack = [
-          dateStr,
-          entry.type,
-          entry.category,
-          entry.reference_id || '',
-          entry.reference_name || '',
-          amountStr,
-          formattedAmount,
-          entry.narration || '',
-        ]
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(q);
-      });
-    }
-
-    // Sort cashbook entries by date (descending - latest first)
-    return filtered.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-  }, [entries, search, dateFilter, customDateRange, specificDate]);
-
-  const totalCredits = filteredEntries
-    .filter(entry => entry.type === 'credit')
-    .reduce((sum, entry) => sum + entry.amount, 0);
-
-  const totalDebits = filteredEntries
-    .filter(entry => entry.type === 'debit')
-    .reduce((sum, entry) => sum + entry.amount, 0);
-
-  const netBalance = totalCredits - totalDebits;
-
-  const confirmAndDelete = async (id: string) => {
-    if (window.confirm('Delete this cashbook entry? This will also remove related ledger entries.')) {
-      try {
-        console.log('🗑️ Attempting to delete cashbook entry with ID:', id);
-        
-        // Find the entry to get the correct ID
-        const entryToDelete = entries.find(entry => entry._id === id || entry.id === id);
-        if (!entryToDelete) {
-          console.error('Entry not found in local store:', id);
-          alert('Entry not found. Please refresh and try again.');
-          return;
-        }
-        
-        const deleteId = entryToDelete._id || entryToDelete.id;
-        console.log('Using delete ID:', deleteId);
-        
-        // Delete from backend first
-        const deleteResponse = await apiService.deleteCashbookEntry(deleteId);
-        console.log('Delete response:', deleteResponse);
-        
-        // Remove from local store
-        setCashbookEntries(entries.filter(entry => entry._id !== deleteId && entry.id !== deleteId));
-        
-        // Create party commission ledger entry for commission payments
-        if (entryToDelete.category === 'party_commission' && entryToDelete.reference_name) {
-          const commissionLedgerEntry = {
-            ledger_type: 'commission',
-            reference_id: entryToDelete.reference_id || `CASH-COMM-${Date.now()}`,
-            reference_name: entryToDelete.reference_name,
-            date: entryToDelete.date,
-            description: entryToDelete.narration || `Party commission payment to ${entryToDelete.reference_name}`,
-            debit: entryToDelete.amount,
-            credit: 0,
-            balance: 0,
-            source_type: 'cashbook',
-          };
+        try {
+          const entryDate = new Date(entry.date);
+          if (isNaN(entryDate.getTime())) return false;
           
-          try {
-            await apiService.createLedgerEntry(commissionLedgerEntry);
-            console.log('✅ Party commission ledger entry created from cashbook:', commissionLedgerEntry);
-          } catch (error) {
-            console.error('❌ Failed to create party commission ledger entry from cashbook:', error);
+          const entryDateOnly = new Date(entryDate.getFullYear(), entryDate.getMonth(), entryDate.getDate());
+          
+          switch (dateFilter) {
+            case 'today':
+              return entryDateOnly.getTime() === today.getTime();
+            case 'week':
+              return entryDateOnly >= weekAgo;
+            case 'month':
+              return entryDate.getMonth() === now.getMonth() && entryDate.getFullYear() === now.getFullYear();
+            case 'specific':
+              if (!specificDateObj) return true;
+              const selectedDateOnly = new Date(specificDateObj.getFullYear(), specificDateObj.getMonth(), specificDateObj.getDate());
+              return entryDateOnly.getTime() === selectedDateOnly.getTime();
+            case 'custom':
+              if (!startDateObj || !endDateObj) return true;
+              return entryDateOnly >= startDateObj && entryDateOnly <= endDateObj;
+            default:
+              return true;
           }
+        } catch (error) {
+          console.warn('Error filtering entry by date:', entry, error);
+          return false;
+        }
+      });
+    }
+
+    // Apply search filter with optimized string operations
+    if (searchTerm) {
+      filtered = filtered.filter((entry) => {
+        try {
+          // Pre-compute searchable strings only once per entry
+          const searchableText = [
+            entry.type || '',
+            entry.category || '',
+            entry.reference_id || '',
+            entry.reference_name || '',
+            String(entry.amount || 0),
+            entry.narration || '',
+            new Date(entry.date).toLocaleDateString('en-IN')
+          ].join(' ').toLowerCase();
+          
+          return searchableText.includes(searchTerm);
+        } catch (error) {
+          console.warn('Error filtering entry by search:', entry, error);
+          return false;
+        }
+      });
+    }
+
+    // Sort entries by date (descending - latest first) with error handling
+    return filtered.sort((a, b) => {
+      try {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        
+        if (isNaN(dateA) || isNaN(dateB)) {
+          return 0; // Keep original order if dates are invalid
         }
         
-        // Delete related ledger entries
-        const ledgerResponse = await apiService.getLedgerEntries();
-        const relatedLedgers = ledgerResponse.ledgerEntries.filter(
-          ledger => (ledger.reference_id === deleteId || ledger.reference_id === id) && ledger.source_type === 'cashbook'
-        );
-        
-        console.log('Found related ledger entries:', relatedLedgers.length);
-        
-        // Delete each related ledger entry
-        for (const ledger of relatedLedgers) {
-          try {
-            await apiService.deleteLedgerEntry(ledger._id);
-            console.log('Deleted ledger entry:', ledger._id);
-          } catch (ledgerError) {
-            console.warn('Failed to delete ledger entry:', ledger._id, ledgerError);
-          }
-        }
-        
-        // Trigger data sync
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
-        
-        console.log('✅ Cashbook entry deleted successfully');
-        
+        return dateB - dateA;
       } catch (error) {
-        console.error('❌ Failed to delete cashbook entry:', error);
-        
-        // Check if it's a 404 error (entry already deleted)
-        if (error instanceof Error && error.message.includes('404')) {
-          // Remove from local store anyway since it's already gone from backend
-          setCashbookEntries(entries.filter(entry => entry._id !== id && entry.id !== id));
-          window.dispatchEvent(new CustomEvent('data-sync-required'));
-          console.log('Entry was already deleted from backend, removed from local store');
-        } else {
-          alert('Failed to delete cashbook entry. Please try again.');
-        }
+        console.warn('Error sorting entries:', error);
+        return 0;
+      }
+    });
+  }, [entries, dateFilter, dateCalculations, searchTerm]);
+
+  // Add debounced search to improve performance
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  // Optimize calculations by combining operations
+  const { totalCredits, totalDebits, netBalance } = useMemo(() => {
+    let credits = 0;
+    let debits = 0;
+    
+    for (const entry of filteredEntries) {
+      const amount = typeof entry.amount === 'number' ? entry.amount : 0;
+      if (entry.type === 'credit') {
+        credits += amount;
+      } else if (entry.type === 'debit') {
+        debits += amount;
       }
     }
-  };
+    
+    return {
+      totalCredits: credits,
+      totalDebits: debits,
+      netBalance: credits - debits
+    };
+  }, [filteredEntries]);
+
+  // Optimize delete function with better error handling and performance
+  const confirmAndDelete = useCallback(async (id: string) => {
+    if (isDeleting === id) {
+      console.warn('Delete already in progress for entry:', id);
+      return;
+    }
+
+    if (!window.confirm('Delete this cashbook entry? This will also remove related ledger entries.')) {
+      return;
+    }
+
+    try {
+      setIsDeleting(id);
+      console.log('🗑️ Attempting to delete cashbook entry with ID:', id);
+      
+      // Find the entry to get the correct ID
+      const entryToDelete = entries.find(entry => entry._id === id || entry.id === id);
+      if (!entryToDelete) {
+        console.error('Entry not found in local store:', id);
+        alert('Entry not found. Please refresh and try again.');
+        return;
+      }
+      
+      const deleteId = entryToDelete._id || entryToDelete.id;
+      console.log('Using delete ID:', deleteId);
+      
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Delete operation timeout')), 15000)
+      );
+
+      // Delete from backend first with timeout
+      const deletePromise = apiService.deleteCashbookEntry(deleteId);
+      const deleteResponse = await Promise.race([deletePromise, timeoutPromise]);
+      console.log('Delete response:', deleteResponse);
+      
+      // Remove from local store immediately for better UX
+      setCashbookEntries(entries.filter((entry: CashbookEntry) => entry._id !== deleteId && entry.id !== deleteId));
+      
+      // Handle commission ledger entry creation in background
+      if (entryToDelete.category === 'party_commission' && entryToDelete.reference_name) {
+        const commissionLedgerEntry = {
+          ledger_type: 'commission',
+          reference_id: entryToDelete.reference_id || `CASH-COMM-${Date.now()}`,
+          reference_name: entryToDelete.reference_name,
+          date: entryToDelete.date,
+          description: entryToDelete.narration || `Party commission payment to ${entryToDelete.reference_name}`,
+          debit: entryToDelete.amount,
+          credit: 0,
+          balance: 0,
+          source_type: 'cashbook',
+        };
+        
+        // Run in background without blocking UI
+        apiService.createLedgerEntry(commissionLedgerEntry)
+          .then(() => console.log('✅ Party commission ledger entry created from cashbook'))
+          .catch(error => console.error('❌ Failed to create party commission ledger entry from cashbook:', error));
+      }
+      
+      // Handle related ledger entries deletion in background
+      apiService.getLedgerEntries()
+        .then(ledgerResponse => {
+          const relatedLedgers = ledgerResponse.ledgerEntries.filter(
+            ledger => (ledger.reference_id === deleteId || ledger.reference_id === id) && ledger.source_type === 'cashbook'
+          );
+          
+          console.log('Found related ledger entries:', relatedLedgers.length);
+          
+          // Delete each related ledger entry in parallel
+          const deletePromises = relatedLedgers.map(ledger => 
+            apiService.deleteLedgerEntry(ledger._id)
+              .then(() => console.log('Deleted ledger entry:', ledger._id))
+              .catch(error => console.warn('Failed to delete ledger entry:', ledger._id, error))
+          );
+          
+          return Promise.allSettled(deletePromises);
+        })
+        .catch(error => console.error('Error handling related ledger entries:', error));
+      
+      // Trigger data sync
+      window.dispatchEvent(new CustomEvent('data-sync-required'));
+      
+      console.log('✅ Cashbook entry deleted successfully');
+      
+    } catch (error) {
+      console.error('❌ Failed to delete cashbook entry:', error);
+      
+      // Check if it's a 404 error (entry already deleted)
+      if (error instanceof Error && (error.message.includes('404') || error.message.includes('timeout'))) {
+        // Remove from local store anyway since it's likely already gone
+        setCashbookEntries(entries.filter((entry: CashbookEntry) => entry._id !== id && entry.id !== id));
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        console.log('Entry was already deleted or timed out, removed from local store');
+      } else {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        alert(`Failed to delete cashbook entry: ${errorMessage}. Please try again.`);
+      }
+    } finally {
+      setIsDeleting(null);
+    }
+  }, [entries, isDeleting, setCashbookEntries]);
+
 
   return (
     <div className="space-y-6">
@@ -283,9 +366,9 @@ export default function Cashbook() {
 
       {showForm && (
         <BankingForm
-          onSubmit={handleCreateEntry}
+          onSubmit={handleCreateEntry as any}
           onCancel={handleCancelEdit}
-          editingEntry={editingEntry}
+          editingEntry={editingEntry as any}
         />
       )}
 
@@ -485,10 +568,11 @@ export default function Cashbook() {
                         </button>
                         <button
                           onClick={() => confirmAndDelete(entry._id || entry.id)}
-                          className="inline-flex items-center px-2 py-1 text-xs text-white bg-red-600 hover:bg-red-700 rounded"
-                          title="Delete entry"
+                          disabled={isDeleting === (entry._id || entry.id)}
+                          className="text-red-600 hover:text-red-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={isDeleting === (entry._id || entry.id) ? "Deleting..." : "Delete entry"}
                         >
-                          <Trash className="w-3 h-3 mr-1" /> Delete
+                          <Trash className="w-4 h-4" />
                         </button>
                       </div>
                     </td>

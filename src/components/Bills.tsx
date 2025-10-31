@@ -201,10 +201,17 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
     // Optional strict settlement check (kept)
     if (showOnlyFullyReceived) {
       base = base.filter(b => {
-        const received = bankingEntries
+        // Calculate received from both banking and cashbook entries
+        const bankingReceived = bankingEntries
           .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === b.bill_number)
           .reduce((sum, e) => sum + e.amount, 0);
-        return received >= b.net_amount && b.net_amount > 0;
+        
+        const cashbookReceived = (cashbookEntries || [])
+          .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === b.bill_number)
+          .reduce((sum, e) => sum + e.amount, 0);
+        
+        const totalReceived = bankingReceived + cashbookReceived;
+        return totalReceived >= b.net_amount && b.net_amount > 0;
       });
     }
     if (!search.trim()) return base;
@@ -226,7 +233,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [bills, bankingEntries, showOnlyFullyReceived, viewMode, search, loadingSlips]);
+  }, [bills, bankingEntries, cashbookEntries, showOnlyFullyReceived, viewMode, search, loadingSlips]);
 
   return (
     <div className="space-y-6">
@@ -306,9 +313,16 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
             const loadingSlip = typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null 
               ? bill.loading_slip_id 
               : loadingSlips.find(ls => ls.id === bill.loading_slip_id);
-            const received = bankingEntries
+            // Calculate received from both banking and cashbook entries
+            const bankingReceived = bankingEntries
               .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
               .reduce((sum, e) => sum + e.amount, 0);
+            
+            const cashbookReceived = (cashbookEntries || [])
+              .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
+              .reduce((sum, e) => sum + e.amount, 0);
+            
+            const received = bankingReceived + cashbookReceived;
             // Calculate net amount: freight - mamool - commission + detention + rto + extra - tds - penalties
             const netAmount = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
             const balance = netAmount - received;

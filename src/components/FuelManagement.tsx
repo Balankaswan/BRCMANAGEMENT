@@ -101,6 +101,7 @@ const FuelManagement: React.FC = () => {
 
   // Handle fuel allocation to vehicle
   const handleFuelAllocation = async () => {
+    // Validation checks
     if (!selectedWallet || !allocationForm.amount) {
       alert('Please select a fuel wallet and enter an amount');
       return;
@@ -116,10 +117,39 @@ const FuelManagement: React.FC = () => {
       return;
     }
 
+    // Parse and validate numeric inputs
     const amount = parseFloat(allocationForm.amount);
-    const fuelQuantity = allocationForm.fuelQuantity ? parseFloat(allocationForm.fuelQuantity) : undefined;
-    const ratePerLiter = allocationForm.ratePerLiter ? parseFloat(allocationForm.ratePerLiter) : undefined;
-    const odometerReading = allocationForm.odometerReading ? parseInt(allocationForm.odometerReading) : undefined;
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid amount greater than 0');
+      return;
+    }
+
+    const fuelQuantity = allocationForm.fuelQuantity ? parseFloat(allocationForm.fuelQuantity) : 0;
+    const ratePerLiter = allocationForm.ratePerLiter ? parseFloat(allocationForm.ratePerLiter) : 0;
+    const odometerReading = allocationForm.odometerReading ? parseInt(allocationForm.odometerReading) : 0;
+
+    // Validate parsed numbers
+    if (allocationForm.fuelQuantity && (isNaN(fuelQuantity) || fuelQuantity < 0)) {
+      alert('Please enter a valid fuel quantity');
+      return;
+    }
+
+    if (allocationForm.ratePerLiter && (isNaN(ratePerLiter) || ratePerLiter < 0)) {
+      alert('Please enter a valid rate per liter');
+      return;
+    }
+
+    if (allocationForm.odometerReading && (isNaN(odometerReading) || odometerReading < 0)) {
+      alert('Please enter a valid odometer reading');
+      return;
+    }
+
+    // Disable button to prevent double submission
+    const submitButton = document.querySelector('[data-fuel-submit]') as HTMLButtonElement;
+    if (submitButton) {
+      submitButton.disabled = true;
+      submitButton.textContent = 'Allocating...';
+    }
 
     try {
       console.log('🚛 Fuel allocation started:', {
@@ -131,19 +161,26 @@ const FuelManagement: React.FC = () => {
         narration: allocationForm.narration
       });
 
-      await allocateFuelToVehicle(
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Request timeout')), 30000)
+      );
+
+      const allocationPromise = allocateFuelToVehicle(
         selectedVehicle || 'N/A',
         selectedWallet,
         amount,
         allocationForm.date,
         allocationForm.narration || 'Fuel allocation',
-        fuelQuantity || 0,
-        ratePerLiter || 0,
-        odometerReading || 0,
+        fuelQuantity,
+        ratePerLiter,
+        odometerReading,
         'Diesel',
         'System',
         selectedSupplier || undefined
       );
+
+      await Promise.race([allocationPromise, timeoutPromise]);
 
       // Reset form on success
       setAllocationForm({
@@ -161,26 +198,66 @@ const FuelManagement: React.FC = () => {
       alert('✅ Fuel allocated successfully!');
     } catch (error) {
       console.error('❌ Fuel allocation failed:', error);
-      alert('❌ Failed to allocate fuel. Please try again.');
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`❌ Failed to allocate fuel: ${errorMessage}. Please try again.`);
+    } finally {
+      // Re-enable button
+      if (submitButton) {
+        submitButton.disabled = false;
+        submitButton.innerHTML = '<svg class="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 20 20"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>Allocate Fuel';
+      }
     }
   };
 
-  // Get vehicle fuel summary
+  // Get vehicle fuel summary with error handling
   const fuelSummary = useMemo(() => {
-    return vehicles.map(vehicle => {
-      const expenses = getVehicleFuelExpenses();
-      const totalExpense = expenses.reduce((sum, exp) => sum + exp.amount, 0);
-      const totalQuantity = expenses.reduce((sum, exp) => sum + (exp.fuel_quantity || 0), 0);
-      return {
-        vehicleNo: vehicle.vehicle_no,
-        vehicle,
-        totalExpense,
-        totalQuantity,
-        expenseCount: expenses.length,
-        lastFuelDate: expenses.length > 0 ? expenses[0].date : null
-      };
-    });
-  }, [vehicles, vehicleFuelExpenses]);
+    try {
+      if (!vehicles || !Array.isArray(vehicles)) {
+        console.warn('Vehicles data is not available or not an array');
+        return [];
+      }
+
+      return vehicles.map(vehicle => {
+        try {
+          // Safely get expenses with fallback
+          const expenses = getVehicleFuelExpenses ? getVehicleFuelExpenses() : [];
+          const safeExpenses = Array.isArray(expenses) ? expenses : [];
+          
+          const totalExpense = safeExpenses.reduce((sum, exp) => {
+            const amount = exp && typeof exp.amount === 'number' ? exp.amount : 0;
+            return sum + amount;
+          }, 0);
+          
+          const totalQuantity = safeExpenses.reduce((sum, exp) => {
+            const quantity = exp && typeof exp.fuel_quantity === 'number' ? exp.fuel_quantity : 0;
+            return sum + quantity;
+          }, 0);
+          
+          return {
+            vehicleNo: vehicle.vehicle_no || 'Unknown',
+            vehicle,
+            totalExpense,
+            totalQuantity,
+            expenseCount: safeExpenses.length,
+            lastFuelDate: safeExpenses.length > 0 && safeExpenses[0] ? safeExpenses[0].date : null
+          };
+        } catch (vehicleError) {
+          console.error('Error processing vehicle:', vehicle, vehicleError);
+          return {
+            vehicleNo: vehicle?.vehicle_no || 'Error',
+            vehicle,
+            totalExpense: 0,
+            totalQuantity: 0,
+            expenseCount: 0,
+            lastFuelDate: null
+          };
+        }
+      });
+    } catch (error) {
+      console.error('Error calculating fuel summary:', error);
+      return [];
+    }
+  }, [vehicles, vehicleFuelExpenses, getVehicleFuelExpenses]);
 
   return (
     <div className="space-y-6">
@@ -451,6 +528,7 @@ const FuelManagement: React.FC = () => {
               <button
                 onClick={handleFuelAllocation}
                 disabled={(!selectedVehicle && !selectedSupplier) || !selectedWallet || !allocationForm.amount}
+                data-fuel-submit
                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 <Fuel className="w-4 h-4" />
@@ -599,28 +677,42 @@ const FuelManagement: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {fuelSummary.map((summary: any) => (
-                    <tr key={summary.vehicleNo} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                        <div className="flex items-center space-x-2">
-                          <Truck className="w-4 h-4 text-gray-400" />
-                          <span>{summary.vehicleNo}</span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
-                        {formatCurrency(summary.totalExpense)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {summary.totalQuantity.toFixed(2)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {summary.expenseCount}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {summary.lastFuelDate ? new Date(summary.lastFuelDate).toLocaleDateString('en-IN') : 'No fuel records'}
-                      </td>
-                    </tr>
-                  ))}
+                  {fuelSummary.map((summary, index) => {
+                    // Safe rendering with fallbacks
+                    const vehicleNo = summary?.vehicleNo || `Vehicle-${index}`;
+                    const totalExpense = typeof summary?.totalExpense === 'number' ? summary.totalExpense : 0;
+                    const totalQuantity = typeof summary?.totalQuantity === 'number' ? summary.totalQuantity : 0;
+                    const expenseCount = typeof summary?.expenseCount === 'number' ? summary.expenseCount : 0;
+                    
+                    return (
+                      <tr key={`${vehicleNo}-${index}`} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          <div className="flex items-center space-x-2">
+                            <Truck className="w-4 h-4 text-gray-400" />
+                            <span>{vehicleNo}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">
+                          {formatCurrency(totalExpense)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {totalQuantity.toFixed(2)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {expenseCount}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          {summary?.lastFuelDate ? (() => {
+                            try {
+                              return new Date(summary.lastFuelDate).toLocaleDateString('en-IN');
+                            } catch {
+                              return 'Invalid date';
+                            }
+                          })() : 'No fuel records'}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

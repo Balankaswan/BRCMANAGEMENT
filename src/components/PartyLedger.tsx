@@ -23,7 +23,7 @@ interface PartyLedgerProps {
 }
 
 const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) => {
-  const { bills, bankingEntries, loadingSlips } = useDataStore();
+  const { bills, bankingEntries, cashbookEntries, loadingSlips } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [partyFilter, setPartyFilter] = useState(selectedParty || '');
@@ -92,12 +92,33 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
         })
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+      // Get all cashbook entries for this party (bill payments and advances)
+      const partyCashbookEntries = (cashbookEntries || [])
+        .filter(entry => {
+          // Include bill payments and advances linked to party bills
+          if ((entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
+              partyBills.some(bill => bill.bill_number === entry.reference_id)) {
+            return true;
+          }
+          // Include party on account transactions
+          if (entry.category === 'party_on_account' && entry.reference_name === party) {
+            return true;
+          }
+          // Include party commission payments
+          if (entry.category === 'party_commission' && entry.reference_name === party) {
+            return true;
+          }
+          return false;
+        })
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
       // Calculate running balance for this party
       let runningBalance = 0;
       const allEntries: Array<{
         type: 'bill' | 'payment' | 'advance' | 'on_account' | 'debit_note';
         date: string;
         data: any;
+        source?: 'bank' | 'cash';
       }> = [];
 
       // Add bills
@@ -108,13 +129,26 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
       // Add banking entries
       partyBankingEntries.forEach(entry => {
         if (entry.category === 'bill_payment') {
-          allEntries.push({ type: 'payment', date: entry.date, data: entry });
+          allEntries.push({ type: 'payment', date: entry.date, data: entry, source: 'bank' });
         } else if (entry.category === 'bill_advance') {
-          allEntries.push({ type: 'advance', date: entry.date, data: entry });
+          allEntries.push({ type: 'advance', date: entry.date, data: entry, source: 'bank' });
         } else if (entry.category === 'party_on_account') {
-          allEntries.push({ type: 'on_account', date: entry.date, data: entry });
+          allEntries.push({ type: 'on_account', date: entry.date, data: entry, source: 'bank' });
         } else if (entry.category === 'party_debit_note') {
-          allEntries.push({ type: 'debit_note', date: entry.date, data: entry });
+          allEntries.push({ type: 'debit_note', date: entry.date, data: entry, source: 'bank' });
+        }
+      });
+
+      // Add cashbook entries
+      partyCashbookEntries.forEach(entry => {
+        if (entry.category === 'bill_payment') {
+          allEntries.push({ type: 'payment', date: entry.date, data: entry, source: 'cash' });
+        } else if (entry.category === 'bill_advance') {
+          allEntries.push({ type: 'advance', date: entry.date, data: entry, source: 'cash' });
+        } else if (entry.category === 'party_on_account') {
+          allEntries.push({ type: 'on_account', date: entry.date, data: entry, source: 'cash' });
+        } else if (entry.category === 'party_commission') {
+          allEntries.push({ type: 'on_account', date: entry.date, data: entry, source: 'cash' });
         }
       });
 
@@ -147,7 +181,7 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
     });
     
     return total;
-  }, [parties, bills, bankingEntries]);
+  }, [parties, bills, bankingEntries, cashbookEntries]);
 
   // Generate ledger entries for selected party
   const ledgerEntries = useMemo(() => {
@@ -181,11 +215,32 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
+    // Get all cashbook entries for the party (bill payments, advances, and commissions)
+    const partyCashbookEntries = (cashbookEntries || [])
+      .filter(entry => {
+        // Include bill payments and advances linked to party bills
+        if ((entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
+            partyBills.some(bill => bill.bill_number === entry.reference_id)) {
+          return true;
+        }
+        // Include party on account transactions
+        if (entry.category === 'party_on_account' && entry.reference_name === partyFilter) {
+          return true;
+        }
+        // Include party commission payments
+        if (entry.category === 'party_commission' && entry.reference_name === partyFilter) {
+          return true;
+        }
+        return false;
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
     // Combine and sort all entries by date
     const allEntries: Array<{
       type: 'bill' | 'payment' | 'advance' | 'on_account' | 'debit_note';
       date: string;
       data: any;
+      source?: 'bank' | 'cash';
     }> = [];
 
     // Add bill entries
@@ -212,7 +267,27 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
       allEntries.push({
         type: entryType,
         date: entry.date,
-        data: entry
+        data: entry,
+        source: 'bank'
+      });
+    });
+
+    // Add cashbook entries
+    partyCashbookEntries.forEach(entry => {
+      let entryType: 'payment' | 'advance' | 'on_account' | 'debit_note' = 'payment';
+      if (entry.category === 'bill_advance') {
+        entryType = 'advance';
+      } else if (entry.category === 'party_on_account') {
+        entryType = 'on_account';
+      } else if (entry.category === 'party_commission') {
+        entryType = 'on_account'; // Treat commission as on-account payment
+      }
+      
+      allEntries.push({
+        type: entryType,
+        date: entry.date,
+        data: entry,
+        source: 'cash'
       });
     });
 
@@ -249,14 +324,14 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
       } else if (entry.type === 'payment') {
         debitPayment = entry.data.amount;
         runningBalance -= debitPayment;
-        remarks = 'Payment Received';
+        remarks = `Payment Received${entry.source ? ` (${entry.source.toUpperCase()})` : ''}`;
       } else if (entry.type === 'advance') {
         // Advance is already accounted for in bill creation
         return;
       } else if (entry.type === 'on_account') {
         debitPayment = entry.data.amount;
         runningBalance -= debitPayment;
-        remarks = 'On Account Payment Received';
+        remarks = `On Account Payment Received${entry.source ? ` (${entry.source.toUpperCase()})` : ''}`;
       } else if (entry.type === 'debit_note') {
         debitPayment = entry.data.amount;
         runningBalance -= debitPayment;
@@ -277,7 +352,7 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
     });
 
     return entries;
-  }, [partyFilter, bills, bankingEntries, loadingSlips]);
+  }, [partyFilter, bills, bankingEntries, cashbookEntries, loadingSlips]);
 
   // Filter by date range
   const filteredEntries = useMemo(() => {

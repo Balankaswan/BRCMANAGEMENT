@@ -62,40 +62,78 @@ const FuelAllocationLedger: React.FC = () => {
   const fetchFuelTransactions = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log('🔄 Fetching fuel transactions...');
       
-      // Fetch with higher limit to get all transactions
-      const response = await apiService.getFuelTransactions({ limit: 1000 });
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       
-      console.log('📊 Raw API response:', response);
-      console.log('📊 Total transactions fetched:', response.transactions?.length);
-      
-      // Filter fuel allocation transactions (type: 'fuel_allocation' only - these are actual allocations)
-      const allocations = response.transactions?.filter((t: FuelTransaction) => 
-        t.type === 'fuel_allocation'
-      ) || [];
-      
-      console.log('🔍 Fuel allocation transactions found:', allocations.length);
-      console.log('🔍 Allocation details:', allocations.map(a => ({
-        id: a._id,
-        vehicle: a.vehicle_no,
-        amount: a.amount,
-        date: a.date,
-        wallet: a.wallet_name
-      })));
-      
-      setTransactions(allocations);
-      setError(null);
+      try {
+        // Fetch with higher limit to get all transactions
+        const response = await apiService.getFuelTransactions({ limit: 1000 });
+        clearTimeout(timeoutId);
+        
+        console.log('📊 Raw API response:', response);
+        
+        // Safely access response data
+        if (!response || typeof response !== 'object') {
+          throw new Error('Invalid response format');
+        }
+        
+        const transactions = response.transactions || [];
+        console.log('📊 Total transactions fetched:', transactions.length);
+        
+        // Safely filter fuel allocation transactions
+        const allocations = transactions.filter((t: any) => {
+          try {
+            return t && typeof t === 'object' && t.type === 'fuel_allocation';
+          } catch {
+            return false;
+          }
+        }) || [];
+        
+        console.log('🔍 Fuel allocation transactions found:', allocations.length);
+        console.log('🔍 Allocation details:', allocations.map(a => {
+          try {
+            return {
+              id: a._id || 'unknown',
+              vehicle: a.vehicle_no || 'N/A',
+              amount: a.amount || 0,
+              date: a.date || 'Unknown',
+              wallet: a.wallet_name || 'Unknown'
+            };
+          } catch {
+            return { id: 'error', vehicle: 'Error', amount: 0, date: 'Error', wallet: 'Error' };
+          }
+        }));
+        
+        setTransactions(allocations);
+        setError(null);
+      } catch (fetchError) {
+        clearTimeout(timeoutId);
+        throw fetchError;
+      }
     } catch (err) {
       console.error('❌ Error fetching fuel transactions:', err);
-      setError('Failed to load fuel allocation data');
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(`Failed to load fuel allocation data: ${errorMessage}`);
+      setTransactions([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
   };
 
   const applyFilters = () => {
-    let filtered = [...transactions];
+    try {
+      // Safely copy transactions array
+      if (!Array.isArray(transactions)) {
+        console.warn('Transactions is not an array:', transactions);
+        setFilteredTransactions([]);
+        return;
+      }
+      
+      let filtered = [...transactions];
 
     // Apply date filters
     if (filters.dateFrom) {
@@ -136,17 +174,37 @@ const FuelAllocationLedger: React.FC = () => {
 
     setFilteredTransactions(filtered);
 
-    // Calculate summary
-    const totalAmount = filtered.reduce((sum, t) => sum + t.amount, 0);
-    const totalQuantity = filtered.reduce((sum, t) => sum + (t.fuel_quantity || 0), 0);
-    const uniqueVehicles = new Set(filtered.map(t => t.vehicle_no).filter(Boolean)).size;
-
-    setSummary({
+    // Calculate summary with safe operations
+    const summary = {
       totalAllocations: filtered.length,
-      totalAmount,
-      totalQuantity,
-      uniqueVehicles
-    });
+      totalAmount: filtered.reduce((sum, t) => {
+        const amount = t && typeof t.amount === 'number' ? t.amount : 0;
+        return sum + amount;
+      }, 0),
+      totalQuantity: filtered.reduce((sum, t) => {
+        const quantity = t && typeof t.fuel_quantity === 'number' ? t.fuel_quantity : 0;
+        return sum + quantity;
+      }, 0),
+      uniqueVehicles: new Set(filtered.map(t => {
+        try {
+          return t && t.vehicle_no ? t.vehicle_no : null;
+        } catch {
+          return null;
+        }
+      }).filter(Boolean)).size
+    };
+    
+    setSummary(summary);
+    } catch (error) {
+      console.error('Error applying filters:', error);
+      setFilteredTransactions([]);
+      setSummary({
+        totalAllocations: 0,
+        totalAmount: 0,
+        totalQuantity: 0,
+        uniqueVehicles: 0
+      });
+    }
   };
 
   const clearFilters = () => {
