@@ -74,6 +74,9 @@ export default function Cashbook() {
         const savedEntry = response.cashbookEntry;
         console.log('✅ Cashbook entry created successfully:', savedEntry.transaction_id);
         
+        // Set timestamp to prevent sync override
+        localStorage.setItem('lastCashbookCreation', Date.now().toString());
+        
         // Add to local store using addCashbookEntry to ensure proper processing
         addCashbookEntry(savedEntry);
         
@@ -481,7 +484,7 @@ export default function Cashbook() {
                           <Edit className="w-3 h-3 mr-1" /> Edit
                         </button>
                         <button
-                          onClick={() => confirmAndDelete(entry.id)}
+                          onClick={() => confirmAndDelete(entry._id || entry.id)}
                           className="inline-flex items-center px-2 py-1 text-xs text-white bg-red-600 hover:bg-red-700 rounded"
                           title="Delete entry"
                         >

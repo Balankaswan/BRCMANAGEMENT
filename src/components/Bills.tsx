@@ -309,8 +309,8 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
             const received = bankingEntries
               .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
               .reduce((sum, e) => sum + e.amount, 0);
-            // Calculate net amount including all charges
-            const netAmount = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.penalties || 0) - (bill.tds || 0);
+            // Calculate net amount: freight - mamool - commission + detention + rto + extra - tds - penalties
+            const netAmount = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
             const balance = netAmount - received;
             const trips = 1; // Default trips count
             

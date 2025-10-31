@@ -11,6 +11,31 @@ const router = express.Router();
 // Apply authentication to all routes - temporarily disabled for debugging
 // router.use(authenticateToken);
 
+// Debug endpoint to check bill advance payments
+router.get('/debug/:bill_number', async (req, res) => {
+  try {
+    const bill = await Bill.findOne({ bill_number: req.params.bill_number });
+    if (!bill) {
+      return res.status(404).json({ message: 'Bill not found' });
+    }
+    
+    console.log('🔍 Debug Bill Data:', {
+      bill_number: bill.bill_number,
+      advance_payments_count: bill.advance_payments?.length || 0,
+      advance_payments: bill.advance_payments
+    });
+    
+    res.json({
+      bill_number: bill.bill_number,
+      advance_payments: bill.advance_payments,
+      total_advance: bill.advance_payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0
+    });
+  } catch (error) {
+    console.error('Debug bill error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all bills
 router.get('/', async (req, res) => {
   try {

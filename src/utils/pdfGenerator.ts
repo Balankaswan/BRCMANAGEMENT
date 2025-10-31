@@ -2,6 +2,9 @@ import jsPDF from 'jspdf';
 import { COMPANY_LOGO_BASE64 } from '../assets/logo';
 import type { LoadingSlip, Memo, Bill } from '../types';
 
+// Signature base64 - Add your actual signature image here
+const SIGNATURE_BASE64: string = ''; // Empty until you add your actual signature base64
+
 // Helper: ensure PNG data URL for jsPDF.addImage
 const ensurePngDataUrl = async (dataUrl: string): Promise<string> => {
   try {
@@ -504,22 +507,22 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 20;
 
-  // Header with date and bill number
+  // Header with date and bill number - moved up
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(0, 0, 0);
-  pdf.text(`${new Date(bill.date).toLocaleDateString('en-GB')}, ${new Date(bill.date).toLocaleTimeString('en-GB', { hour12: false })}`, margin, 15);
-  pdf.text(`Bill - ${bill.bill_number}`, pageWidth - margin, 15, { align: 'right' });
+  pdf.text(`${new Date(bill.date).toLocaleDateString('en-GB')}, ${new Date(bill.date).toLocaleTimeString('en-GB', { hour12: false })}`, margin, 10); // Moved up from 15 to 10
+  pdf.text(`Bill - ${bill.bill_number}`, pageWidth - margin, 10, { align: 'right' }); // Moved up from 15 to 10
 
-  // Company header box
+  // Company header box - moved up
   pdf.setLineWidth(0.5);
   pdf.setDrawColor(0, 0, 0);
-  pdf.rect(margin, 25, pageWidth - (2 * margin), 45);
+  pdf.rect(margin, 15, pageWidth - (2 * margin), 45); // Kept at 15 to avoid overlap with header text
 
   // Logo
   try {
     const logoPng = await ensurePngDataUrl(COMPANY_LOGO_BASE64);
-    pdf.addImage(logoPng, 'PNG', margin + 5, 30, 20, 20);
+    pdf.addImage(logoPng, 'PNG', margin + 5, 20, 20, 20);
   } catch (error) {
     console.warn('Could not add logo to PDF:', error);
   }
@@ -528,29 +531,32 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.setFontSize(16);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(0, 102, 204);
-  pdf.text('BHAVISHYA ROAD CARRIERS', pageWidth / 2, 35, { align: 'center' });
+  pdf.text('BHAVISHYA ROAD CARRIERS', pageWidth / 2, 25, { align: 'center' }); // Moved up from 35 to 25
   
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(0, 0, 0);
-  pdf.text('Specialist in Heavy ODC, Hydraulic, Low Bed Trailer, Flat Bed Trailer Transport & Commission Agent', pageWidth / 2, 42, { align: 'center' });
-  pdf.text('FLEET OWNERS, TRANSPORT CONTRACTORS & COMMISSION AGENTS', pageWidth / 2, 47, { align: 'center' });
-  pdf.text('404, Parijaat Business Center, Nr. SP Ring Road, Aslali, Ahmedabad - 382405', pageWidth / 2, 52, { align: 'center' });
-  pdf.text('(SUBJECT TO AHMEDABAD JURISDICTION)', pageWidth / 2, 57, { align: 'center' });
+  pdf.text('Specialist in Heavy ODC, Hydraulic, Low Bed Trailer, Flat Bed Trailer Transport & Commission Agent', pageWidth / 2, 32, { align: 'center' }); // Moved up from 42 to 32
+  pdf.text('FLEET OWNERS, TRANSPORT CONTRACTORS & COMMISSION AGENTS', pageWidth / 2, 37, { align: 'center' }); // Moved up from 47 to 37
+  pdf.text('404, Parijaat Business Center, Nr. SP Ring Road, Aslali, Ahmedabad - 382405', pageWidth / 2, 42, { align: 'center' }); // Moved up from 52 to 42
+  pdf.text('(SUBJECT TO AHMEDABAD JURISDICTION)', pageWidth / 2, 47, { align: 'center' }); // Moved up from 57 to 47
 
-  // MOB and PAN section
+  // MOB and PAN section - moved up
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'normal');
-  pdf.text(`MOB:9824026576, 9824900776`, margin, 65);
-  pdf.text(`PAN NO: BNDPK7173D`, pageWidth - margin, 65, { align: 'right' });
+  pdf.text(`MOB:9824026576, 9824900776`, margin, 55); // Moved up from 65 to 55
+  pdf.text(`PAN NO: BNDPK7173D`, pageWidth - margin, 55, { align: 'right' }); // Moved up from 65 to 55
 
-  // Party details
-  pdf.text(`M/S: ${bill.party.toUpperCase()}`, margin, 75);
-  pdf.text(`BILL NO: ${bill.bill_number}`, pageWidth - margin, 75, { align: 'right' });
-  pdf.text(`BILL DATE: ${new Date(bill.date).toLocaleDateString('en-GB')}`, pageWidth - margin, 82, { align: 'right' });
+  // Party details - moved up
+  pdf.text(`M/S: ${bill.party.toUpperCase()}`, margin, 65); // Moved up from 75 to 65
+  pdf.text(`BILL NO: ${bill.bill_number}`, pageWidth - margin, 65, { align: 'right' }); // Moved up from 75 to 65
+  
+  // Address section below M/S
+  pdf.text(`ADDRESS:`, margin, 72);
+  pdf.text(`BILL DATE: ${new Date(bill.date).toLocaleDateString('en-GB')}`, pageWidth - margin, 72, { align: 'right' }); // Moved up from 82 to 72
 
-  // Table setup
-  const tableY = 95;
+  // Table setup - adjusted for address section
+  const tableY = 85; // Kept same position
   const rowHeight = 12;
   const colWidths = [15, 23, 24, 24, 22, 13, 22, 22, 22, 20, 22, 20]; // Total = 257mm
   let colX = [margin];
@@ -587,7 +593,18 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.setFontSize(8);
   
   // Data from loading slip and bill
-  const totalAdvance = bill.advance_payments?.reduce((sum, payment) => sum + payment.amount, 0) || 0;
+  // Calculate advances from banking and cashbook entries (same logic as Bills component)
+  const bankingAdvances = bankingEntries 
+    ? bankingEntries.filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
+        .reduce((sum, e) => sum + e.amount, 0)
+    : 0;
+  
+  const cashbookAdvances = cashbookEntries 
+    ? cashbookEntries.filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
+        .reduce((sum, e) => sum + e.amount, 0)
+    : 0;
+    
+  const totalAdvance = bankingAdvances + cashbookAdvances;
   const detention = bill.detention || 0;
   const extra = bill.extra || 0;  
   const rto = bill.rto || 0;
@@ -640,24 +657,46 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   });
 
   // Advance Details Section (if any advances exist)
-  let advanceY = totalY + 15;
-  if (bill.advance_payments && bill.advance_payments.length > 0) {
+  let advanceY = totalY + 20; // Increased spacing between main table and advance details
+  
+  // Get actual advance payments from both banking and cashbook entries
+  const bankingAdvancePayments = bankingEntries 
+    ? bankingEntries.filter(e => 
+        (e.category === 'bill_advance' || e.category === 'bill_payment') && 
+        e.reference_id === bill.bill_number
+      ).map(e => ({ ...e, source: 'BANK' }))
+    : [];
+    
+  const cashbookAdvancePayments = cashbookEntries 
+    ? cashbookEntries.filter(e => 
+        (e.category === 'bill_advance' || e.category === 'bill_payment') && 
+        e.reference_id === bill.bill_number
+      ).map(e => ({ ...e, source: 'CASH' }))
+    : [];
+  
+  const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments];
+  
+  if (allAdvancePayments.length > 0) {
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(9);
+    pdf.setFontSize(8); // Reduced from 9 to 8
     pdf.text('ADVANCE DETAILS:', margin, advanceY);
     
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(8);
-    bill.advance_payments.forEach((payment, index) => {
-      advanceY += 8;
-      pdf.text(`${index + 1}. Date: ${new Date(payment.date).toLocaleDateString('en-GB')} - Amount: ${formatCurrencyForPDF(payment.amount)} - Mode: ${payment.mode?.toUpperCase() || 'CASH'}`, margin, advanceY);
+    pdf.setFontSize(7); // Reduced from 8 to 7
+    allAdvancePayments.forEach((payment, index) => {
+      advanceY += 5; // Reduced from 6 to 5
+      const paymentDate = new Date(payment.date).toLocaleDateString('en-GB');
+      const paymentAmount = formatCurrencyForPDF(payment.amount);
+      const paymentMode = payment.source || 'CASH';
+      pdf.text(`${index + 1}. Date: ${paymentDate} - Amount: ${paymentAmount} - Mode: ${paymentMode}`, margin, advanceY);
     });
-    advanceY += 10;
+    advanceY += 3; // Reduced from 5 to 3
   }
 
   // Combined Bank Details and Signature section (full width)
-  const bankY = advanceY > 0 ? advanceY + 5 : totalY + 20;
+  let bankY = advanceY > 0 ? advanceY + 8 : totalY + 20; // Back to original spacing since bank details were perfect
   const boxHeight = 35;
+  
   pdf.rect(margin, bankY, pageWidth - (2 * margin), boxHeight);
   
   // No divider line - remove the vertical separator
@@ -676,44 +715,22 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
 
   // Right side - Signature
   const sigX = pageWidth - 80;
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(9);
-  pdf.text('FOR, BHAVISHYA ROAD CARRIERS', sigX, bankY + 20);
-  pdf.text('AUTHORISED SIGNATORY', sigX, bankY + 30);
-
-  // Add POD image if available
-  if (bill.pod_image) {
-    // Add second page with full POD image
-    pdf.addPage();
-    
-    // Header for POD page
-    pdf.setFontSize(16);
-    pdf.setFont('helvetica', 'bold');
-    pdf.setTextColor(0, 102, 204);
-    pdf.text('PROOF OF DELIVERY (POD)', pageWidth / 2, 30, { align: 'center' });
-    
-    pdf.setFontSize(12);
-    pdf.setFont('helvetica', 'normal');
-    pdf.setTextColor(0, 0, 0);
-    pdf.text(`Bill No: ${bill.bill_number}`, margin, 45);
-    pdf.text(`Party: ${bill.party}`, margin, 55);
-    pdf.text(`Vehicle: ${loadingSlip.vehicle_no}`, margin, 65);
-    pdf.text(`Route: ${loadingSlip.from_location} → ${loadingSlip.to_location}`, margin, 75);
-    
-    // Full size POD image
+  
+  // Add signature image (only if signature base64 is provided)
+  if (SIGNATURE_BASE64 && SIGNATURE_BASE64.trim() !== '') {
     try {
-      const podFullWidth = pageWidth - (2 * margin);
-      const podFullHeight = pageHeight - 120;
-      pdf.addImage(bill.pod_image, 'JPEG', margin, 85, podFullWidth, podFullHeight);
+      const signaturePng = await ensurePngDataUrl(SIGNATURE_BASE64);
+      pdf.addImage(signaturePng, 'PNG', sigX - 10, bankY + 8, 40, 15); // Signature image above text
     } catch (error) {
-      console.warn('Could not add POD image to second page:', error);
-      pdf.setFontSize(10);
-      pdf.text('POD image could not be displayed', pageWidth / 2, pageHeight / 2, { align: 'center' });
+      console.warn('Could not add signature to PDF:', error);
     }
   }
+  
+  pdf.setFont('helvetica', 'bold');
+  pdf.setFontSize(9);
+  pdf.text('FOR, BHAVISHYA ROAD CARRIERS', sigX, bankY + 15);
+  pdf.text('AUTHORISED SIGNATORY', sigX, bankY + 25);
 
-  // Footer
-  pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.setTextColor(128, 128, 128);
   pdf.text('GENERATED BY BHAVISHYA ROAD CARRIERS SYSTEM', pageWidth / 2, pageHeight - 10, { align: 'center' });

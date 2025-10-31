@@ -25,6 +25,9 @@ const BankingComponent: React.FC = () => {
       const response = await apiService.createBankingEntry(entryData);
       console.log('✅ Banking entry created in backend:', response.bankingEntry);
       
+      // Set timestamp to prevent sync override
+      localStorage.setItem('lastBankingCreation', Date.now().toString());
+      
       // Add the entry directly to store to show immediately
       const backendEntry = {
         ...response.bankingEntry,

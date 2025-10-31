@@ -23,7 +23,7 @@ interface PartyLedgerProps {
 }
 
 const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) => {
-  const { bills, bankingEntries, loadingSlips, addBankingEntry } = useDataStore();
+  const { bills, bankingEntries, loadingSlips } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [partyFilter, setPartyFilter] = useState(selectedParty || '');
@@ -364,25 +364,19 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
     }
 
     try {
-      const debitNoteEntry = {
-        type: 'credit' as const,
-        category: 'party_debit_note' as const,
+      const debitNoteData = {
+        party_name: partyFilter,
         amount: debitNoteForm.amount,
         date: debitNoteForm.date,
-        reference_name: partyFilter,
         narration: debitNoteForm.narration
       };
 
-      console.log('🔄 Creating party debit note via API:', debitNoteEntry);
-      const response = await apiService.createBankingEntry(debitNoteEntry);
-      console.log('✅ Party debit note created in backend:', response.bankingEntry);
+      console.log('🔄 Creating party debit note (ledger only):', debitNoteData);
+      const response = await apiService.createPartyDebitNote(debitNoteData);
+      console.log('✅ Party debit note created in backend:', response.ledgerEntry);
       
-      // Add the entry to store with backend ID
-      const backendEntry = {
-        ...response.bankingEntry,
-        id: response.bankingEntry._id || response.bankingEntry.id
-      };
-      addBankingEntry(backendEntry);
+      // No banking entry is created - only ledger entry
+      // The ledger will be refreshed automatically by the sync system
       
       // Reset form and close modal
       setDebitNoteForm({

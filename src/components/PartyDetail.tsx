@@ -40,8 +40,8 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
         .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
         .reduce((total, entry) => total + entry.amount, 0);
       
-      // Calculate what party owes (excluding party commission cut)
-      const totalAmount = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+      // Calculate what party owes: freight - mamool - commission + detention + rto + extra - tds - penalties
+      const totalAmount = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
       const pendingAmount = totalAmount - billPayments;
       
       if (pendingAmount > 0) {

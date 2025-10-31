@@ -146,14 +146,54 @@ router.post('/', async (req, res) => {
       console.log('✅ Credited fuel wallet from banking:', bankingEntry.reference_name, 'Amount:', bankingEntry.amount);
     }
 
+    // Handle memo and bill payments - add to advance_payments array
+    if (bankingEntry.category === 'memo_payment' && bankingEntry.reference_id) {
+      const Memo = (await import('../models/Memo.js')).default;
+      const memo = await Memo.findOne({ memo_number: bankingEntry.reference_id });
+      
+      if (memo) {
+        const advancePayment = {
+          date: bankingEntry.date,
+          amount: bankingEntry.amount,
+          mode: 'bank',
+          reference: `Banking Entry: ${bankingEntry._id}`,
+          description: bankingEntry.narration || 'Bank payment'
+        };
+        
+        memo.advance_payments.push(advancePayment);
+        await memo.save();
+        console.log('✅ Added bank payment to memo:', bankingEntry.reference_id);
+      }
+    }
+    
+    if (bankingEntry.category === 'bill_payment' && bankingEntry.reference_id) {
+      const Bill = (await import('../models/Bill.js')).default;
+      const bill = await Bill.findOne({ bill_number: bankingEntry.reference_id });
+      
+      if (bill) {
+        const advancePayment = {
+          date: bankingEntry.date,
+          amount: bankingEntry.amount,
+          mode: 'bank',
+          reference: `Banking Entry: ${bankingEntry._id}`,
+          description: bankingEntry.narration || 'Bank payment'
+        };
+        
+        bill.advance_payments.push(advancePayment);
+        await bill.save();
+        console.log('✅ Added bank payment to bill:', bankingEntry.reference_id);
+      }
+    }
+
     // Create ledger entries automatically with duplicate prevention
     // Create appropriate ledger entries based on category
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
     
-    // Exclude specific categories from general ledger
+    // Exclude specific categories from general ledger (these already create specific ledger entries above)
     const excludedCategories = [
       'party_commission', 
       'party_on_account', 
+      'supplier_payment',
       'supplier_on_account',
       'memo_advance', 
       'bill_advance', 

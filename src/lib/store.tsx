@@ -154,8 +154,17 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     // Cashbook actions - simplified, backend handles all ledger logic
     addCashbookEntry: (entry) => {
-      setCashbookEntries(prev => [entry, ...prev]);
-      console.log('✅ Cashbook entry added to store:', entry.id);
+      setCashbookEntries(prev => {
+        const entryId = entry.id || entry._id;
+        // Check if entry already exists to prevent duplicates
+        const exists = prev.some(e => (e.id || e._id) === entryId);
+        if (exists) {
+          console.log('💰 Cashbook entry already exists, skipping duplicate:', entryId);
+          return prev;
+        }
+        console.log('💰 Adding new cashbook entry to store:', entryId);
+        return [entry, ...prev];
+      });
     },
     updateCashbookEntry: (entry) => {
       setCashbookEntries(prev => prev.map(e => e.id === entry.id ? entry : e));

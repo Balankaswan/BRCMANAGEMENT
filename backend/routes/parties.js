@@ -117,4 +117,66 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Create party debit note (accounting adjustment only - no banking entry)
+router.post('/debit-note', async (req, res) => {
+  try {
+    const { party_name, amount, narration, date } = req.body;
+    
+    console.log('🔄 Creating party debit note (ledger only):', { party_name, amount, narration, date });
+    
+    // Validate required fields
+    if (!party_name || !amount || !narration || !date) {
+      return res.status(400).json({ message: 'Missing required fields: party_name, amount, narration, date' });
+    }
+    
+    if (amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be greater than 0' });
+    }
+    
+    // Find party to get ID
+    const party = await Party.findOne({ name: party_name });
+    if (!party) {
+      return res.status(404).json({ message: 'Party not found' });
+    }
+    
+    // Create only ledger entry (no banking entry)
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    
+    const ledgerEntry = new LedgerEntry({
+      referenceId: party._id,
+      reference_id: `DEBIT-${Date.now()}`, // Unique reference for debit note
+      ledger_type: 'party',
+      reference_name: party_name,
+      source_type: 'debit_note',
+      type: 'adjustment',
+      date: new Date(date),
+      description: `Party Debit Note - ${narration}`,
+      debit: 0,
+      credit: amount, // Debit note reduces party balance (credit to party account)
+      balance: 0,
+      created_at: new Date()
+    });
+    
+    await ledgerEntry.save();
+    
+    console.log('✅ Created party debit note ledger entry:', ledgerEntry._id);
+    
+    res.status(201).json({
+      message: 'Party debit note created successfully',
+      ledgerEntry: {
+        id: ledgerEntry._id,
+        party_name,
+        amount,
+        narration,
+        date,
+        reference_id: ledgerEntry.reference_id
+      }
+    });
+    
+  } catch (error) {
+    console.error('Create party debit note error:', error);
+    res.status(500).json({ message: 'Failed to create party debit note', error: error.message });
+  }
+});
+
 export default router;

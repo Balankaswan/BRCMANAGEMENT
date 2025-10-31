@@ -49,7 +49,8 @@ const Parties: React.FC<PartiesProps> = ({ onNavigate }) => {
       
       const billPayments = billBankingPayments + billCashbookPayments;
       
-      const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+      // freight - mamool - commission + detention + rto + extra - tds - penalties
+      const partyOwes = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
       const pendingAmount = partyOwes - billPayments;
       
       if (pendingAmount > 0) {

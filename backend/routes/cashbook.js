@@ -177,15 +177,55 @@ router.post('/', async (req, res) => {
         console.log('✅ Added cash advance payment to memo:', cashbookEntry.reference_id);
       }
     }
+    
+    if (cashbookEntry.category === 'memo_payment' && cashbookEntry.reference_id) {
+      const Memo = (await import('../models/Memo.js')).default;
+      const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
+      
+      if (memo) {
+        const advancePayment = {
+          date: cashbookEntry.date,
+          amount: cashbookEntry.amount,
+          mode: 'cash',
+          reference: `Cashbook Entry: ${cashbookEntry._id}`,
+          description: cashbookEntry.narration || 'Cash payment'
+        };
+        
+        memo.advance_payments.push(advancePayment);
+        await memo.save();
+        console.log('✅ Added cash payment to memo:', cashbookEntry.reference_id);
+      }
+    }
+    
+    if (cashbookEntry.category === 'bill_payment' && cashbookEntry.reference_id) {
+      const Bill = (await import('../models/Bill.js')).default;
+      const bill = await Bill.findOne({ bill_number: cashbookEntry.reference_id });
+      
+      if (bill) {
+        const advancePayment = {
+          date: cashbookEntry.date,
+          amount: cashbookEntry.amount,
+          mode: 'cash',
+          reference: `Cashbook Entry: ${cashbookEntry._id}`,
+          description: cashbookEntry.narration || 'Cash payment'
+        };
+        
+        bill.advance_payments.push(advancePayment);
+        await bill.save();
+        console.log('✅ Added cash payment to bill:', cashbookEntry.reference_id);
+      }
+    }
 
     // Create ledger entries automatically with duplicate prevention
     // Create appropriate ledger entries based on category
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
     
-    // Exclude specific categories from general ledger
+    // Exclude specific categories from general ledger (these already create specific ledger entries above)
     const excludedCategories = [
       'party_commission', 
       'party_on_account', 
+      'supplier_payment',
+      'supplier_on_account',
       'memo_advance', 
       'bill_advance', 
       'memo_payment', 

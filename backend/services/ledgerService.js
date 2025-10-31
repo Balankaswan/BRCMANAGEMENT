@@ -156,10 +156,13 @@ export const createBillLedgerEntries = async (bill) => {
   try {
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
     
-    // Calculate net amount
-    const netAmount = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0) - (bill.commission || 0);
+    // Calculate total freight: freight - mamool - commission + detention + rto + extra - tds - penalties
+    const totalFreight = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
     
-    // Debit Party Ledger with net amount (amount receivable from party)
+    // Net amount for supplier payment (total freight minus party commission cut)
+    const netAmount = totalFreight - (bill.party_commission_cut || 0);
+    
+    // Debit Party Ledger with total freight (amount receivable from party)
     await LedgerEntry.create({
       referenceId: bill._id.toString(),
       reference_id: bill._id.toString(),
@@ -167,8 +170,8 @@ export const createBillLedgerEntries = async (bill) => {
       reference_name: bill.party,
       source_type: 'bill',
       type: 'bill',
-      description: `Bill ${bill.bill_number} - Amount Receivable (Net)`,
-      debit: netAmount,
+      description: `Bill ${bill.bill_number} - Amount Receivable`,
+      debit: totalFreight,
       credit: 0,
       balance: 0, // Will be calculated by frontend
       date: bill.date,
@@ -178,7 +181,9 @@ export const createBillLedgerEntries = async (bill) => {
     console.log('✅ Bill ledger entries processed:', {
       bill: bill.bill_number,
       party: bill.party,
-      debit: netAmount
+      totalFreight: totalFreight,
+      netAmount: netAmount,
+      debit: totalFreight
     });
 
   } catch (error) {

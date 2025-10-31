@@ -114,4 +114,66 @@ router.delete('/:id', async (req, res) => {
   }
 });
 
+// Create supplier debit note (accounting adjustment only - no banking entry)
+router.post('/debit-note', async (req, res) => {
+  try {
+    const { supplier_name, amount, narration, date } = req.body;
+    
+    console.log('🔄 Creating supplier debit note (ledger only):', { supplier_name, amount, narration, date });
+    
+    // Validate required fields
+    if (!supplier_name || !amount || !narration || !date) {
+      return res.status(400).json({ message: 'Missing required fields: supplier_name, amount, narration, date' });
+    }
+    
+    if (amount <= 0) {
+      return res.status(400).json({ message: 'Amount must be greater than 0' });
+    }
+    
+    // Find supplier to get ID
+    const supplier = await Supplier.findOne({ name: supplier_name });
+    if (!supplier) {
+      return res.status(404).json({ message: 'Supplier not found' });
+    }
+    
+    // Create only ledger entry (no banking entry)
+    const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+    
+    const ledgerEntry = new LedgerEntry({
+      referenceId: supplier._id,
+      reference_id: `DEBIT-${Date.now()}`, // Unique reference for debit note
+      ledger_type: 'supplier',
+      reference_name: supplier_name,
+      source_type: 'debit_note',
+      type: 'adjustment',
+      date: new Date(date),
+      description: `Supplier Debit Note - ${narration}`,
+      debit: amount, // Debit note reduces supplier balance (debit to supplier account)
+      credit: 0,
+      balance: 0,
+      created_at: new Date()
+    });
+    
+    await ledgerEntry.save();
+    
+    console.log('✅ Created supplier debit note ledger entry:', ledgerEntry._id);
+    
+    res.status(201).json({
+      message: 'Supplier debit note created successfully',
+      ledgerEntry: {
+        id: ledgerEntry._id,
+        supplier_name,
+        amount,
+        narration,
+        date,
+        reference_id: ledgerEntry.reference_id
+      }
+    });
+    
+  } catch (error) {
+    console.error('Create supplier debit note error:', error);
+    res.status(500).json({ message: 'Failed to create supplier debit note', error: error.message });
+  }
+});
+
 export default router;

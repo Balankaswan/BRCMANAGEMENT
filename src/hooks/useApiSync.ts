@@ -259,24 +259,48 @@ export const useApiSync = () => {
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
-          const fetchedBankingEntries = bankingEntriesResponse.value.bankingEntries || [];
-          console.log('🏦 Banking entries synced from backend:', fetchedBankingEntries.length);
+          // Check if banking entry was recently created (within last 5 seconds)
+          const recentBankingCreation = localStorage.getItem('lastBankingCreation');
+          const isRecentCreation = recentBankingCreation && (Date.now() - parseInt(recentBankingCreation)) < 5000;
           
-          // Deduplicate banking entries by ID to prevent duplicates
-          const uniqueBankingEntries = fetchedBankingEntries.filter((entry: any, index: number, self: any[]) => {
-            const entryId = entry.id || entry._id;
-            return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
-          });
-          
-          console.log('🏦 Unique banking entries after deduplication:', uniqueBankingEntries.length);
-          console.log('🧹 Database cleanup completed - removed duplicates from backend');
-          store.setBankingEntries(uniqueBankingEntries);
+          if (isRecentCreation) {
+            console.log('⏳ Skipping banking sync - recent creation detected');
+          } else {
+            const fetchedBankingEntries = bankingEntriesResponse.value.bankingEntries || [];
+            console.log('🏦 Banking entries synced from backend:', fetchedBankingEntries.length);
+            
+            // Deduplicate banking entries by ID to prevent duplicates
+            const uniqueBankingEntries = fetchedBankingEntries.filter((entry: any, index: number, self: any[]) => {
+              const entryId = entry.id || entry._id;
+              return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
+            });
+            
+            console.log('🏦 Unique banking entries after deduplication:', uniqueBankingEntries.length);
+            console.log('🧹 Database cleanup completed - removed duplicates from backend');
+            store.setBankingEntries(uniqueBankingEntries);
+          }
         }
 
         if (cashbookEntriesResponse.status === 'fulfilled') {
-          const fetchedCashbookEntries = cashbookEntriesResponse.value.cashbookEntries || [];
-          console.log('💰 Cashbook entries synced from backend:', fetchedCashbookEntries.length);
-          store.setCashbookEntries(fetchedCashbookEntries);
+          // Check if cashbook entry was recently created (within last 5 seconds)
+          const recentCashbookCreation = localStorage.getItem('lastCashbookCreation');
+          const isRecentCreation = recentCashbookCreation && (Date.now() - parseInt(recentCashbookCreation)) < 5000;
+          
+          if (isRecentCreation) {
+            console.log('⏳ Skipping cashbook sync - recent creation detected');
+          } else {
+            const fetchedCashbookEntries = cashbookEntriesResponse.value.cashbookEntries || [];
+            console.log('💰 Cashbook entries synced from backend:', fetchedCashbookEntries.length);
+            
+            // Deduplicate cashbook entries by ID to prevent duplicates
+            const uniqueCashbookEntries = fetchedCashbookEntries.filter((entry: any, index: number, self: any[]) => {
+              const entryId = entry.id || entry._id;
+              return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
+            });
+            
+            console.log('💰 Unique cashbook entries after deduplication:', uniqueCashbookEntries.length);
+            store.setCashbookEntries(uniqueCashbookEntries);
+          }
         }
 
         if (partiesResponse.status === 'fulfilled') {

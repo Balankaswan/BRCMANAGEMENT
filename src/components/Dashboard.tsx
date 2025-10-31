@@ -35,7 +35,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
   const totalProfit = useMemo(() => {
     const totalBillNetAmount = filteredBills.reduce((sum, bill) => {
-      const billNetAmountExcludingTDS = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0);
+      // freight - mamool - commission + detention + rto + extra - penalties - party_commission_cut
+      const billNetAmountExcludingTDS = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0);
       return sum + billNetAmountExcludingTDS;
     }, 0);
     
@@ -153,7 +154,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     
     // Verification: Simple calculation
     const simpleTotalBills = bills.reduce((sum, bill) => {
-      const netAmount = (bill.bill_amount || 0) + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+      // freight - mamool - commission + detention + rto + extra - tds - penalties
+      const netAmount = (bill.bill_amount || 0) - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
       return sum + netAmount;
     }, 0);
     
@@ -360,18 +362,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           >
             <option value="overall">Overall</option>
-            <option value={`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`}>
-              Current Month ({new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })})
-            </option>
-            {/* Generate last 12 months */}
-            {Array.from({ length: 12 }, (_, i) => {
+            {/* Generate current month and last 12 months */}
+            {Array.from({ length: 13 }, (_, i) => {
               const date = new Date();
-              date.setMonth(date.getMonth() - i - 1);
+              date.setMonth(date.getMonth() - i);
               const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
               const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+              const isCurrent = i === 0;
               return (
                 <option key={value} value={value}>
-                  {label}
+                  {isCurrent ? `${label} (Current)` : label}
                 </option>
               );
             })}

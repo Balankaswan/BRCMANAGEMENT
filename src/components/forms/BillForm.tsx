@@ -28,7 +28,6 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
     penalties: 0,
     party_commission_cut: 0,
     commission: 0,
-    commission_rate: 0,
     net_amount: 0,
     pod_image: '',
     status: 'pending' as 'pending' | 'received',
@@ -37,20 +36,10 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
   const [podFileName, setPodFileName] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Calculate commission when commission rate changes
+  // Calculate net amount: freight - mamool - commission + detention + rto + extra - tds - penalties - party_commission_cut
   useEffect(() => {
-    if (formData.commission_rate > 0) {
-      const calculatedCommission = (formData.bill_amount * formData.commission_rate) / 100;
-      setFormData(prev => ({
-        ...prev,
-        commission: calculatedCommission,
-      }));
-    }
-  }, [formData.bill_amount, formData.commission_rate]);
-
-  // Calculate net amount (excludes party commission cut for supplier payment calculation)
-  useEffect(() => {
-    const netAmount = formData.bill_amount + formData.detention + formData.extra + formData.rto - formData.mamool - formData.tds - formData.penalties - formData.party_commission_cut - formData.commission;
+    const totalFreight = formData.bill_amount - formData.mamool - formData.commission + formData.detention + formData.rto + formData.extra - formData.tds - formData.penalties;
+    const netAmount = totalFreight - formData.party_commission_cut;
     setFormData(prev => ({
       ...prev,
       net_amount: netAmount,
@@ -73,7 +62,6 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
         penalties: initialData.penalties,
         party_commission_cut: initialData.party_commission_cut || 0,
         commission: initialData.commission || 0,
-        commission_rate: initialData.commission_rate || 0,
         net_amount: initialData.net_amount,
         pod_image: '',
         status: initialData.status || 'pending' as 'pending' | 'received',
@@ -390,22 +378,7 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
           {/* Commission Section */}
           <div className="bg-yellow-50 p-4 rounded-lg">
             <h3 className="text-sm font-medium text-yellow-900 mb-4">Commission Section</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Commission Rate (%)
-                </label>
-                <input
-                  type="number"
-                  name="commission_rate"
-                  value={formData.commission_rate}
-                  onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  step="0.01"
-                  min="0"
-                  max="100"
-                />
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Commission Amount (₹)
@@ -415,12 +388,11 @@ const BillForm: React.FC<BillFormProps> = ({ loadingSlip, nextBillNumber, initia
                   name="commission"
                   value={formData.commission}
                   onChange={handleInputChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-100"
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   step="0.01"
                   min="0"
-                  readOnly
+                  placeholder="Enter commission amount"
                 />
-                <p className="text-xs text-gray-500 mt-1">Auto-calculated from rate</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">

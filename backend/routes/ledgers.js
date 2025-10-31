@@ -403,6 +403,64 @@ router.put('/:id', async (req, res) => {
   }
 });
 
+// Clean up duplicate memo entries
+router.post('/cleanup-duplicates', async (req, res) => {
+  try {
+    console.log('🧹 Starting duplicate memo ledger cleanup...');
+    
+    // Find all vehicle income entries from memos
+    const memoEntries = await LedgerEntry.find({
+      ledger_type: 'vehicle_income',
+      source_type: 'memo'
+    }).sort({ createdAt: 1 });
+    
+    console.log(`📊 Found ${memoEntries.length} memo ledger entries`);
+    
+    // Group by reference_id (memo ID) and vehicle_no
+    const groupedEntries = {};
+    memoEntries.forEach(entry => {
+      const key = `${entry.reference_id}-${entry.vehicle_no || 'unknown'}`;
+      if (!groupedEntries[key]) {
+        groupedEntries[key] = [];
+      }
+      groupedEntries[key].push(entry);
+    });
+    
+    let duplicatesRemoved = 0;
+    let duplicateGroups = 0;
+    
+    // Remove duplicates (keep the first one, delete the rest)
+    for (const [key, entries] of Object.entries(groupedEntries)) {
+      if (entries.length > 1) {
+        duplicateGroups++;
+        console.log(`🔍 Found ${entries.length} duplicates for ${key}:`);
+        entries.forEach((entry, index) => {
+          console.log(`  ${index + 1}. ${entry._id} - ${entry.description} (${entry.createdAt})`);
+        });
+        
+        // Keep the first entry, delete the rest
+        for (let i = 1; i < entries.length; i++) {
+          await LedgerEntry.findByIdAndDelete(entries[i]._id);
+          duplicatesRemoved++;
+          console.log(`🗑️ Deleted duplicate: ${entries[i]._id}`);
+        }
+      }
+    }
+    
+    console.log(`✅ Cleanup completed: ${duplicatesRemoved} duplicates removed from ${duplicateGroups} groups`);
+    
+    res.json({
+      message: 'Duplicate memo ledger entries cleaned up successfully',
+      duplicateGroups,
+      duplicatesRemoved,
+      totalEntriesChecked: memoEntries.length
+    });
+  } catch (error) {
+    console.error('Cleanup duplicates error:', error);
+    res.status(500).json({ message: 'Failed to cleanup duplicate entries', error: error.message });
+  }
+});
+
 // Clear all ledger entries (for debugging) - must be before /:id route
 router.delete('/clear-all', async (req, res) => {
   try {

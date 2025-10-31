@@ -73,8 +73,8 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
 
   // Function to calculate actual bill balance
   const calculateBillBalance = (bill: any) => {
-    // Calculate what party owes: Bill Amount + Detention + Extra + RTO - Mamool - TDS - Penalties
-    const partyOwes = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
+    // Calculate what party owes: freight - mamool - commission + detention + rto + extra - tds - penalties
+    const partyOwes = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
     
     // Find all payments for this bill from banking entries
     const bankingPayments = bankingEntries
