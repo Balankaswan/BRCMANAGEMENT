@@ -62,6 +62,93 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
     return Array.from(partySet).sort();
   }, [bills]);
 
+  // Calculate total outstanding across all parties
+  const totalOutstanding = useMemo(() => {
+    let total = 0;
+    
+    parties.forEach(party => {
+      // Get all bills for this party
+      const partyBills = bills
+        .filter(bill => bill.party === party)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Get all banking entries for this party
+      const partyBankingEntries = bankingEntries
+        .filter(entry => {
+          // Include bill payments and advances linked to party bills
+          if ((entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
+              partyBills.some(bill => bill.bill_number === entry.reference_id)) {
+            return true;
+          }
+          // Include party on account transactions
+          if (entry.category === 'party_on_account' && entry.reference_name === party) {
+            return true;
+          }
+          // Include party debit notes
+          if (entry.category === 'party_debit_note' && entry.reference_name === party) {
+            return true;
+          }
+          return false;
+        })
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Calculate running balance for this party
+      let runningBalance = 0;
+      const allEntries: Array<{
+        type: 'bill' | 'payment' | 'advance' | 'on_account' | 'debit_note';
+        date: string;
+        data: any;
+      }> = [];
+
+      // Add bills
+      partyBills.forEach(bill => {
+        allEntries.push({ type: 'bill', date: bill.date, data: bill });
+      });
+
+      // Add banking entries
+      partyBankingEntries.forEach(entry => {
+        if (entry.category === 'bill_payment') {
+          allEntries.push({ type: 'payment', date: entry.date, data: entry });
+        } else if (entry.category === 'bill_advance') {
+          allEntries.push({ type: 'advance', date: entry.date, data: entry });
+        } else if (entry.category === 'party_on_account') {
+          allEntries.push({ type: 'on_account', date: entry.date, data: entry });
+        } else if (entry.category === 'party_debit_note') {
+          allEntries.push({ type: 'debit_note', date: entry.date, data: entry });
+        }
+      });
+
+      // Sort all entries by date
+      allEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Calculate final balance for this party
+      allEntries.forEach(entry => {
+        if (entry.type === 'bill') {
+          const bill = entry.data;
+          const billAmount = (bill.bill_amount || 0) - (bill.mamool || 0) - (bill.commission || 0) + 
+                           (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - 
+                           (bill.tds || 0) - (bill.penalties || 0);
+          runningBalance += billAmount;
+        } else if (entry.type === 'payment') {
+          runningBalance -= entry.data.amount;
+        } else if (entry.type === 'advance') {
+          runningBalance -= entry.data.amount;
+        } else if (entry.type === 'on_account') {
+          runningBalance -= entry.data.amount;
+        } else if (entry.type === 'debit_note') {
+          runningBalance += entry.data.amount;
+        }
+      });
+
+      // Add this party's outstanding balance to total (only positive balances)
+      if (runningBalance > 0) {
+        total += runningBalance;
+      }
+    });
+    
+    return total;
+  }, [parties, bills, bankingEntries]);
+
   // Generate ledger entries for selected party
   const ledgerEntries = useMemo(() => {
     if (!partyFilter) return [];
@@ -489,6 +576,20 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
               <Table className="w-4 h-4" />
               <span>Excel</span>
             </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Total Outstanding Card - Always Visible */}
+      <div className="bg-gradient-to-r from-red-50 to-orange-50 p-6 rounded-xl shadow-sm border border-red-200">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-red-600 font-medium uppercase tracking-wide">Total Outstanding</div>
+            <div className="text-3xl font-bold text-red-900 mt-1">{formatCurrency(totalOutstanding)}</div>
+            <div className="text-sm text-red-600 mt-1">Across all parties</div>
+          </div>
+          <div className="bg-red-100 p-3 rounded-full">
+            <FileText className="w-8 h-8 text-red-600" />
           </div>
         </div>
       </div>
