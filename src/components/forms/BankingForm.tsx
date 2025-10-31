@@ -176,7 +176,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     // Party on account ledger entries are now created automatically by the backend
     // No need to create them manually in the frontend
     
-    onSubmit(formData);
+    // onSubmit already called above - removing duplicate call to prevent double entries
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {

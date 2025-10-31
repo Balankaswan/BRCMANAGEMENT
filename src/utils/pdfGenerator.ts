@@ -321,12 +321,15 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   pdf.text(COMPANY_INFO.tagline, pageWidth / 2, 52, { align: 'center' });
   pdf.text(COMPANY_INFO.pan, pageWidth - 15, 52, { align: 'right' });
 
-  // LOADING SLIP title with blue background - exact match
-  pdf.setFillColor(52, 144, 220);
+  // LOADING SLIP title with blue background and white text
+  pdf.setFillColor(52, 144, 220); // Blue background
   pdf.rect(10, 60, pageWidth - 20, 12, 'F');
+  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(10, 60, pageWidth - 20, 12); // Add border
   pdf.setFontSize(16);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
+  pdf.setTextColor(255, 255, 255); // White text
   pdf.text('LOADING SLIP', pageWidth / 2, 69, { align: 'center' });
 
   // Loading slip details box - exact layout
@@ -342,13 +345,16 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   pdf.text(`Vehicle No: ${loadingSlip.vehicle_no}`, 15, 88);
   pdf.text(`Weight: ${loadingSlip.weight} MT`, pageWidth - 15, 88, { align: 'right' });
 
-  // Party section with blue background - exact match
-  pdf.setFillColor(52, 144, 220);
+  // M/S section with darker gray background - left aligned
+  pdf.setFillColor(200, 200, 200); // Darker gray
   pdf.rect(10, 97, pageWidth - 20, 10, 'F');
+  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(10, 97, pageWidth - 20, 10); // Add border
   pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text(`Party: ${loadingSlip.party}`, pageWidth / 2, 104, { align: 'center' });
+  pdf.setFont('helvetica', 'normal'); // Unbold
+  pdf.setTextColor(0, 0, 0);
+  pdf.text(`M/S: ${loadingSlip.party}`, 15, 104);
 
   // From/To section with proper table layout - exact match
   const transportY = 112;
@@ -382,14 +388,17 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   pdf.text(loadingSlip.material || 'MACHINERY', 15, materialY + 9);
   pdf.text(loadingSlip.dimension || 'JUMBO/LZ', 15 + (pageWidth - 20) / 2, materialY + 9);
 
-  // FINANCIAL DETAILS section with blue background - exact match
+  // FINANCIAL DETAILS section with darker gray background - left aligned
   const financialY = materialY + 17;
-  pdf.setFillColor(52, 144, 220);
+  pdf.setFillColor(200, 200, 200); // Darker gray
   pdf.rect(10, financialY, pageWidth - 20, 10, 'F');
+  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(10, financialY, pageWidth - 20, 10); // Add border
   pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('FINANCIAL DETAILS', pageWidth / 2, financialY + 7, { align: 'center' });
+  pdf.setFont('helvetica', 'normal'); // Unbold
+  pdf.setTextColor(0, 0, 0);
+  pdf.text('FINANCIAL DETAILS', 15, financialY + 7);
 
   // Financial table - exact layout matching image
   const financeTableY = financialY + 15;
@@ -421,14 +430,17 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
     pdf.text(row[1], pageWidth - 15, rowY + 5, { align: 'right' });
   });
 
-  // BANK DETAILS section with blue background - exact match
+  // BANK DETAILS section with darker gray background - left aligned
   const bankY = financeTableY + (financialData.length * rowHeight) + 10;
-  pdf.setFillColor(52, 144, 220);
+  pdf.setFillColor(200, 200, 200); // Darker gray
   pdf.rect(10, bankY, pageWidth - 20, 10, 'F');
+  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(10, bankY, pageWidth - 20, 10); // Add border
   pdf.setFontSize(12);
-  pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(255, 255, 255);
-  pdf.text('BANK DETAILS', pageWidth / 2, bankY + 7, { align: 'center' });
+  pdf.setFont('helvetica', 'normal'); // Unbold
+  pdf.setTextColor(0, 0, 0);
+  pdf.text('BANK DETAILS', 15, bankY + 7);
 
   // Bank details - exact layout
   pdf.setFontSize(9);
