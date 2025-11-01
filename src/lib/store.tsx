@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 import { apiService } from './api';
-import type { LoadingSlip, Memo, Bill, BankingEntry, CashbookEntry, LedgerEntry, Party, Supplier, Vehicle, FuelWallet, VehicleFuelExpense, FuelTransaction, PODFile, AdvancePayment } from '../types';
+import type { Bill, LoadingSlip, Memo, Party, Supplier, Vehicle, BankingEntry, CashbookEntry, LedgerEntry, PODFile, FuelWallet, FuelTransaction, VehicleFuelExpense } from '../types';
 
 interface DataStoreState {
   loadingSlips: LoadingSlip[];
@@ -80,7 +80,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [fuelWallets, setFuelWallets] = useState<FuelWallet[]>([]);
   const [fuelTransactions, setFuelTransactions] = useState<FuelTransaction[]>([]);
-  const [vehicleFuelExpenses, setVehicleFuelExpenses] = useState<VehicleFuelExpense[]>([]);
+  const [vehicleFuelExpenses] = useState<VehicleFuelExpense[]>([]);
   const [podFiles, setPodFiles] = useState<PODFile[]>([]);
 
   const contextValue: DataStoreState = {
@@ -233,7 +233,34 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         
         console.log('✅ Fuel allocation successful:', response);
         
-        // Trigger data sync to refresh fuel wallets and transactions
+        // Set timestamp to prevent sync override
+        localStorage.setItem('lastFuelAllocation', Date.now().toString());
+        
+        // Immediately update local state with the new transaction
+        if (response.transaction) {
+          setFuelTransactions(prev => {
+            console.log('🔄 Adding fuel transaction to local state:', response.transaction._id);
+            return [...prev, response.transaction];
+          });
+        }
+        
+        // Update fuel wallet balance immediately
+        if (response.wallet) {
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: response.wallet.balance }
+              : wallet
+          ));
+        } else {
+          // Manually update wallet balance if not provided
+          setFuelWallets(prev => prev.map(wallet => 
+            wallet.name === walletName 
+              ? { ...wallet, balance: wallet.balance - amount }
+              : wallet
+          ));
+        }
+        
+        // Trigger data sync to refresh other components
         window.dispatchEvent(new CustomEvent('data-sync-required'));
         
         return response;

@@ -441,6 +441,10 @@ class ApiService {
     });
   }
 
+  async deleteFuelTransaction(id: string) {
+    return this.request(`/fuel/transactions/${id}`, { method: 'DELETE' });
+  }
+
   // POD Files
   async getPODFiles(params?: {billNo?: string, vehicleNo?: string, party?: string, page?: number, limit?: number}) {
     const queryString = params ? '?' + new URLSearchParams(params as any).toString() : '';

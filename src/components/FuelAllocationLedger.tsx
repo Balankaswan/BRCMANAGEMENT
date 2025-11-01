@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Filter, FileText, FileSpreadsheet, Search, Truck, Fuel } from 'lucide-react';
+import { Filter, FileText, FileSpreadsheet, Search, Truck, Fuel, Trash2 } from 'lucide-react';
 import { apiService } from '../lib/api';
 import { format } from 'date-fns';
 
@@ -35,6 +35,8 @@ const FuelAllocationLedger: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState<{show: boolean, transaction: FuelTransaction | null}>({show: false, transaction: null});
+  const [deleting, setDeleting] = useState<string | null>(null);
   
   const [filters, setFilters] = useState<FilterOptions>({
     dateFrom: '',
@@ -53,6 +55,30 @@ const FuelAllocationLedger: React.FC = () => {
 
   useEffect(() => {
     fetchFuelTransactions();
+    
+    // Listen for fuel allocation events to refresh immediately
+    const handleFuelAllocation = () => {
+      console.log('🔄 Fuel allocation detected, checking if refresh needed...');
+      
+      // Check if fuel allocation was recent (within last 8 seconds)
+      const recentFuelAllocation = localStorage.getItem('lastFuelAllocation');
+      const isRecentAllocation = recentFuelAllocation && (Date.now() - parseInt(recentFuelAllocation)) < 8000;
+      
+      if (isRecentAllocation) {
+        console.log('⏳ Skipping ledger refresh - recent allocation detected, using local state');
+        return;
+      }
+      
+      setTimeout(() => {
+        fetchFuelTransactions();
+      }, 500); // Small delay to ensure backend processing is complete
+    };
+    
+    window.addEventListener('data-sync-required', handleFuelAllocation);
+    
+    return () => {
+      window.removeEventListener('data-sync-required', handleFuelAllocation);
+    };
   }, []);
 
   useEffect(() => {
@@ -347,8 +373,45 @@ const FuelAllocationLedger: React.FC = () => {
     return new Intl.NumberFormat('en-IN', {
       style: 'currency',
       currency: 'INR',
-      minimumFractionDigits: 2
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
     }).format(amount);
+  };
+
+  const handleDeleteTransaction = async (transaction: FuelTransaction) => {
+    setDeleteConfirm({show: true, transaction});
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm.transaction) return;
+    
+    const transactionId = deleteConfirm.transaction._id;
+    setDeleting(transactionId);
+    
+    try {
+      await apiService.deleteFuelTransaction(transactionId);
+      
+      // Remove from local state immediately
+      setTransactions(prev => prev.filter(t => t._id !== transactionId));
+      setFilteredTransactions(prev => prev.filter(t => t._id !== transactionId));
+      
+      console.log('✅ Fuel transaction deleted successfully:', transactionId);
+      
+      // Trigger data sync for other components
+      window.dispatchEvent(new CustomEvent('data-sync-required'));
+      
+    } catch (error) {
+      console.error('❌ Failed to delete fuel transaction:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`❌ Failed to delete fuel transaction: ${errorMessage}`);
+    } finally {
+      setDeleting(null);
+      setDeleteConfirm({show: false, transaction: null});
+    }
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirm({show: false, transaction: null});
   };
 
   const formatDate = (dateString: string) => {
@@ -545,12 +608,13 @@ const FuelAllocationLedger: React.FC = () => {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Allocated By</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Narration</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Odometer</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan={11} className="px-6 py-8 text-center text-gray-500">
                     <Fuel className="mx-auto h-12 w-12 text-gray-300 mb-2" />
                     <div className="text-lg font-medium">No fuel allocations found</div>
                     <div className="text-sm">Try adjusting your filters or search criteria</div>
@@ -601,6 +665,17 @@ const FuelAllocationLedger: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {transaction.odometer_reading ? `${transaction.odometer_reading} km` : 'N/A'}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <button
+                        onClick={() => handleDeleteTransaction(transaction)}
+                        disabled={deleting === transaction._id}
+                        className="inline-flex items-center px-3 py-1 border border-red-300 text-sm leading-4 font-medium rounded-md text-red-700 bg-red-50 hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Delete fuel allocation"
+                      >
+                        <Trash2 className="h-4 w-4 mr-1" />
+                        {deleting === transaction._id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -620,6 +695,53 @@ const FuelAllocationLedger: React.FC = () => {
               <span>Total Amount: {formatCurrency(summary.totalAmount)}</span>
               <span>Total Quantity: {summary.totalQuantity.toFixed(2)} L</span>
               <span>Vehicles: {summary.uniqueVehicles}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirm.show && deleteConfirm.transaction && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-center mb-4">
+              <div className="flex-shrink-0">
+                <Trash2 className="h-6 w-6 text-red-600" />
+              </div>
+              <div className="ml-3">
+                <h3 className="text-lg font-medium text-gray-900">Delete Fuel Allocation</h3>
+              </div>
+            </div>
+            
+            <div className="mb-4">
+              <p className="text-sm text-gray-500 mb-3">
+                Are you sure you want to delete this fuel allocation? This action cannot be undone.
+              </p>
+              
+              <div className="bg-gray-50 rounded-lg p-3 text-sm">
+                <div className="grid grid-cols-2 gap-2">
+                  <div><strong>Date:</strong> {formatDate(deleteConfirm.transaction.date)}</div>
+                  <div><strong>Vehicle:</strong> {deleteConfirm.transaction.vehicle_no || 'N/A'}</div>
+                  <div><strong>Amount:</strong> {formatCurrency(deleteConfirm.transaction.amount)}</div>
+                  <div><strong>Wallet:</strong> {deleteConfirm.transaction.wallet_name}</div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex justify-end space-x-3">
+              <button
+                onClick={cancelDelete}
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 border border-gray-300 rounded-md hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmDelete}
+                disabled={deleting !== null}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? 'Deleting...' : 'Delete'}
+              </button>
             </div>
           </div>
         </div>

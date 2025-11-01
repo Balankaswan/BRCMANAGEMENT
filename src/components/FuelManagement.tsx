@@ -195,6 +195,7 @@ const FuelManagement: React.FC = () => {
       setSelectedWallet('');
       setSelectedSupplier('');
       
+      console.log('✅ Fuel allocation completed, wallet balances should be updated immediately');
       alert('✅ Fuel allocated successfully!');
     } catch (error) {
       console.error('❌ Fuel allocation failed:', error);

@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../lib/auth';
+// Import the background image
+import truckBackground from '../assets/truck-background.jpg';
 
 const Login: React.FC = () => {
   const { login, register } = useAuth();
@@ -39,20 +41,31 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+    <div 
+      className="min-h-screen flex flex-col justify-start pt-16 pb-12 sm:px-6 lg:px-8 relative"
+      style={{
+        backgroundImage: `url(${truckBackground})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundColor: '#1f2937' // Fallback color if image doesn't load
+      }}
+    >
+      {/* Dark overlay for better text readability */}
+      <div className="absolute inset-0 bg-black bg-opacity-25"></div>
+      <div className="sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="text-center">
-          <h2 className="text-3xl font-extrabold text-gray-900">
+          <h2 className="text-3xl font-extrabold text-white drop-shadow-lg">
             BRC Transport Management
           </h2>
-          <p className="mt-2 text-sm text-gray-600">
+          <p className="mt-2 text-sm text-gray-200 drop-shadow">
             {isLogin ? 'Sign in to your account' : 'Create a new account'}
           </p>
         </div>
       </div>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
+        <div className="backdrop-blur-sm py-8 px-4 shadow-xl sm:rounded-lg sm:px-10 border border-white border-opacity-70">
           <form className="space-y-6" onSubmit={handleSubmit}>
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
@@ -62,7 +75,7 @@ const Login: React.FC = () => {
 
 
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="email" className="block text-sm font-bold text-black">
                 Email
               </label>
               <div className="mt-1">
@@ -80,7 +93,7 @@ const Login: React.FC = () => {
 
             {!isLogin && (
               <div>
-                <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="name" className="block text-sm font-bold text-black">
                   Full Name
                 </label>
                 <div className="mt-1">
@@ -98,7 +111,7 @@ const Login: React.FC = () => {
             )}
 
             <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+              <label htmlFor="password" className="block text-sm font-bold text-black">
                 Password
               </label>
               <div className="mt-1">
@@ -116,7 +129,7 @@ const Login: React.FC = () => {
 
             {!isLogin && (
               <div>
-                <label htmlFor="role" className="block text-sm font-medium text-gray-700">
+                <label htmlFor="role" className="block text-sm font-bold text-black">
                   Role
                 </label>
                 <div className="mt-1">
@@ -156,14 +169,6 @@ const Login: React.FC = () => {
             </div>
           </form>
 
-          <div className="mt-6 border-t border-gray-200 pt-6">
-            <div className="text-xs text-gray-500 text-center">
-              <p>🌐 <strong>LAN Access Instructions:</strong></p>
-              <p>1. Start backend: <code>cd backend && npm start</code></p>
-              <p>2. Find your IP: <code>ifconfig</code> (Mac/Linux)</p>
-              <p>3. Access from any device: <code>http://YOUR_IP:3000</code></p>
-            </div>
-          </div>
         </div>
       </div>
     </div>

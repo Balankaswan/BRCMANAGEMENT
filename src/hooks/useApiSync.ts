@@ -284,7 +284,7 @@ export const useApiSync = () => {
         if (cashbookEntriesResponse.status === 'fulfilled') {
           // Check if cashbook entry was recently created (within last 5 seconds)
           const recentCashbookCreation = localStorage.getItem('lastCashbookCreation');
-          const isRecentCreation = recentCashbookCreation && (Date.now() - parseInt(recentCashbookCreation)) < 5000;
+          const isRecentCreation = recentCashbookCreation && (Date.now() - parseInt(recentCashbookCreation)) < 8000;
           
           if (isRecentCreation) {
             console.log('⏳ Skipping cashbook sync - recent creation detected');
@@ -352,10 +352,18 @@ export const useApiSync = () => {
         }
 
         if (fuelTransactionsResponse.status === 'fulfilled') {
-          const fetchedTransactions = fuelTransactionsResponse.value.transactions || [];
-          console.log('⛽ Fuel transactions synced from backend:', fetchedTransactions.length);
-          // Update fuel transactions in store
-          store.setFuelTransactions(fetchedTransactions);
+          // Check if fuel allocation was recently created (within last 5 seconds)
+          const recentFuelAllocation = localStorage.getItem('lastFuelAllocation');
+          const isRecentAllocation = recentFuelAllocation && (Date.now() - parseInt(recentFuelAllocation)) < 8000;
+          
+          if (isRecentAllocation) {
+            console.log('⏳ Skipping fuel transactions sync - recent allocation detected');
+          } else {
+            const fetchedTransactions = fuelTransactionsResponse.value.transactions || [];
+            console.log('⛽ Fuel transactions synced from backend:', fetchedTransactions.length);
+            // Update fuel transactions in store
+            store.setFuelTransactions(fetchedTransactions);
+          }
         }
 
         console.log('Complete data synchronization finished - all modules synced including ledger entries');

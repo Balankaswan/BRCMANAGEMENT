@@ -82,15 +82,21 @@ export default function Cashbook() {
         // Add to local store using addCashbookEntry to ensure proper processing
         addCashbookEntry(savedEntry);
         
+        console.log('💰 Cashbook entry added to local state via addCashbookEntry');
+        
         // All ledger entries (including party commission) are now created automatically by the backend
         // No need to create any ledger entries manually in the frontend
         
-        // Trigger data sync
-        window.dispatchEvent(new CustomEvent('data-sync-required'));
+        console.log('💰 Cashbook entry added to local state, triggering UI refresh');
         
         // Reset form state immediately after successful creation
         setShowForm(false);
         setEditingEntry(null);
+        
+        // Trigger data sync for other components (delayed to allow UI update first)
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('data-sync-required'));
+        }, 100);
       }
     } catch (error) {
       console.error('❌ Failed to create cashbook entry:', error);
@@ -129,10 +135,19 @@ export default function Cashbook() {
     };
   }, [specificDate, customDateRange.start, customDateRange.end]);
 
-  // Optimize search term processing
-  const searchTerm = useMemo(() => {
-    return search.trim().toLowerCase();
+  // Add debounced search to improve performance
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 300);
+    return () => clearTimeout(timer);
   }, [search]);
+  
+  // Use debouncedSearch instead of searchTerm for better performance
+  const finalSearchTerm = useMemo(() => {
+    return debouncedSearch.trim().toLowerCase();
+  }, [debouncedSearch]);
 
   // Memoize filtered entries with optimized filtering
   const filteredEntries = useMemo(() => {
@@ -178,7 +193,7 @@ export default function Cashbook() {
     }
 
     // Apply search filter with optimized string operations
-    if (searchTerm) {
+    if (finalSearchTerm) {
       filtered = filtered.filter((entry) => {
         try {
           // Pre-compute searchable strings only once per entry
@@ -192,7 +207,7 @@ export default function Cashbook() {
             new Date(entry.date).toLocaleDateString('en-IN')
           ].join(' ').toLowerCase();
           
-          return searchableText.includes(searchTerm);
+          return searchableText.includes(finalSearchTerm);
         } catch (error) {
           console.warn('Error filtering entry by search:', entry, error);
           return false;
@@ -216,16 +231,8 @@ export default function Cashbook() {
         return 0;
       }
     });
-  }, [entries, dateFilter, dateCalculations, searchTerm]);
+  }, [entries, dateFilter, dateCalculations, finalSearchTerm]);
 
-  // Add debounced search to improve performance
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedSearch(search);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [search]);
 
   // Optimize calculations by combining operations
   const { totalCredits, totalDebits, netBalance } = useMemo(() => {
