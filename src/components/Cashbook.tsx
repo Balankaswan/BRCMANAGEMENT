@@ -28,7 +28,7 @@ export default function Cashbook() {
     const refreshCashbookData = async () => {
       try {
         console.log('🔄 Refreshing cashbook data on component mount...');
-        const response = await apiService.getCashbookEntries();
+        const response = await apiService.getCashbookEntries({ limit: 100000 });
         if (response.cashbookEntries) {
           setCashbookEntries(response.cashbookEntries);
           console.log('✅ Cashbook data refreshed:', response.cashbookEntries.length, 'entries');

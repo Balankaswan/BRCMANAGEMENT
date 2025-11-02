@@ -53,8 +53,8 @@ export const useApiSync = () => {
           apiService.getVehicles({ limit: 10000 }), // Get ALL vehicles with high limit
           apiService.getMemos({ limit: 10000 }), // Get ALL memos with high limit
           apiService.getLoadingSlips({ limit: 10000 }), // Get ALL loading slips with high limit
-          apiService.getBankingEntries({ limit: 10000 }), // Get ALL banking entries
-          apiService.getCashbookEntries({ limit: 10000 }), // Get ALL cashbook entries
+          apiService.getBankingEntries({ limit: 100000 }), // Get ALL banking entries
+          apiService.getCashbookEntries({ limit: 100000 }), // Get ALL cashbook entries
           apiService.getLedgerEntries(), // Get ALL ledger entries
           apiService.getFuelWallets(),
           apiService.getFuelTransactions() // Get ALL fuel transactions

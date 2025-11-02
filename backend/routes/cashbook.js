@@ -8,7 +8,7 @@ const router = express.Router();
 // Get all cashbook entries with balance summary
 router.get('/', authenticateToken, async (req, res) => {
   try {
-    const { page = 1, limit = 50 } = req.query;
+    const { page = 1, limit = 100000 } = req.query;
     const skip = (page - 1) * limit;
     
     const cashbookEntries = await CashbookEntry.find({})
