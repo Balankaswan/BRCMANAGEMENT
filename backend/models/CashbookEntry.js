@@ -11,6 +11,7 @@ const cashbookEntrySchema = new mongoose.Schema({
     required: true,
     enum: [
       'vehicle_expense',
+      'vehicle_credit_note',
       'office_expense', 
       'fuel_expense',
       'maintenance',

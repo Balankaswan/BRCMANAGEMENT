@@ -106,7 +106,6 @@ const VehicleLedger: React.FC = () => {
       allVehicleExpenses: vehicleLedgerEntries.filter(e => e.ledger_type === 'vehicle_expense').map(e => ({
         source: e.source_type,
         type: e.ledger_type,
-        source: e.source_type,
         credit: e.credit,
         debit: e.debit,
         date: e.date,
