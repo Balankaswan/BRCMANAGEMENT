@@ -20,9 +20,10 @@ interface SupplierLedgerEntry {
 
 interface SupplierLedgerProps {
   selectedSupplier?: string;
+  onNavigate?: (page: string, params?: any) => void;
 }
 
-const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => {
+const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNavigate }) => {
   const { memos, bankingEntries, cashbookEntries, loadingSlips, ledgerEntries: allLedgerEntries } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
@@ -636,8 +637,18 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {new Date(entry.date).toLocaleDateString('en-IN')}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-orange-600">
-                        {entry.memoNo}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        {entry.memoNo ? (
+                          <button
+                            onClick={() => onNavigate?.('memo', { highlight: entry.memoNo })}
+                            className="text-orange-600 hover:text-orange-800 hover:underline transition-colors cursor-pointer"
+                            title={`Open memo ${entry.memoNo}`}
+                          >
+                            {entry.memoNo}
+                          </button>
+                        ) : (
+                          <span className="text-gray-400">-</span>
+                        )}
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.tripDetails}

@@ -87,7 +87,7 @@ const AppContent: React.FC = () => {
       case 'party-ledger':
         return <PartyLedger onNavigate={handleNavigation} />;
       case 'supplier-ledger':
-        return <SupplierLedger />;
+        return <SupplierLedger onNavigate={handleNavigation} />;
       case 'general-ledger':
         return <GeneralLedger />;
       case 'party-commission-ledger':
