@@ -63,7 +63,7 @@ const AppContent: React.FC = () => {
       case 'dashboard':
         return <Dashboard onNavigate={handleNavigation} />;
       case 'loading-slip':
-        return <LoadingSlip />;
+        return <LoadingSlip onNavigate={handleNavigation} />;
       case 'memo':
         return <Memo highlightMemo={navigationParams?.highlight} />;
       case 'bills':

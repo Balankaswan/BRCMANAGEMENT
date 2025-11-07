@@ -9,7 +9,11 @@ import MemoForm from './forms/MemoForm';
 import BillForm from './forms/BillForm';
 import type { LoadingSlip } from '../types';
 
-const LoadingSlipComponent: React.FC = () => {
+interface LoadingSlipComponentProps {
+  onNavigate?: (page: string, params?: any) => void;
+}
+
+const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate }) => {
   const { loadingSlips, memos, bills, vehicles, addLoadingSlip, updateLoadingSlip, deleteLoadingSlip, addMemo, addBill } = useDataStore();
   const [showForm, setShowForm] = useState(false);
   const [editingSlip, setEditingSlip] = useState<LoadingSlip | null>(null);
@@ -275,9 +279,13 @@ const LoadingSlipComponent: React.FC = () => {
                       {slip.memo_number ? (
                         <div className="flex items-center space-x-2">
                           <span className="text-xs text-gray-500">Memo:</span>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <button
+                            onClick={() => onNavigate?.('memo', { highlight: slip.memo_number })}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 hover:bg-blue-200 transition-colors cursor-pointer"
+                            title={`Open memo ${slip.memo_number}`}
+                          >
                             {slip.memo_number}
-                          </span>
+                          </button>
                         </div>
                       ) : (
                         <button
@@ -297,9 +305,13 @@ const LoadingSlipComponent: React.FC = () => {
                       {slip.bill_number ? (
                         <div className="flex items-center space-x-2">
                           <span className="text-xs text-gray-500">Bill:</span>
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                          <button
+                            onClick={() => onNavigate?.('bills', { highlight: slip.bill_number })}
+                            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 hover:bg-green-200 transition-colors cursor-pointer"
+                            title={`Open bill ${slip.bill_number}`}
+                          >
                             {slip.bill_number}
-                          </span>
+                          </button>
                         </div>
                       ) : (
                         <button

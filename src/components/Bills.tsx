@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, FileText, Edit, Download, Eye, Trash2 } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
@@ -21,6 +21,22 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   const [receivedDate, setReceivedDate] = useState('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'pending' | 'received'>('pending');
+
+  // Auto-scroll to highlighted bill
+  useEffect(() => {
+    if (highlightBill) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`bill-${highlightBill}`);
+        if (element) {
+          element.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          });
+        }
+      }, 100); // Small delay to ensure DOM is rendered
+      return () => clearTimeout(timer);
+    }
+  }, [highlightBill]);
 
   const handleCreateBill = async (billData: Omit<Bill, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -331,11 +347,14 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
             const isHighlighted = highlightBill === bill.bill_number;
             
             return (
-              <div key={bill.id || `bill-${index}-${bill.bill_number}`} className={`bg-white rounded-xl shadow-sm border transition-shadow ${
-                isHighlighted 
-                  ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
-                  : 'border-gray-200 hover:shadow-md'
-              }`}>
+              <div 
+                key={bill.id || `bill-${index}-${bill.bill_number}`} 
+                id={`bill-${bill.bill_number}`}
+                className={`bg-white rounded-xl shadow-sm border transition-shadow ${
+                  isHighlighted 
+                    ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
+                    : 'border-gray-200 hover:shadow-md'
+                }`}>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex-1">

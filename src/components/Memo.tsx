@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Edit, Trash2, FileText, Eye, Download, CheckCircle } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
@@ -21,6 +21,22 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   const [paidDate, setPaidDate] = useState('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'pending' | 'paid'>('pending');
+
+  // Auto-scroll to highlighted memo
+  useEffect(() => {
+    if (highlightMemo) {
+      const timer = setTimeout(() => {
+        const element = document.getElementById(`memo-${highlightMemo}`);
+        if (element) {
+          element.scrollIntoView({ 
+            behavior: 'smooth', 
+            block: 'center' 
+          });
+        }
+      }, 100); // Small delay to ensure DOM is rendered
+      return () => clearTimeout(timer);
+    }
+  }, [highlightMemo]);
 
   const handleCreateMemo = async (memoData: Omit<Memo, 'id' | 'created_at' | 'updated_at'>) => {
     try {
@@ -348,11 +364,14 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
             const isHighlighted = highlightMemo === memo.memo_number;
             
             return (
-            <div key={memo.id || `memo-${index}-${memo.memo_number}`} className={`bg-white rounded-xl shadow-sm border transition-shadow ${
-              isHighlighted 
-                ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
-                : 'border-gray-200 hover:shadow-md'
-            }`}>
+            <div 
+              key={memo.id || `memo-${index}-${memo.memo_number}`} 
+              id={`memo-${memo.memo_number}`}
+              className={`bg-white rounded-xl shadow-sm border transition-shadow ${
+                isHighlighted 
+                  ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
+                  : 'border-gray-200 hover:shadow-md'
+              }`}>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
