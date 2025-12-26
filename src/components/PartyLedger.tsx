@@ -12,7 +12,15 @@ interface PartyLedgerEntry {
   tripDetails: string;
   credit: number;
   debitPayment: number;
-  debitAdvance: number;
+  // Bill breakdown
+  billAmount: number;
+  detention: number;
+  extra: number;
+  rto: number;
+  tds: number;
+  mamool: number;
+  commission: number;
+  penalties: number;
   runningBalance: number;
   remarks: string;
 }
@@ -307,20 +315,40 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
 
       let credit = 0;
       let debitPayment = 0;
-      let debitAdvance = 0;
       let remarks = '';
 
+      // Bill breakdown fields
+      let billAmount = 0;
+      let detention = 0;
+      let extra = 0;
+      let rto = 0;
+      let tds = 0;
+      let mamool = 0;
+      let commission = 0;
+      let penalties = 0;
+
       if (entry.type === 'bill') {
-        // Calculate net bill amount including detention, extra, RTO minus deductions
-        credit = entry.data.bill_amount + (entry.data.detention || 0) + (entry.data.extra || 0) + (entry.data.rto || 0) - (entry.data.mamool || 0) - (entry.data.penalties || 0) - (entry.data.tds || 0);
-        // Check if there was an advance for this bill
+        billAmount = entry.data.bill_amount || 0;
+        detention = entry.data.detention || 0;
+        extra = entry.data.extra || 0;
+        rto = entry.data.rto || 0;
+        tds = entry.data.tds || 0;
+        mamool = entry.data.mamool || 0;
+        commission = entry.data.commission || 0;
+        penalties = entry.data.penalties || 0;
+
+        // Calculate net bill amount including additions and deductions
+        credit = billAmount + detention + extra + rto - mamool - commission - tds - penalties;
+
+        // Check if there was an advance for this bill (affects balance, not displayed as column)
         const billAdvances = partyBankingEntries.filter(be => 
           be.category === 'bill_advance' && be.reference_id === entry.data.bill_number
         );
         const totalAdvance = billAdvances.reduce((sum, adv) => sum + adv.amount, 0);
-        debitAdvance = totalAdvance;
-        runningBalance += credit - debitAdvance;
-        remarks = totalAdvance > 0 ? 'Bill Created (Advance Received)' : 'Bill Created';
+
+        // Update running balance with advance adjustment
+        runningBalance += credit - totalAdvance;
+        remarks = totalAdvance > 0 ? `Bill Created (Advance Received ₹${totalAdvance.toLocaleString('en-IN')})` : 'Bill Created';
       } else if (entry.type === 'payment') {
         debitPayment = entry.data.amount;
         runningBalance -= debitPayment;
@@ -345,7 +373,14 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
         tripDetails,
         credit,
         debitPayment,
-        debitAdvance,
+        billAmount,
+        detention,
+        extra,
+        rto,
+        tds,
+        mamool,
+        commission,
+        penalties,
         runningBalance,
         remarks
       });
@@ -380,8 +415,26 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
     return filteredEntries.reduce((acc, entry) => ({
       credit: acc.credit + entry.credit,
       debitPayment: acc.debitPayment + entry.debitPayment,
-      debitAdvance: acc.debitAdvance + entry.debitAdvance,
-    }), { credit: 0, debitPayment: 0, debitAdvance: 0 });
+      billAmount: acc.billAmount + entry.billAmount,
+      detention: acc.detention + entry.detention,
+      extra: acc.extra + entry.extra,
+      rto: acc.rto + entry.rto,
+      tds: acc.tds + entry.tds,
+      mamool: acc.mamool + entry.mamool,
+      commission: acc.commission + entry.commission,
+      penalties: acc.penalties + entry.penalties,
+    }), { 
+      credit: 0, 
+      debitPayment: 0, 
+      billAmount: 0,
+      detention: 0,
+      extra: 0,
+      rto: 0,
+      tds: 0,
+      mamool: 0,
+      commission: 0,
+      penalties: 0
+    });
   }, [filteredEntries]);
 
   const finalBalance = filteredEntries.length > 0 ? filteredEntries[filteredEntries.length - 1].runningBalance : 0;
@@ -401,16 +454,39 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
   const exportToCSV = () => {
     if (!filteredEntries.length) return;
 
-    const headers = ['Date', 'Bill No', 'Trip Details', 'Credit (₹)', 'Debit - Payment (₹)', 'Debit - Advance (₹)', 'Running Balance (₹)', 'Remarks'];
+    const headers = [
+      'Date',
+      'Bill No',
+      'Trip Details',
+      'Bill Amount (₹)',
+      'Detention (₹)',
+      'Extra (₹)',
+      'RTO (₹)',
+      'TDS (₹)',
+      'Mamool (₹)',
+      'Commission (₹)',
+      'Penalties (₹)',
+      'Net Bill (₹)',
+      'Debit - Payment (₹)',
+      'Running Balance (₹)',
+      'Remarks'
+    ];
     const csvContent = [
       headers.join(','),
       ...filteredEntries.map(entry => [
         entry.date,
         entry.billNo,
         `"${entry.tripDetails}"`,
+        entry.billAmount,
+        entry.detention,
+        entry.extra,
+        entry.rto,
+        entry.tds,
+        entry.mamool,
+        entry.commission,
+        entry.penalties,
         entry.credit,
         entry.debitPayment,
-        entry.debitAdvance,
         entry.runningBalance,
         `"${entry.remarks}"`
       ].join(','))
@@ -671,18 +747,14 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
 
       {/* Summary Cards */}
       {partyFilter && (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-            <div className="text-sm text-blue-600 font-medium">Total Bills</div>
+            <div className="text-sm text-blue-600 font-medium">Total Net Bills</div>
             <div className="text-2xl font-bold text-blue-900">{formatCurrency(totals.credit)}</div>
           </div>
           <div className="bg-green-50 p-4 rounded-lg border border-green-200">
             <div className="text-sm text-green-600 font-medium">Total Payments</div>
             <div className="text-2xl font-bold text-green-900">{formatCurrency(totals.debitPayment)}</div>
-          </div>
-          <div className="bg-yellow-50 p-4 rounded-lg border border-yellow-200">
-            <div className="text-sm text-yellow-600 font-medium">Total Advances</div>
-            <div className="text-2xl font-bold text-yellow-900">{formatCurrency(totals.debitAdvance)}</div>
           </div>
           <div className={`p-4 rounded-lg border ${finalBalance >= 0 ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
             <div className={`text-sm font-medium ${finalBalance >= 0 ? 'text-red-600' : 'text-green-600'}`}>
@@ -713,9 +785,16 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bill No</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trip Details</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Credit (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Bill Amt (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Detention (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Extra (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">RTO (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">TDS (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Mamool (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Commission (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Penalties (₹)</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Net Bill (₹)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit - Payment (₹)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit - Advance (₹)</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Running Balance (₹)</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
                   </tr>
@@ -750,14 +829,35 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {entry.tripDetails}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-gray-900">
+                        {entry.billAmount > 0 ? formatCurrency(entry.billAmount) : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">
+                        {entry.detention > 0 ? formatCurrency(entry.detention) : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">
+                        {entry.extra > 0 ? formatCurrency(entry.extra) : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-700">
+                        {entry.rto > 0 ? formatCurrency(entry.rto) : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
+                        {entry.tds > 0 ? `-${formatCurrency(entry.tds)}` : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
+                        {entry.mamool > 0 ? `-${formatCurrency(entry.mamool)}` : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
+                        {entry.commission > 0 ? `-${formatCurrency(entry.commission)}` : '—'}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-red-600">
+                        {entry.penalties > 0 ? `-${formatCurrency(entry.penalties)}` : '—'}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600 font-medium">
                         {entry.credit > 0 ? formatCurrency(entry.credit) : '—'}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-600 font-medium">
                         {entry.debitPayment > 0 ? formatCurrency(entry.debitPayment) : '—'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-yellow-600 font-medium">
-                        {entry.debitAdvance > 0 ? formatCurrency(entry.debitAdvance) : '—'}
                       </td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
                         entry.runningBalance >= 0 ? 'text-red-600' : 'text-green-600'
@@ -773,14 +873,35 @@ const PartyLedger: React.FC<PartyLedgerProps> = ({ selectedParty, onNavigate }) 
                 <tfoot className="bg-gray-100">
                   <tr>
                     <td colSpan={3} className="px-6 py-4 text-sm font-bold text-gray-900">Total</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-gray-900">
+                      {formatCurrency(totals.billAmount)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">
+                      {formatCurrency(totals.detention)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">
+                      {formatCurrency(totals.extra)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-700">
+                      {formatCurrency(totals.rto)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-red-600">
+                      {formatCurrency(totals.tds)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-red-600">
+                      {formatCurrency(totals.mamool)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-red-600">
+                      {formatCurrency(totals.commission)}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-red-600">
+                      {formatCurrency(totals.penalties)}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-600">
                       {formatCurrency(totals.credit)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600">
                       {formatCurrency(totals.debitPayment)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-yellow-600">
-                      {formatCurrency(totals.debitAdvance)}
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
                       finalBalance >= 0 ? 'text-red-600' : 'text-green-600'

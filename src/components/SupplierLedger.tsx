@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Truck, Filter, Download, Table, FileDown, Plus } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
@@ -9,13 +9,22 @@ interface SupplierLedgerEntry {
   date: string;
   memoNo: string;
   tripDetails: string;
-  detention: number;
-  extraWeight: number;
   credit: number;
+  // Deduction Details
+  freight: number;
+  commission: number;
+  mamool: number;
+  detention: number;
+  extra: number;
+  rto: number;
+  // Calculated Fields
+  netAmount: number;
   debitPayment: number;
   debitAdvance: number;
   runningBalance: number;
   remarks: string;
+  // Additional details for display
+  showDetails?: boolean;
 }
 
 interface SupplierLedgerProps {
@@ -28,12 +37,24 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [supplierFilter, setSupplierFilter] = useState(selectedSupplier || '');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [memoTypeFilter, setMemoTypeFilter] = useState<'all' | 'withDeductions' | 'withoutDeductions'>('all');
+  const [minAmount, setMinAmount] = useState('');
+  const [maxAmount, setMaxAmount] = useState('');
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
   const [showDebitNoteModal, setShowDebitNoteModal] = useState(false);
   const [debitNoteForm, setDebitNoteForm] = useState({
     amount: 0,
     narration: '',
     date: new Date().toISOString().split('T')[0]
   });
+
+  useEffect(() => {
+    setStatusFilter('all');
+    setMemoTypeFilter('all');
+    setMinAmount('');
+    setMaxAmount('');
+  }, [supplierFilter]);
 
   // Get unique suppliers from memos
   const suppliers = useMemo(() => {
@@ -192,29 +213,30 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
         memo?.loading_slip_id?.from_location ? 
         `${memo.loading_slip_id.from_location} – ${memo.loading_slip_id.to_location} / ${memo.loading_slip_id.vehicle_no}` : '';
 
-      let credit = 0;
+      let freight = 0;
+      let commission = 0;
+      let mamool = 0;
+      let detention = 0;
+      let extra = 0;
+      let rto = 0;
+      let netAmount = 0;
       let debitPayment = 0;
       let debitAdvance = 0;
-      let detention = 0;
-      let extraWeight = 0;
       let remarks = '';
 
       if (entry.type === 'memo') {
-        // Calculate net amount payable to supplier (freight - commission - mamool + detention + extra + rto)
-        const freight = entry.data.freight || 0;
-        const commission = entry.data.commission || 0;
-        const mamul = entry.data.mamool || 0;
-        const rto = entry.data.rto || 0;
-        
-        // Credit = Net amount payable to supplier (freight - commission - mamool + detention + extra + rto)
-        credit = freight - commission - mamul;
+        // Store all deduction details
+        freight = entry.data.freight || 0;
+        commission = entry.data.commission || 0;
+        mamool = entry.data.mamool || 0;
         detention = entry.data.detention || 0;
-        extraWeight = entry.data.extra || 0;
+        extra = entry.data.extra || 0;
+        rto = entry.data.rto || 0;
         
-        // Add RTO to the credit amount so it shows in the Net Credit column
-        credit += rto;
+        // Calculate net amount payable to supplier
+        netAmount = freight - commission - mamool + detention + extra + rto;
         
-        console.log(`📊 Supplier memo calculation - Freight: ${freight}, Commission: ${commission}, Mamool: ${mamul}, RTO: ${rto}, Net Credit: ${credit}`);
+        console.log(`📊 Supplier memo calculation - Freight: ${freight}, Commission: ${commission}, Mamool: ${mamool}, Detention: ${detention}, Extra: ${extra}, RTO: ${rto}, Net Amount: ${netAmount}`);
         
         // Check if there was an advance for this memo
         const memoAdvances = allPaymentEntries.filter(be => 
@@ -223,8 +245,8 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
         const totalAdvance = memoAdvances.reduce((sum, adv) => sum + adv.amount, 0);
         debitAdvance = totalAdvance;
         
-        // Running balance: Net Credit (includes RTO) + Detention + Extra - Advance
-        runningBalance += credit + detention + extraWeight - debitAdvance;
+        // Update running balance
+        runningBalance += netAmount - debitAdvance;
         remarks = totalAdvance > 0 ? 'Memo Created (Advance Paid)' : 'Memo Created';
       } else if (entry.type === 'payment') {
         debitPayment = entry.data.amount;
@@ -261,13 +283,21 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
         date: entry.date,
         memoNo: memo?.memo_number || '',
         tripDetails,
+        // Deduction Details
+        freight,
+        commission,
+        mamool,
         detention,
-        extraWeight,
-        credit,
+        extra,
+        rto,
+        // Calculated Fields
+        netAmount,
+        credit: netAmount,
         debitPayment,
         debitAdvance,
         runningBalance,
-        remarks
+        remarks,
+        showDetails: false
       });
     });
 
@@ -296,22 +326,98 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
       filtered = filtered.filter(entry => entry.date <= dateTo);
     }
 
+    if (statusFilter === 'paid') {
+      filtered = filtered.filter(entry => entry.debitPayment > 0);
+    } else if (statusFilter === 'unpaid') {
+      filtered = filtered.filter(entry => entry.debitPayment <= 0);
+    }
+
+    if (memoTypeFilter === 'withDeductions') {
+      filtered = filtered.filter(entry =>
+        entry.commission > 0 ||
+        entry.mamool > 0 ||
+        entry.detention > 0 ||
+        entry.extra > 0 ||
+        entry.rto > 0
+      );
+    } else if (memoTypeFilter === 'withoutDeductions') {
+      filtered = filtered.filter(entry =>
+        entry.commission === 0 &&
+        entry.mamool === 0 &&
+        entry.detention === 0 &&
+        entry.extra === 0 &&
+        entry.rto === 0
+      );
+    }
+
+    if (minAmount) {
+      const min = parseFloat(minAmount);
+      if (!Number.isNaN(min)) {
+        filtered = filtered.filter(entry => entry.netAmount >= min);
+      }
+    }
+
+    if (maxAmount) {
+      const max = parseFloat(maxAmount);
+      if (!Number.isNaN(max)) {
+        filtered = filtered.filter(entry => entry.netAmount <= max);
+      }
+    }
+
     console.log(`🔍 After date filtering: ${filtered.length} entries (from ${supplierLedgerEntries.length} total)`);
     return filtered;
-  }, [supplierLedgerEntries, dateFrom, dateTo]);
+  }, [supplierLedgerEntries, dateFrom, dateTo, statusFilter, memoTypeFilter, minAmount, maxAmount]);
 
   // Calculate totals
   const totals = useMemo(() => {
     return filteredEntries.reduce((acc, entry) => ({
-      credit: acc.credit + entry.credit,
-      detention: acc.detention + entry.detention,
-      extraWeight: acc.extraWeight + entry.extraWeight,
-      debitPayment: acc.debitPayment + entry.debitPayment,
-      debitAdvance: acc.debitAdvance + entry.debitAdvance,
-    }), { credit: 0, detention: 0, extraWeight: 0, debitPayment: 0, debitAdvance: 0 });
+      credit: acc.credit + (entry.netAmount || 0),
+      freight: acc.freight + (entry.freight || 0),
+      commission: acc.commission + (entry.commission || 0),
+      mamool: acc.mamool + (entry.mamool || 0),
+      detention: acc.detention + (entry.detention || 0),
+      extra: acc.extra + (entry.extra || 0),
+      extraWeight: acc.extraWeight + (entry.extra || 0),
+      rto: acc.rto + (entry.rto || 0),
+      netAmount: acc.netAmount + (entry.netAmount || 0),
+      debitPayment: acc.debitPayment + (entry.debitPayment || 0),
+      debitAdvance: acc.debitAdvance + (entry.debitAdvance || 0),
+    }), { 
+      credit: 0,
+      freight: 0, 
+      commission: 0, 
+      mamool: 0, 
+      detention: 0, 
+      extra: 0, 
+      extraWeight: 0,
+      rto: 0, 
+      netAmount: 0, 
+      debitPayment: 0, 
+      debitAdvance: 0 
+    });
   }, [filteredEntries]);
 
   const finalBalance = filteredEntries.length > 0 ? filteredEntries[filteredEntries.length - 1].runningBalance : 0;
+  const hasAdvancedFilters =
+    statusFilter !== 'all' ||
+    memoTypeFilter !== 'all' ||
+    minAmount !== '' ||
+    maxAmount !== '';
+  
+  // Toggle details for a specific entry
+  const toggleDetails = (id: string) => {
+    const updatedEntries = supplierLedgerEntries.map(entry => 
+      entry.id === id ? { ...entry, showDetails: !entry.showDetails } : entry
+    );
+    // Update the entries in the parent component if needed
+    // This is a simplified version - you might need to adjust based on your state management
+    if (onNavigate) {
+      onNavigate('supplier-ledger', { 
+        entries: updatedEntries,
+        selectedSupplier: supplierFilter 
+      });
+    }
+  };
 
   const handleCreateDebitNote = async () => {
     if (!supplierFilter) {
@@ -362,21 +468,64 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
   const exportToCSV = () => {
     if (!filteredEntries.length) return;
 
-    const headers = ['Date', 'Memo No', 'Trip Details', 'Detention (₹)', 'Extra Weight (₹)', 'Net Credit (₹)', 'Debit - Payment (₹)', 'Debit - Advance (₹)', 'Running Balance (₹)', 'Remarks'];
+    const headers = [
+      'Date', 
+      'Memo No', 
+      'Trip Details', 
+      'Freight (₹)',
+      '(-) Commission (₹)',
+      '(-) Mamool (₹)',
+      '(+) Detention (₹)',
+      '(+) Extra (₹)',
+      '(+) RTO (₹)',
+      '= Net Amount (₹)',
+      'Debit - Payment (₹)',
+      'Running Balance (₹)', 
+      'Remarks'
+    ];
+    
     const csvContent = [
       headers.join(','),
-      ...filteredEntries.map(entry => [
-        entry.date,
-        entry.memoNo,
-        `"${entry.tripDetails}"`,
-        entry.detention,
-        entry.extraWeight,
-        entry.credit,
-        entry.debitPayment,
-        entry.debitAdvance,
-        entry.runningBalance,
-        `"${entry.remarks}"`
-      ].join(','))
+      ...filteredEntries.flatMap(entry => {
+        const mainRow = [
+          entry.date,
+          entry.memoNo,
+          `"${entry.tripDetails}"`,
+          entry.freight,
+          -entry.commission,
+          -entry.mamool,
+          entry.detention,
+          entry.extra,
+          entry.rto,
+          entry.netAmount,
+          entry.debitPayment,
+          entry.runningBalance,
+          `"${entry.remarks}"`
+        ].join(',');
+        
+        // Add a detail row if it's a memo entry with deductions
+        if (entry.memoNo && (entry.commission > 0 || entry.mamool > 0 || entry.detention > 0 || entry.extra > 0 || entry.rto > 0)) {
+          const detailRow = [
+            '', // Empty date
+            '', // Empty memo no
+            'DETAILS:', // Indicate this is a detail row
+            `Freight: ${entry.freight.toLocaleString('en-IN')}`,
+            `Commission: -${entry.commission.toLocaleString('en-IN')}`,
+            `Mamool: -${entry.mamool.toLocaleString('en-IN')}`,
+            `Detention: +${entry.detention.toLocaleString('en-IN')}`,
+            `Extra: +${entry.extra.toLocaleString('en-IN')}`,
+            `RTO: +${entry.rto.toLocaleString('en-IN')}`,
+            `Net: ${entry.netAmount.toLocaleString('en-IN')}`,
+            '', // Empty debit payment
+            '', // Empty running balance
+            ''  // Empty remarks
+          ].join(',');
+          
+          return [mainRow, detailRow];
+        }
+        
+        return [mainRow];
+      }).flat()
     ].join('\n');
 
     const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -570,6 +719,96 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
             </button>
           </div>
         </div>
+
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+            className="inline-flex items-center gap-2 px-3 py-1.5 border border-gray-300 rounded-md text-sm text-gray-700 bg-white hover:bg-gray-50"
+          >
+            <Filter className="w-4 h-4 text-gray-400" />
+            <span>More Filters</span>
+            {hasAdvancedFilters && (
+              <span className="inline-flex h-2 w-2 rounded-full bg-blue-500" />
+            )}
+          </button>
+
+          {hasAdvancedFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('all');
+                setMemoTypeFilter('all');
+                setMinAmount('');
+                setMaxAmount('');
+              }}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Clear advanced filters
+            </button>
+          )}
+        </div>
+
+        {showAdvancedFilters && (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Status
+              </label>
+              <select
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value as 'all' | 'paid' | 'unpaid')}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="all">All entries</option>
+                <option value="paid">Payments only</option>
+                <option value="unpaid">Non-payment entries</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Memo Type
+              </label>
+              <select
+                value={memoTypeFilter}
+                onChange={e => setMemoTypeFilter(e.target.value as 'all' | 'withDeductions' | 'withoutDeductions')}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="all">All memos</option>
+                <option value="withDeductions">With deductions</option>
+                <option value="withoutDeductions">Without deductions</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Min Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  value={minAmount}
+                  onChange={e => setMinAmount(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  placeholder="Min"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Max Amount (₹)
+                </label>
+                <input
+                  type="number"
+                  value={maxAmount}
+                  onChange={e => setMaxAmount(e.target.value)}
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  placeholder="Max"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Summary Cards */}
@@ -616,91 +855,135 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
             return filteredEntries.length > 0;
           })() ? (
             <div className="overflow-x-auto">
-              <table className="w-full">
+              <table className="min-w-full bg-white border border-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Memo No</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trip Details</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Detention (₹)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Extra Weight (₹)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Net Credit (₹)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit - Payment (₹)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Debit - Advance (₹)</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Running Balance (₹)</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Remarks</th>
+                    <th className="px-4 py-2 border">Date</th>
+                    <th className="px-4 py-2 border">Memo No</th>
+                    <th className="px-4 py-2 border">Trip Details</th>
+                    <th className="px-4 py-2 border">Freight (₹)</th>
+                    <th className="px-4 py-2 border">(-) Commission</th>
+                    <th className="px-4 py-2 border">(-) Mamool</th>
+                    <th className="px-4 py-2 border">(+) Detention</th>
+                    <th className="px-4 py-2 border">(+) Extra</th>
+                    <th className="px-4 py-2 border">(+) RTO</th>
+                    <th className="px-4 py-2 border bg-green-50">= Net Amount (₹)</th>
+                    <th className="px-4 py-2 border bg-red-50">Debit - Payment (₹)</th>
+                    <th className="px-4 py-2 border bg-blue-50">Running Balance (₹)</th>
+                    <th className="px-4 py-2 border">Remarks</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredEntries.map((entry, index) => (
-                    <tr key={entry.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {new Date(entry.date).toLocaleDateString('en-IN')}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        {entry.memoNo ? (
-                          <button
-                            onClick={() => onNavigate?.('memo', { highlight: entry.memoNo })}
-                            className="text-orange-600 hover:text-orange-800 hover:underline transition-colors cursor-pointer"
-                            title={`Open memo ${entry.memoNo}`}
-                          >
-                            {entry.memoNo}
-                          </button>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900">
-                        {entry.tripDetails}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-purple-600 font-medium">
-                        {entry.detention > 0 ? formatCurrency(entry.detention) : '—'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-indigo-600 font-medium">
-                        {entry.extraWeight > 0 ? formatCurrency(entry.extraWeight) : '—'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-green-600 font-medium">
-                        {entry.credit > 0 ? formatCurrency(entry.credit) : '—'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-blue-600 font-medium">
-                        {entry.debitPayment > 0 ? formatCurrency(entry.debitPayment) : '—'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-right text-yellow-600 font-medium">
-                        {entry.debitAdvance > 0 ? formatCurrency(entry.debitAdvance) : '—'}
-                      </td>
-                      <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
-                        entry.runningBalance >= 0 ? 'text-red-600' : 'text-green-600'
-                      }`}>
-                        {formatCurrency(Math.abs(entry.runningBalance))}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {entry.remarks}
-                      </td>
-                    </tr>
+                  {filteredEntries.map((entry) => (
+                    <React.Fragment key={entry.id}>
+                      <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleDetails(entry.id)}>
+                        <td className="px-4 py-2 border">{new Date(entry.date).toLocaleDateString()}</td>
+                        <td className="px-4 py-2 border font-medium">{entry.memoNo}</td>
+                        <td className="px-4 py-2 border">
+                          <div className="flex items-center">
+                            <span className="mr-2">{entry.tripDetails}</span>
+                            {(entry.commission > 0 || entry.mamool > 0 || entry.detention > 0 || entry.extra > 0 || entry.rto > 0) && (
+                              <span className="text-blue-600 text-xs">▼</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2 border text-right">{entry.freight.toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-2 border text-right text-red-600">
+                          {entry.commission > 0 ? `-${entry.commission.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="px-4 py-2 border text-right text-red-600">
+                          {entry.mamool > 0 ? `-${entry.mamool.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="px-4 py-2 border text-right text-green-600">
+                          {entry.detention > 0 ? `+${entry.detention.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="px-4 py-2 border text-right text-green-600">
+                          {entry.extra > 0 ? `+${entry.extra.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="px-4 py-2 border text-right text-green-600">
+                          {entry.rto > 0 ? `+${entry.rto.toLocaleString('en-IN')}` : '-'}
+                        </td>
+                        <td className="px-4 py-2 border text-right bg-green-50 font-medium">
+                          {entry.netAmount.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-2 border text-right bg-red-50">
+                          {entry.debitPayment > 0 ? entry.debitPayment.toLocaleString('en-IN') : '-'}
+                        </td>
+                        <td className="px-4 py-2 border text-right bg-blue-50 font-medium">
+                          {entry.runningBalance.toLocaleString('en-IN')}
+                        </td>
+                        <td className="px-4 py-2 border">{entry.remarks}</td>
+                      </tr>
+                      
+                      {/* Deduction Details Row */}
+                      {entry.showDetails && (entry.commission > 0 || entry.mamool > 0 || entry.detention > 0 || entry.extra > 0 || entry.rto > 0) && (
+                        <tr className="bg-gray-50 text-sm">
+                          <td colSpan={14} className="px-4 py-2 border">
+                            <div className="grid grid-cols-5 gap-2">
+                              <div className="col-span-1">
+                                <div className="font-medium">Freight:</div>
+                                <div className="text-green-600">₹{entry.freight.toLocaleString('en-IN')}</div>
+                              </div>
+                              {entry.commission > 0 && (
+                                <div className="col-span-1">
+                                  <div className="font-medium">(-) Commission:</div>
+                                  <div className="text-red-600">-₹{entry.commission.toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                              {entry.mamool > 0 && (
+                                <div className="col-span-1">
+                                  <div className="font-medium">(-) Mamool:</div>
+                                  <div className="text-red-600">-₹{entry.mamool.toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                              {entry.detention > 0 && (
+                                <div className="col-span-1">
+                                  <div className="font-medium">(+) Detention:</div>
+                                  <div className="text-green-600">+₹{entry.detention.toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                              {entry.extra > 0 && (
+                                <div className="col-span-1">
+                                  <div className="font-medium">(+) Extra:</div>
+                                  <div className="text-green-600">+₹{entry.extra.toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                              {entry.rto > 0 && (
+                                <div className="col-span-1">
+                                  <div className="font-medium">(+) RTO:</div>
+                                  <div className="text-green-600">+₹{entry.rto.toLocaleString('en-IN')}</div>
+                                </div>
+                              )}
+                              <div className="col-span-1">
+                                <div className="font-medium">= Net Amount:</div>
+                                <div className="font-bold">₹{entry.netAmount.toLocaleString('en-IN')}</div>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   ))}
                 </tbody>
                 <tfoot className="bg-gray-100">
                   <tr>
                     <td colSpan={3} className="px-6 py-4 text-sm font-bold text-gray-900">Total</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-purple-600">
-                      {formatCurrency(totals.detention)}
+                      {totals.detention.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-indigo-600">
-                      {formatCurrency(totals.extraWeight)}
+                      {totals.extra.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-green-600">
-                      {formatCurrency(totals.credit)}
+                      {totals.credit.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600">
-                      {formatCurrency(totals.debitPayment)}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-yellow-600">
-                      {formatCurrency(totals.debitAdvance)}
+                      {totals.debitPayment.toLocaleString('en-IN')}
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
                       finalBalance >= 0 ? 'text-red-600' : 'text-green-600'
                     }`}>
-                      {formatCurrency(Math.abs(finalBalance))}
+                      {finalBalance.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4"></td>
                   </tr>

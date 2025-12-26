@@ -28,18 +28,40 @@ interface LedgerEntry {
   billNo?: string;
   memoNo?: string;
   tripDetails: string;
-  credit: number;
-  debitPayment: number;
-  debitAdvance: number;
+  credit?: number;
+  debitPayment?: number;
   runningBalance: number;
   remarks?: string;
+  // Party breakdown
+  billAmount?: number;
+  detention?: number;
+  extra?: number;
+  rto?: number;
+  tds?: number;
+  mamool?: number;
+  commission?: number;
+  penalties?: number;
+  // Supplier breakdown
+  freight?: number;
+  netAmount?: number;
 }
 
 interface LedgerTotals {
-  credit: number;
-  debitPayment: number;
-  debitAdvance: number;
+  credit?: number;
+  debitPayment?: number;
   balance?: number;
+  // Party breakdown
+  billAmount?: number;
+  detention?: number;
+  extra?: number;
+  rto?: number;
+  tds?: number;
+  mamool?: number;
+  commission?: number;
+  penalties?: number;
+  // Supplier breakdown
+  freight?: number;
+  netAmount?: number;
 }
 
 interface LedgerOptions {
@@ -123,6 +145,24 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     // Add first page header
     addHeader();
     
+    const isParty = options.type === 'PARTY';
+    const partyCols = {
+      date: 10, bill: 28, trip: 52, billAmt: 112, det: 127, extra: 142, rto: 157,
+      tds: 172, mamool: 187, comm: 202, pen: 217, net: 232, pay: 247, bal: 262, remarks: 277
+    };
+    const supplierCols = {
+      date: 10, memo: 28, trip: 52, freight: 112, comm: 132, mamool: 147, det: 162,
+      extra: 177, rto: 192, net: 212, pay: 232, bal: 252, remarks: 272
+    };
+    const hasTds = isParty && options.entries.some(e => (e.tds ?? 0) !== 0);
+    const hasMamool = isParty && options.entries.some(e => (e.mamool ?? 0) !== 0);
+    const hasCommission = isParty && options.entries.some(e => (e.commission ?? 0) !== 0);
+    const hasPenalties = isParty && options.entries.some(e => (e.penalties ?? 0) !== 0);
+    const hasSupplierCommission = !isParty && options.entries.some(e => (e.commission ?? 0) !== 0);
+    const hasSupplierMamool = !isParty && options.entries.some(e => (e.mamool ?? 0) !== 0);
+    const hasSupplierDetention = !isParty && options.entries.some(e => (e.detention ?? 0) !== 0);
+    const hasSupplierExtra = !isParty && options.entries.some(e => (e.extra ?? 0) !== 0);
+    const hasSupplierRto = !isParty && options.entries.some(e => (e.rto ?? 0) !== 0);
     // Table Headers
     const drawTableHeader = () => {
       console.log(`📋 Drawing table header at currentY: ${currentY}`);
@@ -130,18 +170,58 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
       doc.rect(10, currentY, pageWidth - 20, 10, 'F');
       
       doc.setTextColor(255, 255, 255);
-      doc.setFontSize(10);
+      doc.setFontSize(8.5);
       doc.setFont('helvetica', 'bold');
       
-      // Improved column positions with better spacing
-      doc.text('Date', 15, currentY + 7);
-      doc.text(options.type === 'PARTY' ? 'Bill No' : 'Memo No', 40, currentY + 7);
-      doc.text('Trip Details', 70, currentY + 7);
-      doc.text('Credit', 145, currentY + 7, { align: 'right' });
-      doc.text('Debit-Payment', 175, currentY + 7, { align: 'right' });
-      doc.text('Debit-Advance', 205, currentY + 7, { align: 'right' });
-      doc.text('Balance', 235, currentY + 7, { align: 'right' });
-      doc.text('Remarks', 245, currentY + 7);
+      if (isParty) {
+        doc.text('Date', partyCols.date, currentY + 7);
+        doc.text('Bill No', partyCols.bill, currentY + 7);
+        doc.text('Trip Details', partyCols.trip, currentY + 7);
+        doc.text('Bill', partyCols.billAmt, currentY + 7, { align: 'right' });
+        doc.text('Det.', partyCols.det, currentY + 7, { align: 'right' });
+        doc.text('Extra', partyCols.extra, currentY + 7, { align: 'right' });
+        doc.text('RTO', partyCols.rto, currentY + 7, { align: 'right' });
+        if (hasTds) {
+          doc.text('TDS', partyCols.tds, currentY + 7, { align: 'right' });
+        }
+        if (hasMamool) {
+          doc.text('Mamool', partyCols.mamool, currentY + 7, { align: 'right' });
+        }
+        if (hasCommission) {
+          doc.text('Comm.', partyCols.comm, currentY + 7, { align: 'right' });
+        }
+        if (hasPenalties) {
+          doc.text('Penal.', partyCols.pen, currentY + 7, { align: 'right' });
+        }
+        doc.text('Net', partyCols.net, currentY + 7, { align: 'right' });
+        doc.text('Payment', partyCols.pay, currentY + 7, { align: 'right' });
+        doc.text('Balance', partyCols.bal, currentY + 7, { align: 'right' });
+        doc.text('Remarks', partyCols.remarks, currentY + 7);
+      } else {
+        doc.text('Date', supplierCols.date, currentY + 7);
+        doc.text('Memo No', supplierCols.memo, currentY + 7);
+        doc.text('Trip Details', supplierCols.trip, currentY + 7);
+        doc.text('Freight', supplierCols.freight, currentY + 7, { align: 'right' });
+        if (hasSupplierCommission) {
+          doc.text('Comm.', supplierCols.comm, currentY + 7, { align: 'right' });
+        }
+        if (hasSupplierMamool) {
+          doc.text('Mamool', supplierCols.mamool, currentY + 7, { align: 'right' });
+        }
+        if (hasSupplierDetention) {
+          doc.text('Det.', supplierCols.det, currentY + 7, { align: 'right' });
+        }
+        if (hasSupplierExtra) {
+          doc.text('Extra', supplierCols.extra, currentY + 7, { align: 'right' });
+        }
+        if (hasSupplierRto) {
+          doc.text('RTO', supplierCols.rto, currentY + 7, { align: 'right' });
+        }
+        doc.text('Net', supplierCols.net, currentY + 7, { align: 'right' });
+        doc.text('Payment', supplierCols.pay, currentY + 7, { align: 'right' });
+        doc.text('Balance', supplierCols.bal, currentY + 7, { align: 'right' });
+        doc.text('Remarks', supplierCols.remarks, currentY + 7);
+      }
       
       currentY += 12;
       console.log(`📋 Table header drawn, currentY updated to: ${currentY}`);
@@ -155,9 +235,25 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     doc.setFontSize(9);
     
     options.entries.forEach((entry, index) => {
-      // Check if we need a new page (more conservative spacing)
-      // Account for row height (8) + margin (50) = need at least 58mm from bottom
-      if (currentY > pageHeight - 58) {
+      const wrapText = (text: string, maxLen: number, maxLines: number) => {
+        const lines: string[] = [];
+        let remaining = text || '-';
+        while (remaining && lines.length < maxLines) {
+          lines.push(remaining.substring(0, maxLen));
+          remaining = remaining.substring(maxLen);
+        }
+        if (remaining.length > 0 && lines.length === maxLines) {
+          const last = lines.pop() || '';
+          lines.push((last.substring(0, Math.max(0, maxLen - 3))) + '...');
+        }
+        return lines.length ? lines : ['-'];
+      };
+
+      const tripLines = wrapText(entry.tripDetails || '-', 14, 3);
+      const rowHeight = Math.max(12, 8 + (tripLines.length - 1) * 4);
+
+      // Check if we need a new page considering dynamic row height
+      if (currentY > pageHeight - (60 + rowHeight)) {
         console.log(`📄 Adding new page at entry ${index}, currentY: ${currentY}, pageHeight: ${pageHeight}`);
         doc.addPage();
         currentPage++;
@@ -175,35 +271,43 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
       // Alternating row colors
       if (index % 2 === 0) {
         doc.setFillColor(250, 250, 250);
-        doc.rect(10, currentY - 2, pageWidth - 20, 8, 'F');
+        doc.rect(10, currentY - 2, pageWidth - 20, rowHeight, 'F');
       }
       
       // Draw row data - improved positioning and sizing
-      doc.text(new Date(entry.date).toLocaleDateString('en-IN'), 15, currentY + 3);
-      doc.text((entry.billNo || entry.memoNo || '-').substring(0, 15), 40, currentY + 3);
+      const baseY = currentY + 3;
+      const col = isParty ? partyCols : supplierCols;
+      const billMemoX = isParty ? partyCols.bill : supplierCols.memo;
+      doc.text(new Date(entry.date).toLocaleDateString('en-IN'), col.date, baseY);
+      doc.text((entry.billNo || entry.memoNo || '-').substring(0, 15), billMemoX, baseY);
       
-      // Trip details - smaller font with 2-line support for complete information
+      // Trip details - up to 3 lines
       doc.setFontSize(8);
-      const tripDetails = (entry.tripDetails || '-');
-      const maxTripLineLength = 35; // Characters per line
-      
-      if (tripDetails.length > maxTripLineLength) {
-        // Split into two lines
-        const line1 = tripDetails.substring(0, maxTripLineLength);
-        const line2 = tripDetails.substring(maxTripLineLength, maxTripLineLength * 2);
-        doc.text(line1, 70, currentY + 2);
-        doc.text(line2, 70, currentY + 6);
-      } else {
-        doc.text(tripDetails, 70, currentY + 3);
-      }
+      tripLines.forEach((line, i) => {
+        doc.text(line, col.trip, currentY + 2 + i * 4);
+      });
       
       // Reset font size for financial columns
       doc.setFontSize(9);
       
       // Financial columns WITHOUT currency symbols - just numbers
-      const creditText = entry.credit > 0 ? entry.credit.toLocaleString('en-IN') : '-';
-      const debitPaymentText = entry.debitPayment > 0 ? entry.debitPayment.toLocaleString('en-IN') : '-';
-      const debitAdvanceText = entry.debitAdvance > 0 ? entry.debitAdvance.toLocaleString('en-IN') : '-';
+      const debitPaymentVal = entry.debitPayment ?? 0;
+      const creditVal = entry.credit ?? entry.netAmount ?? 0;
+      const billAmount = entry.billAmount ?? entry.freight ?? 0;
+      const detention = entry.detention ?? 0;
+      const extra = entry.extra ?? 0;
+      const rto = entry.rto ?? 0;
+      const tds = entry.tds ?? 0;
+      const mamool = entry.mamool ?? 0;
+      const commission = entry.commission ?? 0;
+      const penalties = entry.penalties ?? 0;
+
+      // For party, net = provided credit or recompute from breakdown
+      const netParty = creditVal || (billAmount + detention + extra + rto - tds - mamool - commission - penalties);
+      const netSupplier = creditVal || (billAmount + detention + extra + rto - mamool - commission);
+
+      const creditText = (isParty ? netParty : netSupplier) > 0 ? (isParty ? netParty : netSupplier).toLocaleString('en-IN') : '-';
+      const debitPaymentText = debitPaymentVal > 0 ? debitPaymentVal.toLocaleString('en-IN') : '-';
       const balanceText = Math.abs(entry.runningBalance).toLocaleString('en-IN');
       
       // Debug first few entries
@@ -218,26 +322,81 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
         });
       }
       
-      doc.text(creditText, 145, currentY + 3, { align: 'right' });
-      doc.text(debitPaymentText, 175, currentY + 3, { align: 'right' });
-      doc.text(debitAdvanceText, 205, currentY + 3, { align: 'right' });
-      doc.text(balanceText, 235, currentY + 3, { align: 'right' });
+      if (isParty) {
+        const billText = billAmount > 0 ? billAmount.toLocaleString('en-IN') : '-';
+        const detentionText = detention > 0 ? detention.toLocaleString('en-IN') : '-';
+        const extraText = extra > 0 ? extra.toLocaleString('en-IN') : '-';
+        const rtoText = rto > 0 ? rto.toLocaleString('en-IN') : '-';
+        const tdsText = tds > 0 ? tds.toLocaleString('en-IN') : '-';
+        const mamoolText = mamool > 0 ? mamool.toLocaleString('en-IN') : '-';
+        const commissionText = commission > 0 ? commission.toLocaleString('en-IN') : '-';
+        const penaltiesText = penalties > 0 ? penalties.toLocaleString('en-IN') : '-';
+
+        doc.text(billText, partyCols.billAmt, currentY + 3, { align: 'right' });
+        doc.text(detentionText, partyCols.det, currentY + 3, { align: 'right' });
+        doc.text(extraText, partyCols.extra, currentY + 3, { align: 'right' });
+        doc.text(rtoText, partyCols.rto, currentY + 3, { align: 'right' });
+        if (hasTds) {
+          doc.text(tdsText, partyCols.tds, currentY + 3, { align: 'right' });
+        }
+        if (hasMamool) {
+          doc.text(mamoolText, partyCols.mamool, currentY + 3, { align: 'right' });
+        }
+        if (hasCommission) {
+          doc.text(commissionText, partyCols.comm, currentY + 3, { align: 'right' });
+        }
+        if (hasPenalties) {
+          doc.text(penaltiesText, partyCols.pen, currentY + 3, { align: 'right' });
+        }
+        doc.text(creditText, partyCols.net, currentY + 3, { align: 'right' });
+        doc.text(debitPaymentText, partyCols.pay, currentY + 3, { align: 'right' });
+        doc.text(balanceText, partyCols.bal, currentY + 3, { align: 'right' });
+      } else {
+        const freightText = billAmount > 0 ? billAmount.toLocaleString('en-IN') : '-';
+        const commissionText = commission > 0 ? commission.toLocaleString('en-IN') : '-';
+        const mamoolText = mamool > 0 ? mamool.toLocaleString('en-IN') : '-';
+        const detentionText = detention > 0 ? detention.toLocaleString('en-IN') : '-';
+        const extraText = extra > 0 ? extra.toLocaleString('en-IN') : '-';
+        const rtoText = rto > 0 ? rto.toLocaleString('en-IN') : '-';
+
+        doc.text(freightText, supplierCols.freight, currentY + 3, { align: 'right' });
+        if (hasSupplierCommission) {
+          doc.text(commissionText, supplierCols.comm, currentY + 3, { align: 'right' });
+        }
+        if (hasSupplierMamool) {
+          doc.text(mamoolText, supplierCols.mamool, currentY + 3, { align: 'right' });
+        }
+        if (hasSupplierDetention) {
+          doc.text(detentionText, supplierCols.det, currentY + 3, { align: 'right' });
+        }
+        if (hasSupplierExtra) {
+          doc.text(extraText, supplierCols.extra, currentY + 3, { align: 'right' });
+        }
+        if (hasSupplierRto) {
+          doc.text(rtoText, supplierCols.rto, currentY + 3, { align: 'right' });
+        }
+        doc.text(creditText, supplierCols.net, currentY + 3, { align: 'right' });
+        doc.text(debitPaymentText, supplierCols.pay, currentY + 3, { align: 'right' });
+        doc.text(balanceText, supplierCols.bal, currentY + 3, { align: 'right' });
+      }
       
       // Remarks with 2-line support for complete information
       const remarks = (entry.remarks || '-');
-      const maxRemarksLineLength = 20; // Characters per line
+      const maxRemarksLineLength = 16; // Characters per line
       
       if (remarks.length > maxRemarksLineLength) {
         // Split into two lines
         const remarkLine1 = remarks.substring(0, maxRemarksLineLength);
         const remarkLine2 = remarks.substring(maxRemarksLineLength, maxRemarksLineLength * 2);
-        doc.text(remarkLine1, 245, currentY + 2);
-        doc.text(remarkLine2, 245, currentY + 6);
+        const remarkX = isParty ? partyCols.remarks : supplierCols.remarks;
+        doc.text(remarkLine1, remarkX, currentY + 2);
+        doc.text(remarkLine2, remarkX, currentY + 6);
       } else {
-        doc.text(remarks, 245, currentY + 3);
+        const remarkX = isParty ? partyCols.remarks : supplierCols.remarks;
+        doc.text(remarks, remarkX, currentY + 3);
       }
       
-      currentY += 12; // Increased spacing for 2-line support
+      currentY += Math.max(12, rowHeight); // Respect dynamic height
       
       // Debug every 10 entries
       if ((index + 1) % 10 === 0) {
@@ -268,11 +427,50 @@ export const generateProfessionalLedgerPDF = async (options: LedgerOptions) => {
     
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
+    const tot = options.totals || {};
+    doc.setFontSize(9);
     doc.text('TOTALS', 15, currentY + 4);
-    doc.text(options.totals.credit.toLocaleString('en-IN'), 145, currentY + 4, { align: 'right' });
-    doc.text(options.totals.debitPayment.toLocaleString('en-IN'), 175, currentY + 4, { align: 'right' });
-    doc.text(options.totals.debitAdvance.toLocaleString('en-IN'), 205, currentY + 4, { align: 'right' });
-    doc.text(Math.abs(options.currentBalance).toLocaleString('en-IN'), 235, currentY + 4, { align: 'right' });
+    if (isParty) {
+      doc.text((tot.billAmount ?? 0).toLocaleString('en-IN'), partyCols.billAmt, currentY + 4, { align: 'right' });
+      doc.text((tot.detention ?? 0).toLocaleString('en-IN'), partyCols.det, currentY + 4, { align: 'right' });
+      doc.text((tot.extra ?? 0).toLocaleString('en-IN'), partyCols.extra, currentY + 4, { align: 'right' });
+      doc.text((tot.rto ?? 0).toLocaleString('en-IN'), partyCols.rto, currentY + 4, { align: 'right' });
+      if (hasTds) {
+        doc.text((tot.tds ?? 0).toLocaleString('en-IN'), partyCols.tds, currentY + 4, { align: 'right' });
+      }
+      if (hasMamool) {
+        doc.text((tot.mamool ?? 0).toLocaleString('en-IN'), partyCols.mamool, currentY + 4, { align: 'right' });
+      }
+      if (hasCommission) {
+        doc.text((tot.commission ?? 0).toLocaleString('en-IN'), partyCols.comm, currentY + 4, { align: 'right' });
+      }
+      if (hasPenalties) {
+        doc.text((tot.penalties ?? 0).toLocaleString('en-IN'), partyCols.pen, currentY + 4, { align: 'right' });
+      }
+      doc.text((tot.credit ?? 0).toLocaleString('en-IN'), partyCols.net, currentY + 4, { align: 'right' });
+      doc.text((tot.debitPayment ?? 0).toLocaleString('en-IN'), partyCols.pay, currentY + 4, { align: 'right' });
+      doc.text(Math.abs(options.currentBalance).toLocaleString('en-IN'), partyCols.bal, currentY + 4, { align: 'right' });
+    } else {
+      doc.text((tot.freight ?? 0).toLocaleString('en-IN'), supplierCols.freight, currentY + 4, { align: 'right' });
+      if (hasSupplierCommission) {
+        doc.text((tot.commission ?? 0).toLocaleString('en-IN'), supplierCols.comm, currentY + 4, { align: 'right' });
+      }
+      if (hasSupplierMamool) {
+        doc.text((tot.mamool ?? 0).toLocaleString('en-IN'), supplierCols.mamool, currentY + 4, { align: 'right' });
+      }
+      if (hasSupplierDetention) {
+        doc.text((tot.detention ?? 0).toLocaleString('en-IN'), supplierCols.det, currentY + 4, { align: 'right' });
+      }
+      if (hasSupplierExtra) {
+        doc.text((tot.extra ?? 0).toLocaleString('en-IN'), supplierCols.extra, currentY + 4, { align: 'right' });
+      }
+      if (hasSupplierRto) {
+        doc.text((tot.rto ?? 0).toLocaleString('en-IN'), supplierCols.rto, currentY + 4, { align: 'right' });
+      }
+      doc.text((tot.netAmount ?? tot.credit ?? 0).toLocaleString('en-IN'), supplierCols.net, currentY + 4, { align: 'right' });
+      doc.text((tot.debitPayment ?? 0).toLocaleString('en-IN'), supplierCols.pay, currentY + 4, { align: 'right' });
+      doc.text(Math.abs(options.currentBalance).toLocaleString('en-IN'), supplierCols.bal, currentY + 4, { align: 'right' });
+    }
     
     currentY += 15;
     
@@ -326,6 +524,7 @@ export const exportLedgerToExcel = async (options: LedgerOptions) => {
   try {
     console.log('🔄 Starting Excel export with static import...');
     
+    const isPartyExcel = options.type === 'PARTY';
     // Prepare data for Excel
     const worksheetData = [
       ['BHAVISHYA ROAD CARRIERS'],
@@ -333,31 +532,87 @@ export const exportLedgerToExcel = async (options: LedgerOptions) => {
       [`${options.type === 'PARTY' ? 'Party' : 'Supplier'}: ${options.name}`],
       [`Balance: ${Math.abs(options.currentBalance).toLocaleString('en-IN')}`],
       [],
-      ['Date', options.type === 'PARTY' ? 'Bill No' : 'Memo No', 'Trip Details', 'Credit', 'Debit-Payment', 'Debit-Advance', 'Balance', 'Remarks']
+      isPartyExcel
+        ? ['Date', 'Bill No', 'Trip Details', 'Bill Amount', 'Detention', 'Extra', 'RTO', 'TDS', 'Mamool', 'Commission', 'Penalties', 'Net Bill', 'Debit-Payment', 'Balance', 'Remarks']
+        : ['Date', 'Memo No', 'Trip Details', 'Freight', 'Commission', 'Mamool', 'Detention', 'Extra', 'RTO', 'Net Amount', 'Debit-Payment', 'Balance', 'Remarks']
     ];
     
     // Add entries
     options.entries.forEach(entry => {
-      worksheetData.push([
+      const billAmount = entry.billAmount ?? entry.freight ?? 0;
+      const detention = entry.detention ?? 0;
+      const extra = entry.extra ?? 0;
+      const rto = entry.rto ?? 0;
+      const tds = entry.tds ?? 0;
+      const mamool = entry.mamool ?? 0;
+      const commission = entry.commission ?? 0;
+      const penalties = entry.penalties ?? 0;
+      const netParty = entry.credit ?? entry.netAmount ?? (billAmount + detention + extra + rto - tds - mamool - commission - penalties);
+      const netSupplier = entry.netAmount ?? entry.credit ?? (billAmount - commission - mamool + detention + extra + rto);
+      const debitPayment = entry.debitPayment ?? 0;
+
+      worksheetData.push(isPartyExcel ? [
         new Date(entry.date).toLocaleDateString('en-IN'),
-        entry.billNo || entry.memoNo || '-',
+        entry.billNo || '-',
         entry.tripDetails || '-',
-        entry.credit ? entry.credit.toLocaleString('en-IN') : '-',
-        entry.debitPayment ? entry.debitPayment.toLocaleString('en-IN') : '-',
-        entry.debitAdvance ? entry.debitAdvance.toLocaleString('en-IN') : '-',
+        billAmount ? billAmount.toLocaleString('en-IN') : '-',
+        detention ? detention.toLocaleString('en-IN') : '-',
+        extra ? extra.toLocaleString('en-IN') : '-',
+        rto ? rto.toLocaleString('en-IN') : '-',
+        tds ? tds.toLocaleString('en-IN') : '-',
+        mamool ? mamool.toLocaleString('en-IN') : '-',
+        commission ? commission.toLocaleString('en-IN') : '-',
+        penalties ? penalties.toLocaleString('en-IN') : '-',
+        netParty ? netParty.toLocaleString('en-IN') : '-',
+        debitPayment ? debitPayment.toLocaleString('en-IN') : '-',
+        Math.abs(entry.runningBalance).toLocaleString('en-IN'),
+        entry.remarks || '-'
+      ] : [
+        new Date(entry.date).toLocaleDateString('en-IN'),
+        entry.memoNo || '-',
+        entry.tripDetails || '-',
+        billAmount ? billAmount.toLocaleString('en-IN') : '-',
+        commission ? commission.toLocaleString('en-IN') : '-',
+        mamool ? mamool.toLocaleString('en-IN') : '-',
+        detention ? detention.toLocaleString('en-IN') : '-',
+        extra ? extra.toLocaleString('en-IN') : '-',
+        rto ? rto.toLocaleString('en-IN') : '-',
+        netSupplier ? netSupplier.toLocaleString('en-IN') : '-',
+        debitPayment ? debitPayment.toLocaleString('en-IN') : '-',
         Math.abs(entry.runningBalance).toLocaleString('en-IN'),
         entry.remarks || '-'
       ]);
     });
     
     // Add totals
-    worksheetData.push([
+    worksheetData.push(isPartyExcel ? [
       'TOTALS',
       '',
       '',
-      options.totals.credit.toLocaleString('en-IN'),
-      options.totals.debitPayment.toLocaleString('en-IN'),
-      options.totals.debitAdvance.toLocaleString('en-IN'),
+      (options.totals.billAmount ?? 0).toLocaleString('en-IN'),
+      (options.totals.detention ?? 0).toLocaleString('en-IN'),
+      (options.totals.extra ?? 0).toLocaleString('en-IN'),
+      (options.totals.rto ?? 0).toLocaleString('en-IN'),
+      (options.totals.tds ?? 0).toLocaleString('en-IN'),
+      (options.totals.mamool ?? 0).toLocaleString('en-IN'),
+      (options.totals.commission ?? 0).toLocaleString('en-IN'),
+      (options.totals.penalties ?? 0).toLocaleString('en-IN'),
+      (options.totals.credit ?? 0).toLocaleString('en-IN'),
+      (options.totals.debitPayment ?? 0).toLocaleString('en-IN'),
+      Math.abs(options.currentBalance).toLocaleString('en-IN'),
+      ''
+    ] : [
+      'TOTALS',
+      '',
+      '',
+      (options.totals.freight ?? options.totals.billAmount ?? 0).toLocaleString('en-IN'),
+      (options.totals.commission ?? 0).toLocaleString('en-IN'),
+      (options.totals.mamool ?? 0).toLocaleString('en-IN'),
+      (options.totals.detention ?? 0).toLocaleString('en-IN'),
+      (options.totals.extra ?? 0).toLocaleString('en-IN'),
+      (options.totals.rto ?? 0).toLocaleString('en-IN'),
+      (options.totals.netAmount ?? options.totals.credit ?? 0).toLocaleString('en-IN'),
+      (options.totals.debitPayment ?? 0).toLocaleString('en-IN'),
       Math.abs(options.currentBalance).toLocaleString('en-IN'),
       ''
     ]);
@@ -367,14 +622,35 @@ export const exportLedgerToExcel = async (options: LedgerOptions) => {
     const ws = XLSX.utils.aoa_to_sheet(worksheetData);
     
     // Set column widths
-    ws['!cols'] = [
+    ws['!cols'] = isPartyExcel ? [
       { wch: 12 }, // Date
-      { wch: 15 }, // Bill/Memo No
+      { wch: 15 }, // Bill No
       { wch: 30 }, // Trip Details
-      { wch: 15 }, // Credit
-      { wch: 15 }, // Debit-Payment
-      { wch: 15 }, // Debit-Advance
-      { wch: 15 }, // Balance
+      { wch: 14 }, // Bill
+      { wch: 12 }, // Detention
+      { wch: 12 }, // Extra
+      { wch: 12 }, // RTO
+      { wch: 12 }, // TDS
+      { wch: 12 }, // Mamool
+      { wch: 12 }, // Commission
+      { wch: 12 }, // Penalties
+      { wch: 14 }, // Net
+      { wch: 14 }, // Payment
+      { wch: 14 }, // Balance
+      { wch: 30 }  // Remarks
+    ] : [
+      { wch: 12 }, // Date
+      { wch: 15 }, // Memo No
+      { wch: 30 }, // Trip Details
+      { wch: 15 }, // Freight
+      { wch: 12 }, // Commission
+      { wch: 12 }, // Mamool
+      { wch: 12 }, // Detention
+      { wch: 12 }, // Extra
+      { wch: 12 }, // RTO
+      { wch: 14 }, // Net
+      { wch: 14 }, // Payment
+      { wch: 14 }, // Balance
       { wch: 30 }  // Remarks
     ];
     
