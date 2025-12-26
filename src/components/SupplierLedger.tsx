@@ -17,6 +17,7 @@ interface SupplierLedgerEntry {
   detention: number;
   extra: number;
   rto: number;
+  deduction: number;
   // Calculated Fields
   netAmount: number;
   debitPayment: number;
@@ -219,6 +220,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
       let detention = 0;
       let extra = 0;
       let rto = 0;
+      let deduction = 0;
       let netAmount = 0;
       let debitPayment = 0;
       let debitAdvance = 0;
@@ -232,9 +234,10 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
         detention = entry.data.detention || 0;
         extra = entry.data.extra || 0;
         rto = entry.data.rto || 0;
+        deduction = entry.data.deduction || 0;
         
-        // Calculate net amount payable to supplier
-        netAmount = freight - commission - mamool + detention + extra + rto;
+        // Use memo.net_amount (includes deduction) as authoritative net amount
+        netAmount = entry.data.net_amount || (freight - commission - mamool + detention + extra + rto - deduction);
         
         console.log(`📊 Supplier memo calculation - Freight: ${freight}, Commission: ${commission}, Mamool: ${mamool}, Detention: ${detention}, Extra: ${extra}, RTO: ${rto}, Net Amount: ${netAmount}`);
         
@@ -290,6 +293,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
         detention,
         extra,
         rto,
+        deduction,
         // Calculated Fields
         netAmount,
         credit: netAmount,

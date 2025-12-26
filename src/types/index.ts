@@ -34,6 +34,7 @@ export interface Memo {
   detention: number;
   extra: number;
   rto: number;
+  deduction: number;
   net_amount: number;
   advance_payments: AdvancePayment[];
   status: 'pending' | 'paid';

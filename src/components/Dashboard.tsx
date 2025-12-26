@@ -198,7 +198,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     console.log('Total vehicles:', vehicles.length);
     
     const balance = memos
-      .filter(memo => memo.status !== 'paid') // Exclude paid memos
+      .filter(memo => memo.status !== 'paid') // Exclude memos explicitly marked as paid
       .reduce((sum, memo) => {
       // Handle both string loading_slip_id and populated object
       let loadingSlipId: string;
@@ -239,33 +239,23 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         return sum;
       }
       
-      // Check if memo has been paid (subtract payments and advances from banking and cashbook entries)
+      // Check if memo has been paid (subtract all debit entries that reference this memo
+      // in both banking and cashbook, same logic as SupplierDetail)
       const bankingPayments = bankingEntries
-        .filter(entry => {
-          const matchesReference = entry.reference_id === memo.memo_number;
-          const isDebit = entry.type === 'debit';
-          const isMemoPayment = entry.category === 'memo_payment' || 
-                               entry.category === 'supplier_payment' || 
-                               entry.category === 'memo_advance';
-          return matchesReference && isDebit && isMemoPayment;
-        })
+        .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
         .reduce((total, entry) => total + entry.amount, 0);
-      
-      // Also check cashbook entries for supplier payments
+
       const cashbookPayments = cashbookEntries
-        .filter(entry => {
-          const matchesReference = entry.reference_id === memo.memo_number;
-          const isDebit = entry.type === 'debit';
-          const isMemoPayment = entry.category === 'supplier_payment';
-          return matchesReference && isDebit && isMemoPayment;
-        })
+        .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
         .reduce((total, entry) => total + entry.amount, 0);
       
       const memoPayments = bankingPayments + cashbookPayments;
-      
-      const memoBalance = memo.net_amount - memoPayments;
-      console.log(`Memo ${memo.memo_number}: Owes ₹${memo.net_amount}, Paid ₹${memoPayments}, Balance ₹${memoBalance}`);
-      
+
+      const rawMemoBalance = (memo.net_amount || 0) - memoPayments;
+      const memoBalance = Math.max(0, rawMemoBalance);
+      console.log(`Memo ${memo.memo_number}: Owes ₹${memo.net_amount}, Paid ₹${memoPayments}, Balance ₹${memoBalance} (raw: ₹${rawMemoBalance})`);
+
+      // Only add positive pending amount; fully paid or overpaid memos do not affect supplier balance
       return sum + memoBalance;
     }, 0);
     

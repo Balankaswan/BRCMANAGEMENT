@@ -240,8 +240,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         const paid = bankingEntries
           .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === m.memo_number)
           .reduce((sum, e) => sum + e.amount, 0);
-        // Balance = freight - advance - commission - mamul + detention + extra + rto
-        const calculatedBalance = m.freight - paid - (m.commission || 0) - (m.mamool || 0) + (m.detention || 0) + (m.extra || 0) + (m.rto || 0);
+        // Balance = Net Amount - all payments (advance + memo payments)
+        const calculatedBalance = (m.net_amount || 0) - paid;
         return calculatedBalance <= 0;
       });
     }
@@ -357,10 +357,10 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
             const paid = bankingEntries
               .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
               .reduce((sum, e) => sum + e.amount, 0);
-            // Balance = freight - advance - commission - mamul + detention + extra + rto
-            const calculatedBalance = memo.freight - paid - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0) + (memo.rto || 0);
-            const isFullyPaid = calculatedBalance <= 0;
-            const balance = Math.max(0, calculatedBalance);
+            // Balance = Net Amount - all payments (advance + memo payments)
+            const rawBalance = (memo.net_amount || 0) - paid;
+            const isFullyPaid = rawBalance <= 0;
+            const balance = Math.max(0, rawBalance);
             const isHighlighted = highlightMemo === memo.memo_number;
             
             return (
@@ -421,7 +421,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4 text-sm">
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4 text-sm">
                     <div>
                       <span className="text-gray-500">Commission:</span>
                       <span className="ml-1 font-medium">{formatCurrency(memo.commission || 0)}</span>
@@ -441,6 +441,10 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                     <div>
                       <span className="text-gray-500">RTO:</span>
                       <span className="ml-1 font-medium">{formatCurrency(memo.rto || 0)}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500">Deduction:</span>
+                      <span className="ml-1 font-medium">{formatCurrency((memo as any).deduction || 0)}</span>
                     </div>
                   </div>
                   
@@ -518,6 +522,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               <div><span className="text-gray-500">Detention:</span> {formatCurrency(viewMemo.detention)}</div>
               <div><span className="text-gray-500">Extra:</span> {formatCurrency(viewMemo.extra)}</div>
               <div><span className="text-gray-500">RTO:</span> {formatCurrency(viewMemo.rto)}</div>
+              <div><span className="text-gray-500">Deduction:</span> {formatCurrency((viewMemo as any).deduction || 0)}</div>
               <div className="col-span-2"><span className="text-gray-500">Net Amount:</span> {formatCurrency(viewMemo.net_amount)}</div>
               {viewMemo.narration && (
                 <div className="col-span-2">

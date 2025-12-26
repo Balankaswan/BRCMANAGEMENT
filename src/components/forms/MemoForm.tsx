@@ -23,6 +23,7 @@ type MemoFormState = {
   detention: number;
   extra: number;
   rto: number;
+  deduction: number;
   net_amount: number;
   advance_payments: AdvancePayment[];
   status: 'pending' | 'paid';
@@ -42,6 +43,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
     detention: initialData?.detention || 0,
     extra: initialData?.extra || 0,
     rto: initialData?.rto || slip?.rto || 0,
+    deduction: initialData?.deduction || 0,
     net_amount: initialData?.net_amount || 0,
     advance_payments: initialData?.advance_payments || [] as AdvancePayment[],
     status: initialData?.status || 'pending' as const,
@@ -76,12 +78,12 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
 
   // Always compute net_amount from current values (including manually edited commission)
   useEffect(() => {
-    const netAmount = formData.freight - formData.commission - formData.mamool + formData.detention + formData.extra + formData.rto;
+    const netAmount = formData.freight - formData.commission - formData.mamool + formData.detention + formData.extra + formData.rto - (formData.deduction || 0);
     setFormData(prev => ({
       ...prev,
       net_amount: netAmount,
     }));
-  }, [formData.freight, formData.commission, formData.mamool, formData.detention, formData.extra, formData.rto]);
+  }, [formData.freight, formData.commission, formData.mamool, formData.detention, formData.extra, formData.rto, formData.deduction]);
 
   
   const handleSubmit = async (e: React.FormEvent) => {
@@ -265,7 +267,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Mamool (₹)
@@ -322,6 +324,20 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
                 min="0"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Deduction (₹)
+              </label>
+              <input
+                type="number"
+                name="deduction"
+                value={formData.deduction}
+                onChange={handleInputChange}
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                step="0.01"
+                min="0"
+              />
+            </div>
           </div>
 
 
@@ -346,7 +362,7 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
               <Calculator className="w-5 h-5 text-green-600 mr-2" />
               <h3 className="text-sm font-medium text-green-900">Calculation Summary</h3>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
               <div>
                 <span className="text-green-700">Freight:</span>
                 <span className="ml-2 font-medium">{formatCurrency(formData.freight)}</span>
@@ -362,6 +378,10 @@ const MemoForm: React.FC<MemoFormProps> = ({ slip, nextMemoNumber, initialData, 
               <div>
                 <span className="text-green-700">Detention + Extra:</span>
                 <span className="ml-2 font-medium">+{formatCurrency(formData.detention + formData.extra)}</span>
+              </div>
+              <div>
+                <span className="text-red-700">Deduction:</span>
+                <span className="ml-2 font-medium">-{formatCurrency(formData.deduction)}</span>
               </div>
             </div>
             <div className="mt-3 pt-3 border-t border-green-200">
