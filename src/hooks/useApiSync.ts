@@ -293,14 +293,21 @@ export const useApiSync = () => {
           const recentCashbookCreation = localStorage.getItem('lastCashbookCreation');
           const isRecentCreation = recentCashbookCreation && (Date.now() - parseInt(recentCashbookCreation)) < 8000;
           
-          if (isRecentCreation) {
-            console.log('⏳ Skipping cashbook sync - recent creation detected');
+          // Only skip if we already have entries in store; never skip on an empty store (e.g., after refresh)
+          if (isRecentCreation && store.cashbookEntries.length > 0) {
+            console.log('⏳ Skipping cashbook sync - recent creation detected and store already has entries');
           } else {
             const fetchedCashbookEntries = cashbookEntriesResponse.value.cashbookEntries || [];
             console.log('💰 Cashbook entries synced from backend:', fetchedCashbookEntries.length);
             
+            // Normalize IDs for consistency
+            const normalizedCashbookEntries = fetchedCashbookEntries.map((entry: any) => ({
+              ...entry,
+              id: entry.id || entry._id,
+            }));
+            
             // Deduplicate cashbook entries by ID to prevent duplicates
-            const uniqueCashbookEntries = fetchedCashbookEntries.filter((entry: any, index: number, self: any[]) => {
+            const uniqueCashbookEntries = normalizedCashbookEntries.filter((entry: any, index: number, self: any[]) => {
               const entryId = entry.id || entry._id;
               return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
             });
