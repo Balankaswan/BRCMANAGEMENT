@@ -15,7 +15,8 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   try {
     console.log('Banking GET request received');
-    const { type, category, vehicle_no, page = 1, limit = 100000 } = req.query;
+    // Increase capacity 10x to handle larger data pulls
+    const { type, category, vehicle_no, page = 1, limit = 1000000 } = req.query;
     
     const filter = {};
     if (type) filter.type = type;
