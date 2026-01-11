@@ -263,14 +263,21 @@ export const useApiSync = () => {
           const recentBankingCreation = localStorage.getItem('lastBankingCreation');
           const isRecentCreation = recentBankingCreation && (Date.now() - parseInt(recentBankingCreation)) < 5000;
           
-          if (isRecentCreation) {
-            console.log('⏳ Skipping banking sync - recent creation detected');
+          // Only skip if we already have entries in store; never skip on an empty store (e.g., after refresh)
+          if (isRecentCreation && store.bankingEntries.length > 0) {
+            console.log('⏳ Skipping banking sync - recent creation detected and store already has entries');
           } else {
             const fetchedBankingEntries = bankingEntriesResponse.value.bankingEntries || [];
             console.log('🏦 Banking entries synced from backend:', fetchedBankingEntries.length);
             
+            // Normalize IDs for consistency
+            const normalizedBankingEntries = fetchedBankingEntries.map((entry: any) => ({
+              ...entry,
+              id: entry.id || entry._id,
+            }));
+            
             // Deduplicate banking entries by ID to prevent duplicates
-            const uniqueBankingEntries = fetchedBankingEntries.filter((entry: any, index: number, self: any[]) => {
+            const uniqueBankingEntries = normalizedBankingEntries.filter((entry: any, index: number, self: any[]) => {
               const entryId = entry.id || entry._id;
               return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
             });
