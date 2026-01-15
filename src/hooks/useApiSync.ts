@@ -53,8 +53,8 @@ export const useApiSync = () => {
           apiService.getVehicles({ limit: 10000 }), // Get ALL vehicles with high limit
           apiService.getMemos({ limit: 10000 }), // Get ALL memos with high limit
           apiService.getLoadingSlips({ limit: 10000 }), // Get ALL loading slips with high limit
-          apiService.getBankingEntries({ limit: 100000 }), // Get ALL banking entries
-          apiService.getCashbookEntries({ limit: 100000 }), // Get ALL cashbook entries
+          apiService.getBankingEntries({ limit: 1000000 }), // Increased 10x to prevent truncation
+          apiService.getCashbookEntries({ limit: 1000000 }), // Increased 10x to prevent truncation
           apiService.getLedgerEntries(), // Get ALL ledger entries
           apiService.getFuelWallets(),
           apiService.getFuelTransactions() // Get ALL fuel transactions
@@ -284,7 +284,39 @@ export const useApiSync = () => {
             
             console.log('🏦 Unique banking entries after deduplication:', uniqueBankingEntries.length);
             console.log('🧹 Database cleanup completed - removed duplicates from backend');
-            store.setBankingEntries(uniqueBankingEntries);
+
+            // Merge with any local entries to avoid temporary loss if backend hasn’t caught up yet
+            const mergedMap = new Map<string, any>();
+            
+            // CRITICAL: Preserve ALL store entries first - never lose data!
+            store.bankingEntries.forEach((entry: any) => {
+              const entryId = entry.id || entry._id;
+              if (entryId) {
+                mergedMap.set(entryId, entry);
+              }
+            });
+            
+            // Then update with backend entries - backend is authoritative for updated data
+            uniqueBankingEntries.forEach((entry: any) => {
+              const entryId = entry.id || entry._id;
+              if (entryId) {
+                // Only update if backend entry is newer or different
+                const existingEntry = mergedMap.get(entryId);
+                if (!existingEntry || (entry.updated_at && existingEntry.updated_at && new Date(entry.updated_at) > new Date(existingEntry.updated_at))) {
+                  mergedMap.set(entryId, entry);
+                }
+              }
+            });
+            
+            const mergedBanking = Array.from(mergedMap.values());
+            console.log('🏦 Banking entries merged - Store:', store.bankingEntries.length, '+ Backend:', uniqueBankingEntries.length, '= Total:', mergedBanking.length);
+            
+            // Only update store if we actually have data or if store was empty
+            if (mergedBanking.length > 0 || store.bankingEntries.length === 0) {
+              store.setBankingEntries(mergedBanking);
+            } else {
+              console.warn('⚠️ Backend returned no banking entries but store has data - keeping store data intact');
+            }
           }
         }
 
@@ -313,7 +345,39 @@ export const useApiSync = () => {
             });
             
             console.log('💰 Unique cashbook entries after deduplication:', uniqueCashbookEntries.length);
-            store.setCashbookEntries(uniqueCashbookEntries);
+
+            // Merge with any local entries to avoid temporary loss if backend hasn’t caught up yet
+            const mergedCashMap = new Map<string, any>();
+            
+            // CRITICAL: Preserve ALL store entries first - never lose data!
+            store.cashbookEntries.forEach((entry: any) => {
+              const entryId = entry.id || entry._id;
+              if (entryId) {
+                mergedCashMap.set(entryId, entry);
+              }
+            });
+            
+            // Then update with backend entries - backend is authoritative for updated data
+            uniqueCashbookEntries.forEach((entry: any) => {
+              const entryId = entry.id || entry._id;
+              if (entryId) {
+                // Only update if backend entry is newer or different
+                const existingEntry = mergedCashMap.get(entryId);
+                if (!existingEntry || (entry.updated_at && existingEntry.updated_at && new Date(entry.updated_at) > new Date(existingEntry.updated_at))) {
+                  mergedCashMap.set(entryId, entry);
+                }
+              }
+            });
+            
+            const mergedCashbook = Array.from(mergedCashMap.values());
+            console.log('💰 Cashbook entries merged - Store:', store.cashbookEntries.length, '+ Backend:', uniqueCashbookEntries.length, '= Total:', mergedCashbook.length);
+            
+            // Only update store if we actually have data or if store was empty
+            if (mergedCashbook.length > 0 || store.cashbookEntries.length === 0) {
+              store.setCashbookEntries(mergedCashbook);
+            } else {
+              console.warn('⚠️ Backend returned no cashbook entries but store has data - keeping store data intact');
+            }
           }
         }
 

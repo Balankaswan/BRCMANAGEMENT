@@ -140,8 +140,8 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return [entry, ...prev];
       });
     },
-    updateBankingEntry: (id, entry) => setBankingEntries(prev => prev.map(e => e.id === id ? entry : e)),
-    deleteBankingEntry: (id) => setBankingEntries(prev => prev.filter(e => e.id !== id)),
+    updateBankingEntry: (id, entry) => setBankingEntries(prev => prev.map(e => (e.id === id || e._id === id) ? entry : e)),
+    deleteBankingEntry: (id) => setBankingEntries(prev => prev.filter(e => (e.id !== id && e._id !== id))),
     setBankingEntries: (entries) => {
       // Deduplicate entries by ID before setting
       const uniqueEntries = entries.filter((entry: any, index: number, self: any[]) => {
@@ -167,11 +167,11 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       });
     },
     updateCashbookEntry: (entry) => {
-      setCashbookEntries(prev => prev.map(e => e.id === entry.id ? entry : e));
-      console.log('✅ Cashbook entry updated in store:', entry.id);
+      setCashbookEntries(prev => prev.map(e => (e.id === entry.id || e._id === entry._id) ? entry : e));
+      console.log('✅ Cashbook entry updated in store:', entry.id || entry._id);
     },
     deleteCashbookEntry: (id) => {
-      setCashbookEntries(prev => prev.filter(e => e.id !== id));
+      setCashbookEntries(prev => prev.filter(e => (e.id !== id && e._id !== id)));
       console.log('✅ Cashbook entry deleted from store:', id);
     },
     setCashbookEntries: (entries) => setCashbookEntries(entries),
