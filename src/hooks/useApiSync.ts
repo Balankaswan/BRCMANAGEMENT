@@ -6,6 +6,8 @@ export const useApiSync = () => {
   const store = useDataStore();
   const [isRealTimeConnected, setIsRealTimeConnected] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const syncDataRef = useRef<any>(null); // Store syncData function reference
 
   useEffect(() => {
     const syncData = async () => {
@@ -16,24 +18,27 @@ export const useApiSync = () => {
 
         console.log('Starting comprehensive API sync...');
         
-        // Listen for sync events from other components with debouncing
-        let syncTimeout: NodeJS.Timeout | null = null;
+        // Define handleSyncEvent here so we can reference it
         const handleSyncEvent = () => {
           console.log('Sync event received, scheduling refresh...');
-          if (syncTimeout) {
-            clearTimeout(syncTimeout);
+          if (syncTimeoutRef.current) {
+            clearTimeout(syncTimeoutRef.current);
           }
-          syncTimeout = setTimeout(() => {
+          syncTimeoutRef.current = setTimeout(() => {
             console.log('Executing delayed sync...');
-            syncData();
+            if (syncDataRef.current) {
+              syncDataRef.current();
+            }
           }, 1000); // Increased delay and added debouncing
         };
         
+        // Store reference to current handleSyncEvent so we can remove it later
+        (window as any).__cashbookSyncHandler = handleSyncEvent;
+        
+        // Add listener for sync events from other components
         window.addEventListener('data-sync-required', handleSyncEvent);
         
         // Fetch ALL data from API with high limits to ensure complete import
-        console.log('🔄 Starting COMPLETE MongoDB data import...');
-        console.log('🎯 Target: Import ALL bills, memos, and loading slips from MongoDB');
         const [
           billsResponse,
           partiesResponse,
@@ -495,12 +500,27 @@ export const useApiSync = () => {
       };
     };
 
+    // Store reference to syncData so handleSyncEvent can call it
+    syncDataRef.current = syncData;
+    
     syncData();
     connectToRealTimeSync();
     
     // Cleanup event listener and EventSource
     return () => {
-      window.removeEventListener('data-sync-required', () => {});
+      // Clean up sync timeout
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+      
+      // Remove event listener using stored reference
+      const handler = (window as any).__cashbookSyncHandler;
+      if (handler) {
+        window.removeEventListener('data-sync-required', handler);
+        delete (window as any).__cashbookSyncHandler;
+      }
+      
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
