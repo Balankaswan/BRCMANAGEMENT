@@ -76,6 +76,9 @@ export default function Cashbook() {
         const savedEntry = response.cashbookEntry;
         console.log('✅ Cashbook entry created successfully:', savedEntry.transaction_id);
         
+        // Set timestamp to prevent sync override
+        localStorage.setItem('lastCashbookCreation', Date.now().toString());
+        
         // Add to local store using addCashbookEntry to ensure proper processing
         addCashbookEntry(savedEntry);
         
@@ -90,12 +93,10 @@ export default function Cashbook() {
         setShowForm(false);
         setEditingEntry(null);
         
-        // CRITICAL: Trigger full data sync to refresh memos and ledgers from backend
-        // This is essential for memo_payment entries which update memo.advance_payments on the backend
-        console.log('🔄 TRIGGERING FULL DATA SYNC for memo/ledger updates...');
+        // Trigger data sync for other components (delayed to allow UI update first)
         setTimeout(() => {
           window.dispatchEvent(new CustomEvent('data-sync-required'));
-        }, 500);
+        }, 100);
       }
     } catch (error) {
       console.error('❌ Failed to create cashbook entry:', error);
