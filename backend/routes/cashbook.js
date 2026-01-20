@@ -182,9 +182,13 @@ router.post('/', async (req, res) => {
     if (cashbookEntry.category === 'memo_payment' && cashbookEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      
+      console.log('🔍 MEMO_PAYMENT: Looking for memo with number:', cashbookEntry.reference_id);
       const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
       
       if (memo) {
+        console.log('✅ MEMO_PAYMENT: Found memo:', memo.memo_number, 'Supplier:', memo.supplier);
+        
         const advancePayment = {
           date: cashbookEntry.date,
           amount: cashbookEntry.amount,
@@ -194,8 +198,8 @@ router.post('/', async (req, res) => {
         };
         
         memo.advance_payments.push(advancePayment);
-        await memo.save();
-        console.log('✅ Added cash payment to memo:', cashbookEntry.reference_id);
+        const savedMemo = await memo.save();
+        console.log('✅ MEMO_PAYMENT: Added cash payment to memo:', cashbookEntry.reference_id, 'Total advance_payments:', savedMemo.advance_payments.length);
 
         // Create supplier ledger entry for memo payment
         const supplierLedgerEntry = new LedgerEntry({
@@ -215,8 +219,10 @@ router.post('/', async (req, res) => {
           memo_id: memo._id
         });
         
-        await supplierLedgerEntry.save();
-        console.log('✅ Created supplier ledger entry for memo payment:', supplierLedgerEntry._id);
+        const savedLedger = await supplierLedgerEntry.save();
+        console.log('✅ MEMO_PAYMENT: Created supplier ledger entry:', savedLedger._id, 'For supplier:', memo.supplier, 'Amount:', cashbookEntry.amount);
+      } else {
+        console.warn('⚠️ MEMO_PAYMENT: Memo not found with number:', cashbookEntry.reference_id, '- Payment will NOT be mapped to memo or ledger');
       }
     }
     
