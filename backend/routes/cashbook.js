@@ -181,6 +181,7 @@ router.post('/', async (req, res) => {
     
     if (cashbookEntry.category === 'memo_payment' && cashbookEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
       const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
       
       if (memo) {
@@ -195,6 +196,27 @@ router.post('/', async (req, res) => {
         memo.advance_payments.push(advancePayment);
         await memo.save();
         console.log('✅ Added cash payment to memo:', cashbookEntry.reference_id);
+
+        // Create supplier ledger entry for memo payment
+        const supplierLedgerEntry = new LedgerEntry({
+          referenceId: memo.supplier,
+          reference_id: cashbookEntry._id.toString(),
+          ledger_type: 'supplier',
+          reference_name: memo.supplier,
+          source_type: 'cashbook',
+          type: 'payment',
+          date: cashbookEntry.date,
+          description: `Memo Payment – Memo No ${memo.memo_number}`,
+          narration: cashbookEntry.narration || `Memo Payment – Memo No ${memo.memo_number}`,
+          debit: cashbookEntry.amount,
+          credit: 0,
+          balance: 0,
+          memo_number: memo.memo_number,
+          memo_id: memo._id
+        });
+        
+        await supplierLedgerEntry.save();
+        console.log('✅ Created supplier ledger entry for memo payment:', supplierLedgerEntry._id);
       }
     }
     
@@ -390,6 +412,32 @@ router.delete('/:id', async (req, res) => {
         );
         await memo.save();
         console.log('✅ Removed cash advance payment from memo:', cashbookEntry.reference_id);
+      }
+    }
+
+    if (cashbookEntry.category === 'memo_payment' && cashbookEntry.reference_id) {
+      const Memo = (await import('../models/Memo.js')).default;
+      const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
+      
+      if (memo) {
+        memo.advance_payments = memo.advance_payments.filter(
+          payment => payment.reference !== `Cashbook Entry: ${cashbookEntry._id}`
+        );
+        await memo.save();
+        console.log('✅ Removed cash payment from memo:', cashbookEntry.reference_id);
+      }
+    }
+
+    if (cashbookEntry.category === 'bill_payment' && cashbookEntry.reference_id) {
+      const Bill = (await import('../models/Bill.js')).default;
+      const bill = await Bill.findOne({ bill_number: cashbookEntry.reference_id });
+      
+      if (bill) {
+        bill.advance_payments = bill.advance_payments.filter(
+          payment => payment.reference !== `Cashbook Entry: ${cashbookEntry._id}`
+        );
+        await bill.save();
+        console.log('✅ Removed cash payment from bill:', cashbookEntry.reference_id);
       }
     }
 
