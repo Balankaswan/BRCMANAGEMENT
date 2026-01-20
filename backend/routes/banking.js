@@ -150,6 +150,7 @@ router.post('/', async (req, res) => {
     // Handle memo and bill payments - add to advance_payments array
     if (bankingEntry.category === 'memo_payment' && bankingEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
       const memo = await Memo.findOne({ memo_number: bankingEntry.reference_id });
       
       if (memo) {
@@ -164,6 +165,27 @@ router.post('/', async (req, res) => {
         memo.advance_payments.push(advancePayment);
         await memo.save();
         console.log('✅ Added bank payment to memo:', bankingEntry.reference_id);
+
+        // Create supplier ledger entry for memo payment
+        const supplierLedgerEntry = new LedgerEntry({
+          referenceId: memo.supplier,
+          reference_id: bankingEntry._id.toString(),
+          ledger_type: 'supplier',
+          reference_name: memo.supplier,
+          source_type: 'banking',
+          type: 'payment',
+          date: bankingEntry.date,
+          description: `Memo Payment – Memo No ${memo.memo_number}`,
+          narration: bankingEntry.narration || `Memo Payment – Memo No ${memo.memo_number}`,
+          debit: bankingEntry.amount,
+          credit: 0,
+          balance: 0,
+          memo_number: memo.memo_number,
+          memo_id: memo._id
+        });
+        
+        await supplierLedgerEntry.save();
+        console.log('✅ Created supplier ledger entry for memo payment from banking:', supplierLedgerEntry._id);
       }
     }
     
@@ -372,6 +394,59 @@ router.delete('/:id', async (req, res) => {
     const bankingEntry = await BankingEntry.findById(req.params.id);
     if (!bankingEntry) {
       return res.status(404).json({ message: 'Banking entry not found' });
+    }
+
+    // Remove advance payments from bills and memos
+    if (bankingEntry.category === 'bill_advance' && bankingEntry.reference_id) {
+      const Bill = (await import('../models/Bill.js')).default;
+      const bill = await Bill.findOne({ bill_number: bankingEntry.reference_id });
+      
+      if (bill) {
+        bill.advance_payments = bill.advance_payments.filter(
+          payment => payment.reference !== `Banking Entry: ${bankingEntry._id}`
+        );
+        await bill.save();
+        console.log('✅ Removed bank advance payment from bill:', bankingEntry.reference_id);
+      }
+    }
+    
+    if (bankingEntry.category === 'memo_advance' && bankingEntry.reference_id) {
+      const Memo = (await import('../models/Memo.js')).default;
+      const memo = await Memo.findOne({ memo_number: bankingEntry.reference_id });
+      
+      if (memo) {
+        memo.advance_payments = memo.advance_payments.filter(
+          payment => payment.reference !== `Banking Entry: ${bankingEntry._id}`
+        );
+        await memo.save();
+        console.log('✅ Removed bank advance payment from memo:', bankingEntry.reference_id);
+      }
+    }
+
+    if (bankingEntry.category === 'memo_payment' && bankingEntry.reference_id) {
+      const Memo = (await import('../models/Memo.js')).default;
+      const memo = await Memo.findOne({ memo_number: bankingEntry.reference_id });
+      
+      if (memo) {
+        memo.advance_payments = memo.advance_payments.filter(
+          payment => payment.reference !== `Banking Entry: ${bankingEntry._id}`
+        );
+        await memo.save();
+        console.log('✅ Removed bank payment from memo:', bankingEntry.reference_id);
+      }
+    }
+
+    if (bankingEntry.category === 'bill_payment' && bankingEntry.reference_id) {
+      const Bill = (await import('../models/Bill.js')).default;
+      const bill = await Bill.findOne({ bill_number: bankingEntry.reference_id });
+      
+      if (bill) {
+        bill.advance_payments = bill.advance_payments.filter(
+          payment => payment.reference !== `Banking Entry: ${bankingEntry._id}`
+        );
+        await bill.save();
+        console.log('✅ Removed bank payment from bill:', bankingEntry.reference_id);
+      }
     }
 
     // Delete associated party commission ledger entries
