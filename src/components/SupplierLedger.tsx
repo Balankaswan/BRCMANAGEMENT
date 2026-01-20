@@ -33,8 +33,8 @@ interface SupplierLedgerProps {
   onNavigate?: (page: string, params?: any) => void;
 }
 
-const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNavigate }) => {
-  const { memos, bankingEntries, cashbookEntries, loadingSlips, ledgerEntries: allLedgerEntries } = useDataStore();
+const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => {
+  const { memos, loadingSlips, ledgerEntries: allLedgerEntries } = useDataStore();
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [supplierFilter, setSupplierFilter] = useState(selectedSupplier || '');
@@ -59,264 +59,58 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
 
   // Get unique suppliers from memos
   const suppliers = useMemo(() => {
-    console.log(`📊 Raw data check - Total memos: ${memos.length}, Total banking: ${bankingEntries.length}, Total cashbook: ${cashbookEntries.length}`);
-    
-    // Show sample data structure
-    if (memos.length > 0) {
-      console.log(`📋 Sample memo structure:`, Object.keys(memos[0]));
-      console.log(`📋 Sample memo:`, memos[0]);
-    }
-    if (bankingEntries.length > 0) {
-      console.log(`🏦 Sample banking entry structure:`, Object.keys(bankingEntries[0]));
-      console.log(`🏦 Sample banking entry:`, bankingEntries[0]);
-    }
     const supplierSet = new Set(memos.map(memo => memo.supplier));
-    const supplierList = Array.from(supplierSet).sort();
-    console.log(`👥 Available suppliers: ${supplierList.length}`, supplierList);
-    return supplierList;
-  }, [memos, bankingEntries, cashbookEntries]);
+    return Array.from(supplierSet).sort();
+  }, [memos]);
 
   // Generate ledger entries for selected supplier
-  const supplierLedgerEntries = useMemo(() => {
+  const supplierLedgerEntries = useMemo((): SupplierLedgerEntry[] => {
     if (!supplierFilter) {
-      console.log(`⚠️ No supplier selected, returning empty array`);
       return [];
     }
 
-    console.log(`🔍 Generating ledger entries for supplier: ${supplierFilter}`);
-    const entries: SupplierLedgerEntry[] = [];
+    console.log(`🔍 Generating ledger entries for supplier: ${supplierFilter} from centralized ledger store`);
     let runningBalance = 0;
 
-    // Get all memos for the supplier
-    const supplierMemos = memos
-      .filter(memo => memo.supplier === supplierFilter)
+    const filteredLedger = allLedgerEntries
+      .filter(entry => entry.ledger_type === 'supplier' && entry.reference_name === supplierFilter)
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    console.log(`📋 Found ${supplierMemos.length} memos for supplier ${supplierFilter}:`, supplierMemos.map(m => m.memo_number));
 
-    // Get all banking and cashbook entries for the supplier's memos and on account payments
-    console.log(`🏦 Total banking entries available: ${bankingEntries.length}`);
-    console.log(`🏦 Banking entry categories:`, [...new Set(bankingEntries.map(e => e.category))]);
-    
-    const supplierBankingEntries = bankingEntries
-      .filter(entry => {
-        // Include memo payments and advances
-        if ((entry.category === 'memo_payment' || entry.category === 'memo_advance')) {
-          const matchingMemo = supplierMemos.find(memo => memo.memo_number === entry.reference_id);
-          if (matchingMemo) {
-            console.log(`✅ Banking entry matched by memo: ${entry.reference_id}, category: ${entry.category}`);
-            return true;
-          } else {
-            console.log(`❌ Banking entry memo not found: ${entry.reference_id}, available memos:`, supplierMemos.map(m => m.memo_number));
-          }
-        }
-        // Include supplier on account payments
-        if ((entry.category as any) === 'supplier_on_account' && entry.reference_name === supplierFilter) {
-          console.log(`✅ Banking entry matched by supplier on account: ${entry.reference_name}`);
-          return true;
-        }
-        // Include supplier debit notes
-        if ((entry.category as any) === 'supplier_debit_note' && entry.reference_name === supplierFilter) {
-          console.log(`✅ Banking entry matched by supplier debit note: ${entry.reference_name}`);
-          return true;
-        }
-        return false;
-      });
+    console.log(`📋 Found ${filteredLedger.length} ledger entries for supplier ${supplierFilter}`);
 
-    // Get cashbook entries for supplier payments and on account
-    console.log(`💰 Total cashbook entries available: ${cashbookEntries.length}`);
-    console.log(`💰 Cashbook entry categories:`, [...new Set(cashbookEntries.map(e => e.category))]);
-    
-    const supplierCashbookEntries = cashbookEntries
-      .filter(entry => {
-        // Include supplier payments
-        if (entry.category === 'supplier_payment' && entry.reference_name === supplierFilter) {
-          console.log(`✅ Cashbook entry matched by supplier payment: ${entry.reference_name}`);
-          return true;
-        }
-        // Include supplier on account payments
-        if ((entry.category as any) === 'supplier_on_account' && entry.reference_name === supplierFilter) {
-          console.log(`✅ Cashbook entry matched by supplier on account: ${entry.reference_name}`);
-          return true;
-        }
-        return false;
-      });
+    return filteredLedger.map((entry, index) => {
+      const memo = memos.find(m => m.memo_number === entry.memo_number);
+      const loadingSlip = memo ? loadingSlips.find(ls => ls.id === memo.loading_slip_id) : null;
 
-    // Combine all payment entries and sort by date
-    const allPaymentEntries = [...supplierBankingEntries, ...supplierCashbookEntries]
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-    
-    console.log(`💰 Found ${supplierBankingEntries.length} banking entries and ${supplierCashbookEntries.length} cashbook entries`);
-    console.log(`💳 Total payment entries: ${allPaymentEntries.length}`);
-
-    // Combine and sort all entries by date
-    const allEntries: Array<{
-      type: 'memo' | 'payment' | 'advance' | 'on_account' | 'debit_note' | 'fuel';
-      date: string;
-      data: any;
-    }> = [];
-
-    // Add memo entries
-    supplierMemos.forEach(memo => {
-      const loadingSlip = loadingSlips.find(ls => ls.id === memo.loading_slip_id);
-      allEntries.push({
-        type: 'memo',
-        date: memo.date,
-        data: { ...memo, loadingSlip }
-      });
-    });
-
-    // Add payment entries (banking and cashbook)
-    allPaymentEntries.forEach(entry => {
-      let entryType: 'payment' | 'advance' | 'on_account' | 'debit_note' = 'payment';
+      const tripDetails = loadingSlip ? `${loadingSlip.from_location}–${loadingSlip.to_location}/${loadingSlip.vehicle_no}` : '';
       
-      if (entry.category === 'memo_advance') {
-        entryType = 'advance';
-      } else if ((entry.category as any) === 'supplier_on_account') {
-        entryType = 'on_account';
-      } else if ((entry.category as any) === 'supplier_debit_note') {
-        entryType = 'debit_note';
-      }
-      
-      allEntries.push({
-        type: entryType,
+      const credit = entry.credit || 0;
+      const debit = entry.debit || 0;
+      runningBalance += credit - debit;
+
+      return {
+        id: entry.id || entry._id || `ledger-entry-${index}`,
         date: entry.date,
-        data: entry
-      });
-    });
-
-    // Add fuel allocation ledger entries for this supplier
-    const supplierFuelEntries = allLedgerEntries.filter(entry => 
-      entry.ledger_type === 'supplier' && 
-      entry.reference_name === supplierFilter &&
-      entry.source_type === 'fuel'
-    );
-    
-    supplierFuelEntries.forEach(entry => {
-      allEntries.push({
-        type: 'fuel',
-        date: entry.date,
-        data: entry
-      });
-    });
-
-    // Sort by date
-    allEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    // Generate ledger entries
-    allEntries.forEach(entry => {
-      const memo = entry.type === 'memo' ? entry.data : 
-        supplierMemos.find(m => m.memo_number === entry.data.reference_id);
-      
-      const loadingSlip = memo?.loadingSlip || loadingSlips.find(ls => ls.id === memo?.loading_slip_id);
-      let tripDetails = loadingSlip ? 
-        `${loadingSlip.from_location} – ${loadingSlip.to_location} / ${loadingSlip.vehicle_no}` : 
-        memo?.loading_slip_id?.from_location ? 
-        `${memo.loading_slip_id.from_location} – ${memo.loading_slip_id.to_location} / ${memo.loading_slip_id.vehicle_no}` : '';
-
-      let freight = 0;
-      let commission = 0;
-      let mamool = 0;
-      let detention = 0;
-      let extra = 0;
-      let rto = 0;
-      let deduction = 0;
-      let netAmount = 0;
-      let debitPayment = 0;
-      let debitAdvance = 0;
-      let remarks = '';
-
-      if (entry.type === 'memo') {
-        // Store all deduction details
-        freight = entry.data.freight || 0;
-        commission = entry.data.commission || 0;
-        mamool = entry.data.mamool || 0;
-        detention = entry.data.detention || 0;
-        extra = entry.data.extra || 0;
-        rto = entry.data.rto || 0;
-        deduction = entry.data.deduction || 0;
-        
-        // Use memo.net_amount (includes deduction) as authoritative net amount
-        netAmount = entry.data.net_amount || (freight - commission - mamool + detention + extra + rto - deduction);
-        
-        console.log(`📊 Supplier memo calculation - Freight: ${freight}, Commission: ${commission}, Mamool: ${mamool}, Detention: ${detention}, Extra: ${extra}, RTO: ${rto}, Net Amount: ${netAmount}`);
-        
-        // Check if there was an advance for this memo
-        const memoAdvances = allPaymentEntries.filter(be => 
-          be.category === 'memo_advance' && be.reference_id === entry.data.memo_number
-        );
-        const totalAdvance = memoAdvances.reduce((sum, adv) => sum + adv.amount, 0);
-        debitAdvance = totalAdvance;
-        
-        // Update running balance
-        runningBalance += netAmount - debitAdvance;
-        remarks = totalAdvance > 0 ? 'Memo Created (Advance Paid)' : 'Memo Created';
-      } else if (entry.type === 'payment') {
-        debitPayment = entry.data.amount;
-        
-        // Deduct payment from running balance
-        runningBalance -= debitPayment;
-        remarks = entry.data.narration || 'Payment to Supplier';
-      } else if (entry.type === 'advance') {
-        // Advance is already accounted for in memo creation
-        return;
-      } else if (entry.type === 'on_account') {
-        debitPayment = entry.data.amount;
-        
-        // Deduct on account payment from running balance
-        runningBalance -= debitPayment;
-        remarks = entry.data.narration || 'On Account Payment';
-      } else if (entry.type === 'debit_note') {
-        debitPayment = entry.data.amount;
-        
-        // Deduct debit note from running balance (reduces what we owe supplier)
-        runningBalance -= debitPayment;
-        remarks = `Debit Note - ${entry.data.narration || 'Adjustment'}`;
-      } else if (entry.type === 'fuel') {
-        debitPayment = entry.data.debit || 0;
-        
-        // Deduct fuel allocation from running balance
-        runningBalance -= debitPayment;
-        remarks = entry.data.description || 'Fuel Being Allocated';
-        tripDetails = entry.data.vehicle_no || '';
-      }
-
-      entries.push({
-        id: entry.data.id || entry.data._id || `${entry.type}-${entry.date}-${Date.now()}-${Math.random()}`,
-        date: entry.date,
-        memoNo: memo?.memo_number || '',
+        memoNo: entry.memo_number || '',
         tripDetails,
-        // Deduction Details
-        freight,
-        commission,
-        mamool,
-        detention,
-        extra,
-        rto,
-        deduction,
-        // Calculated Fields
-        netAmount,
-        credit: netAmount,
-        debitPayment,
-        debitAdvance,
+        credit,
+        freight: memo?.freight || 0,
+        commission: memo?.commission || 0,
+        mamool: memo?.mamool || 0,
+        detention: memo?.detention || 0,
+        extra: memo?.extra || 0,
+        rto: memo?.rto || 0,
+        deduction: memo?.deduction || 0,
+        netAmount: credit,
+        debitPayment: debit,
+        debitAdvance: 0, // Simplified, advance is part of memo net amount
         runningBalance,
-        remarks,
-        showDetails: false
-      });
+        remarks: entry.description || entry.narration || '',
+        showDetails: false,
+      };
     });
+  }, [supplierFilter, allLedgerEntries, memos, loadingSlips]);
 
-    console.log(`📊 Generated ${entries.length} total ledger entries for supplier ${supplierFilter}`);
-    
-    // Summary debug info
-    console.log(`🎯 SUPPLIER LEDGER DEBUG SUMMARY:`);
-    console.log(`   - Supplier: ${supplierFilter}`);
-    console.log(`   - Memos found: ${supplierMemos.length}`);
-    console.log(`   - Banking entries: ${supplierBankingEntries.length}`);
-    console.log(`   - Cashbook entries: ${supplierCashbookEntries.length}`);
-    console.log(`   - Total ledger entries generated: ${entries.length}`);
-    
-    return entries;
-  }, [supplierFilter, memos, bankingEntries, cashbookEntries, loadingSlips, allLedgerEntries]);
 
   // Filter by date range
   const filteredEntries = useMemo(() => {
@@ -401,27 +195,15 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
     });
   }, [filteredEntries]);
 
-  const finalBalance = filteredEntries.length > 0 ? filteredEntries[filteredEntries.length - 1].runningBalance : 0;
+  const finalBalance = useMemo(() => {
+    return filteredEntries.length > 0 ? filteredEntries[filteredEntries.length - 1].runningBalance : 0;
+  }, [filteredEntries]);
   const hasAdvancedFilters =
     statusFilter !== 'all' ||
     memoTypeFilter !== 'all' ||
     minAmount !== '' ||
     maxAmount !== '';
   
-  // Toggle details for a specific entry
-  const toggleDetails = (id: string) => {
-    const updatedEntries = supplierLedgerEntries.map(entry => 
-      entry.id === id ? { ...entry, showDetails: !entry.showDetails } : entry
-    );
-    // Update the entries in the parent component if needed
-    // This is a simplified version - you might need to adjust based on your state management
-    if (onNavigate) {
-      onNavigate('supplier-ledger', { 
-        entries: updatedEntries,
-        selectedSupplier: supplierFilter 
-      });
-    }
-  };
 
   const handleCreateDebitNote = async () => {
     if (!supplierFilter) {
@@ -880,7 +662,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier, onNav
                 <tbody className="bg-white divide-y divide-gray-200">
                   {filteredEntries.map((entry) => (
                     <React.Fragment key={entry.id}>
-                      <tr className="hover:bg-gray-50 cursor-pointer" onClick={() => toggleDetails(entry.id)}>
+                      <tr key={entry.id} className="hover:bg-gray-50">
                         <td className="px-4 py-2 border">{new Date(entry.date).toLocaleDateString()}</td>
                         <td className="px-4 py-2 border font-medium">{entry.memoNo}</td>
                         <td className="px-4 py-2 border">

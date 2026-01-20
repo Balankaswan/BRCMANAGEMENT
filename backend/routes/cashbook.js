@@ -226,8 +226,35 @@ router.post('/', async (req, res) => {
           memo_id: memo._id
         });
         
-        const savedLedger = await supplierLedgerEntry.save();
-        console.log('✅ Supplier ledger entry created:', savedLedger._id);
+        // Find supplier to get their ID for correct ledger mapping
+        const Supplier = (await import('../models/Supplier.js')).default;
+        const supplier = await Supplier.findOne({ name: memo.supplier });
+
+        if (supplier) {
+          // Create supplier ledger entry for memo payment
+          const supplierLedgerEntry = new LedgerEntry({
+            referenceId: supplier._id, // Use supplier's actual ID
+            reference_id: cashbookEntry._id.toString(),
+            ledger_type: 'supplier',
+            reference_name: memo.supplier,
+            source_type: 'cashbook',
+            type: 'payment',
+            date: cashbookEntry.date,
+            description: `Memo Payment – Memo No ${memo.memo_number}`,
+            narration: cashbookEntry.narration || `Memo Payment – Memo No ${memo.memo_number}`,
+            debit: cashbookEntry.amount,
+            credit: 0,
+            balance: 0,
+            memo_number: memo.memo_number,
+            memo_id: memo._id,
+            supplier_id: supplier._id // Ensure supplier_id is also set
+          });
+          
+          const savedLedger = await supplierLedgerEntry.save();
+          console.log('✅ Supplier ledger entry created:', savedLedger._id);
+        } else {
+          console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry.`);
+        }
       } else {
         console.error('❌ MEMO NOT FOUND! reference_id:', cashbookEntry.reference_id);
       }
