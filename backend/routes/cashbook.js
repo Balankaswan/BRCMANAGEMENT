@@ -180,11 +180,22 @@ router.post('/', async (req, res) => {
     }
     
     if (cashbookEntry.category === 'memo_payment' && cashbookEntry.reference_id) {
+      console.log('🔍 DEBUG memo_payment: category=', cashbookEntry.category, 'reference_id=', cashbookEntry.reference_id);
+      
       const Memo = (await import('../models/Memo.js')).default;
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      
+      // First, try to find ALL memos to debug
+      const allMemos = await Memo.find({});
+      console.log('🔍 DEBUG: Total memos in DB:', allMemos.length);
+      console.log('🔍 DEBUG: Looking for memo_number:', cashbookEntry.reference_id);
+      console.log('🔍 DEBUG: Sample memo numbers:', allMemos.slice(0, 3).map(m => m.memo_number));
+      
       const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
+      console.log('🔍 DEBUG: Memo found?', !!memo);
       
       if (memo) {
+        console.log('✅ Found memo:', memo.memo_number, 'Supplier:', memo.supplier);
         const advancePayment = {
           date: cashbookEntry.date,
           amount: cashbookEntry.amount,
@@ -194,8 +205,8 @@ router.post('/', async (req, res) => {
         };
         
         memo.advance_payments.push(advancePayment);
-        await memo.save();
-        console.log('✅ Added cash payment to memo:', cashbookEntry.reference_id);
+        const savedMemo = await memo.save();
+        console.log('✅ Memo saved. advance_payments count:', savedMemo.advance_payments.length);
 
         // Create supplier ledger entry for memo payment
         const supplierLedgerEntry = new LedgerEntry({
@@ -215,8 +226,10 @@ router.post('/', async (req, res) => {
           memo_id: memo._id
         });
         
-        await supplierLedgerEntry.save();
-        console.log('✅ Created supplier ledger entry for memo payment:', supplierLedgerEntry._id);
+        const savedLedger = await supplierLedgerEntry.save();
+        console.log('✅ Supplier ledger entry created:', savedLedger._id);
+      } else {
+        console.error('❌ MEMO NOT FOUND! reference_id:', cashbookEntry.reference_id);
       }
     }
     
