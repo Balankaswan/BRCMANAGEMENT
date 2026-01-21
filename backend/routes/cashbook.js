@@ -216,8 +216,18 @@ router.post('/', async (req, res) => {
         };
         
         memo.advance_payments.push(advancePayment);
+        
+        // Update paid amount - accumulate all advance payments
+        memo.paid_amount = (memo.paid_amount || 0) + cashbookEntry.amount;
+        
+        // Mark as paid if paid_amount >= net_amount
+        if (memo.paid_amount >= memo.net_amount) {
+          memo.status = 'paid';
+          memo.paid_date = new Date();
+        }
+        
         const savedMemo = await memo.save();
-        console.log('✅ Memo saved. advance_payments count:', savedMemo.advance_payments.length);
+        console.log('✅ Memo saved. advance_payments count:', savedMemo.advance_payments.length, 'paid_amount:', savedMemo.paid_amount);
 
         // Create supplier ledger entry for memo payment
         const supplierLedgerEntry = new LedgerEntry({
