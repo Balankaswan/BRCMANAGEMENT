@@ -49,6 +49,17 @@ router.post('/', async (req, res) => {
     });
     await cashbookEntry.save();
 
+    // DEBUG: Log the incoming cashbook entry
+    console.log('='.repeat(60));
+    console.log('📥 CASHBOOK ENTRY CREATED:');
+    console.log('   ID:', cashbookEntry._id);
+    console.log('   Category:', cashbookEntry.category);
+    console.log('   Reference ID:', cashbookEntry.reference_id);
+    console.log('   Reference Name:', cashbookEntry.reference_name);
+    console.log('   Type:', cashbookEntry.type);
+    console.log('   Amount:', cashbookEntry.amount);
+    console.log('='.repeat(60));
+
     // Create party on account ledger entry for on account payments
     if (cashbookEntry.category === 'party_on_account' && cashbookEntry.reference_name) {
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
