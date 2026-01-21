@@ -229,27 +229,10 @@ router.post('/', async (req, res) => {
         const savedMemo = await memo.save();
         console.log('✅ Memo saved. advance_payments count:', savedMemo.advance_payments.length, 'paid_amount:', savedMemo.paid_amount);
 
-        // Create supplier ledger entry for memo payment
-        const supplierLedgerEntry = new LedgerEntry({
-          referenceId: memo.supplier,
-          reference_id: cashbookEntry._id.toString(),
-          ledger_type: 'supplier',
-          reference_name: memo.supplier,
-          source_type: 'cashbook',
-          type: 'payment',
-          date: cashbookEntry.date,
-          description: `Memo Payment – Memo No ${memo.memo_number}`,
-          narration: cashbookEntry.narration || `Memo Payment – Memo No ${memo.memo_number}`,
-          debit: cashbookEntry.amount,
-          credit: 0,
-          balance: 0,
-          memo_number: memo.memo_number,
-          memo_id: memo._id
-        });
-        
         // Find supplier to get their ID for correct ledger mapping
         const Supplier = (await import('../models/Supplier.js')).default;
         const supplier = await Supplier.findOne({ name: memo.supplier });
+        console.log('🔍 DEBUG: Supplier lookup - Looking for:', memo.supplier, 'Found:', !!supplier);
 
         if (supplier) {
           // Create supplier ledger entry for memo payment
@@ -271,8 +254,12 @@ router.post('/', async (req, res) => {
             supplier_id: supplier._id // Ensure supplier_id is also set
           });
           
-          const savedLedger = await supplierLedgerEntry.save();
-          console.log('✅ Supplier ledger entry created:', savedLedger._id);
+          try {
+            const savedLedger = await supplierLedgerEntry.save();
+            console.log('✅ Supplier ledger entry created:', savedLedger._id, 'for supplier:', supplier.name);
+          } catch (ledgerError) {
+            console.error('❌ Error saving supplier ledger entry:', ledgerError.message);
+          }
         } else {
           console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry.`);
         }
