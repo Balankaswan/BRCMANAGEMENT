@@ -8,7 +8,7 @@ interface SuppliersProps {
 }
 
 const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
-  const { suppliers, memos, vehicles, loadingSlips, bankingEntries } = useDataStore();
+  const { suppliers, memos, vehicles, loadingSlips, bankingEntries, cashbookEntries } = useDataStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredSuppliers, setFilteredSuppliers] = useState(suppliers);
 
@@ -32,7 +32,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
   // Calculate supplier balance and active trips for each supplier (only market vehicles)
   const getSupplierStats = (supplierName: string) => {
     const supplierMemos = memos.filter(memo => memo.supplier === supplierName);
-    
+
     let totalBalance = 0;
     let activeTripCount = 0;
 
@@ -46,7 +46,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       } else {
         return; // Skip invalid loading slip IDs
       }
-      
+
       // Find the loading slip and vehicle to check ownership
       const ls = loadingSlips.find(s => {
         const idMatch = s.id === loadingSlipId;
@@ -54,28 +54,35 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
         const objectIdStringMatch = String((s as any)._id) === String(loadingSlipId);
         return idMatch || objectIdMatch || objectIdStringMatch;
       });
-      
+
       const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
-      
+
       // Only include market vehicles in supplier balance
       if (vehicle?.ownership_type === 'market') {
-        // Check for payments made to this memo
-        const memoPayments = bankingEntries
+        // Check for payments made to this memo from both banking and cashbook
+        const bankingPayments = bankingEntries
           .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
           .reduce((total, entry) => total + entry.amount, 0);
-        
-        const pendingAmount = memo.net_amount - memoPayments;
-        
+
+        const cashbookPayments = cashbookEntries
+          .filter(entry => entry.reference_id === memo.memo_number && entry.category === 'memo_payment')
+          .reduce((total, entry) => total + entry.amount, 0);
+
+        const totalMemoPayments = bankingPayments + cashbookPayments;
+        const pendingAmount = memo.net_amount - totalMemoPayments;
+
         // Debug logging for ABDUL BHAI specifically
         if (supplierName === 'ABDUL BHAI') {
           console.log(`📊 ${supplierName} - Memo ${memo.memo_number}:`, {
             netAmount: memo.net_amount,
-            payments: memoPayments,
+            bankingPayments,
+            cashbookPayments,
+            totalPayments: totalMemoPayments,
             pending: pendingAmount,
             vehicle: ls?.vehicle_no
           });
         }
-        
+
         // Only add to balance if there's a pending amount
         if (pendingAmount > 0) {
           totalBalance += pendingAmount;
@@ -97,7 +104,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
     const supplierDebitNoteBankingPayments = bankingEntries
       .filter(entry => entry.type === 'credit' && (entry.category as any) === 'supplier_debit_note' && entry.reference_name === supplierName)
       .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
     const totalDebitNotes = supplierDebitNoteBankingPayments;
     const finalBalance = Math.max(0, totalBalance - totalDebitNotes);
 
@@ -146,7 +153,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredSuppliers.map((supplier, index) => {
           const stats = getSupplierStats(supplier.name);
-          
+
           return (
             <div
               key={`supplier-${supplier.id || supplier._id || supplier.name.replace(/\s+/g, '-')}-${index}`}
@@ -173,7 +180,7 @@ const Suppliers: React.FC<SuppliersProps> = ({ onNavigate }) => {
                     {formatCurrency(stats.totalBalance)}
                   </span>
                 </div>
-                
+
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-gray-600">Active Trips</span>
                   <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded-full text-sm font-medium">

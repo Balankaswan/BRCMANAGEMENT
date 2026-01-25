@@ -1,10 +1,12 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Bill from '../models/Bill.js';
 import LoadingSlip from '../models/LoadingSlip.js';
-import PartyCommissionLedger from '../models/PartyCommissionLedger.js';
 import LedgerEntry from '../models/LedgerEntry.js';
+import PartyCommissionLedger from '../models/PartyCommissionLedger.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { createBillLedgerEntries } from '../services/ledgerService.js';
+import { generateBillNumber } from '../utils/autoIncrement.js';
 
 const router = express.Router();
 
@@ -18,13 +20,13 @@ router.get('/debug/:bill_number', async (req, res) => {
     if (!bill) {
       return res.status(404).json({ message: 'Bill not found' });
     }
-    
+
     console.log('🔍 Debug Bill Data:', {
       bill_number: bill.bill_number,
       advance_payments_count: bill.advance_payments?.length || 0,
       advance_payments: bill.advance_payments
     });
-    
+
     res.json({
       bill_number: bill.bill_number,
       advance_payments: bill.advance_payments,
@@ -40,7 +42,7 @@ router.get('/debug/:bill_number', async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { status, party, vehicle_no, page = 1, limit = 50 } = req.query;
-    
+
     const filter = {};
     if (status) filter.status = status;
     if (party) filter.party = new RegExp(party, 'i');
@@ -76,8 +78,11 @@ router.get('/', async (req, res) => {
 // Get bill by ID
 router.get('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Bill not found (invalid ID)' });
+    }
     const bill = await Bill.findById(req.params.id).populate('loading_slip_id');
-    
+
     if (!bill) {
       return res.status(404).json({ message: 'Bill not found' });
     }
@@ -95,23 +100,23 @@ router.get('/:id', async (req, res) => {
 const createPartyCommissionEntry = async (bill, entryType = 'credit') => {
   if (bill.party_commission_cut && bill.party_commission_cut > 0) {
     const PartyCommissionLedger = (await import('../models/PartyCommissionLedger.js')).default;
-    
+
     // Check if entry already exists to prevent duplicates
     const existingEntry = await PartyCommissionLedger.findOne({
       bill_id: bill._id,
       entry_type: entryType
     });
-    
+
     if (!existingEntry) {
-      const narration = entryType === 'credit' 
+      const narration = entryType === 'credit'
         ? `Commission Cut – Bill No. ${bill.bill_number}`
         : `Commission Cut Reversal – Bill No. ${bill.bill_number}`;
-      
+
       // Find the party by name
       const Party = (await import('../models/Party.js')).default;
       const party = await Party.findOne({ name: bill.party });
       const partyId = party ? party._id : bill.party;
-      
+
       const commissionEntry = new PartyCommissionLedger({
         party_id: partyId,
         party_name: bill.party,
@@ -124,7 +129,7 @@ const createPartyCommissionEntry = async (bill, entryType = 'credit') => {
         bill_id: bill._id,
         reference_type: 'bill'
       });
-      
+
       await commissionEntry.save();
       console.log(`✅ Created party commission ${entryType} entry for bill ${bill.bill_number}: ₹${bill.party_commission_cut}`);
     } else {
@@ -138,6 +143,10 @@ router.post('/', async (req, res) => {
   try {
     const billData = req.body;
 
+    if (billData.loading_slip_id && !mongoose.Types.ObjectId.isValid(billData.loading_slip_id)) {
+      return res.status(400).json({ message: 'Invalid Loading Slip ID. Please refresh to ensure you are using a valid Loading Slip.' });
+    }
+
     // Check if bill already exists for this loading slip
     const existingBill = await Bill.findOne({ loading_slip_id: billData.loading_slip_id });
     if (existingBill) {
@@ -148,6 +157,12 @@ router.post('/', async (req, res) => {
     const loadingSlip = await LoadingSlip.findById(billData.loading_slip_id);
     if (!loadingSlip) {
       return res.status(400).json({ message: 'Loading slip not found' });
+    }
+
+    // Auto-generate bill number if not provided
+    if (!billData.bill_number) {
+      billData.bill_number = await generateBillNumber();
+      console.log('🔢 Auto-generated bill number:', billData.bill_number);
     }
 
     const bill = new Bill(billData);
@@ -170,7 +185,7 @@ router.post('/', async (req, res) => {
 
     const billObj = bill.toObject();
     billObj.id = billObj._id.toString();
-    
+
     res.status(201).json({
       message: 'Bill created successfully',
       bill: billObj
@@ -185,16 +200,20 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     console.log(`🔄 Updating bill ${req.params.id}`);
-    
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Bill not found (invalid ID)' });
+    }
+
     // Delete existing ledger entries for this bill (both old and new field names)
-    const deleteResult = await LedgerEntry.deleteMany({ 
+    const deleteResult = await LedgerEntry.deleteMany({
       $or: [
         { referenceId: req.params.id },
         { reference_id: req.params.id }
       ]
     });
     console.log(`🗑️ Deleted ${deleteResult.deletedCount} existing ledger entries for bill ${req.params.id}`);
-    
+
     // Delete existing party commission entries
     await PartyCommissionLedger.deleteMany({
       bill_id: req.params.id
@@ -223,7 +242,7 @@ router.put('/:id', async (req, res) => {
 
     const billObj = bill.toObject();
     billObj.id = billObj._id.toString();
-    
+
     res.json({
       message: 'Bill updated successfully',
       bill: billObj
@@ -237,13 +256,16 @@ router.put('/:id', async (req, res) => {
 // Delete bill
 router.delete('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Bill not found (invalid ID)' });
+    }
     const bill = await Bill.findById(req.params.id);
     if (!bill) {
       return res.status(404).json({ message: 'Bill not found' });
     }
 
     // Delete associated ledger entries (both old and new field names)
-    const deleteResult = await LedgerEntry.deleteMany({ 
+    const deleteResult = await LedgerEntry.deleteMany({
       $or: [
         { referenceId: req.params.id },
         { reference_id: req.params.id }
@@ -272,6 +294,10 @@ router.patch('/:id/received', async (req, res) => {
   try {
     const { received_date, received_amount } = req.body;
 
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Bill not found (invalid ID)' });
+    }
+
     const bill = await Bill.findByIdAndUpdate(
       req.params.id,
       {
@@ -288,7 +314,7 @@ router.patch('/:id/received', async (req, res) => {
 
     const billObj = bill.toObject();
     billObj.id = billObj._id.toString();
-    
+
     res.json({
       message: 'Bill marked as received',
       bill: billObj
@@ -303,6 +329,10 @@ router.patch('/:id/received', async (req, res) => {
 router.post('/:id/advance', async (req, res) => {
   try {
     const { date, amount, mode, reference, description } = req.body;
+
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Bill not found (invalid ID)' });
+    }
 
     const bill = await Bill.findById(req.params.id);
     if (!bill) {
@@ -322,7 +352,7 @@ router.post('/:id/advance', async (req, res) => {
 
     const billObj = bill.toObject();
     billObj.id = billObj._id.toString();
-    
+
     res.json({
       message: 'Advance payment added successfully',
       bill: billObj

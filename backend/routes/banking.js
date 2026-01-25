@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
     console.log('Banking GET request received');
     // Increase capacity 10x to handle larger data pulls
     const { type, category, vehicle_no, page = 1, limit = 1000000 } = req.query;
-    
+
     const filter = {};
     if (type) filter.type = type;
     if (category) filter.category = category;
@@ -48,7 +48,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const bankingEntry = await BankingEntry.findById(req.params.id);
-    
+
     if (!bankingEntry) {
       return res.status(404).json({ message: 'Banking entry not found' });
     }
@@ -66,7 +66,7 @@ const createPartyCommissionPaymentEntry = async (bankingEntry) => {
     // Extract party info from reference_name or narration
     let partyId = bankingEntry.party_id;
     let partyName = bankingEntry.reference_name || bankingEntry.party_name || bankingEntry.narration;
-    
+
     // If party info not provided, try to extract from narration
     if (!partyId && partyName) {
       // Try to find party by name
@@ -77,7 +77,7 @@ const createPartyCommissionPaymentEntry = async (bankingEntry) => {
         partyName = party.name;
       }
     }
-    
+
     if (partyId && partyName) {
       const commissionEntry = new PartyCommissionLedger({
         party_id: partyId,
@@ -91,7 +91,7 @@ const createPartyCommissionPaymentEntry = async (bankingEntry) => {
         banking_entry_id: bankingEntry._id,
         reference_type: 'banking'
       });
-      
+
       await commissionEntry.save();
       console.log('✅ Created party commission payment entry:', commissionEntry._id);
     }
@@ -110,16 +110,13 @@ router.post('/', async (req, res) => {
     // Party commission entries are now handled by the centralized ledger regeneration system
     await createPartyCommissionPaymentEntry(bankingEntry);
 
-    // Broadcast change to all connected clients for real-time sync
-    if (global.broadcastChange) {
-      global.broadcastChange('create', 'banking', bankingEntry);
-    }
+    // Broadcast change moved to the end to ensure all side effects (ledger entries) are created first
 
     // Handle fuel wallet credits for banking transactions
     if (bankingEntry.category === 'fuel_wallet' && bankingEntry.reference_name && bankingEntry.type === 'debit') {
       const FuelWallet = (await import('../models/FuelWallet.js')).default;
       const FuelTransaction = (await import('../models/FuelTransaction.js')).default;
-      
+
       // Find or create the fuel wallet
       let wallet = await FuelWallet.findOne({ name: bankingEntry.reference_name });
       if (!wallet) {
@@ -128,11 +125,11 @@ router.post('/', async (req, res) => {
           balance: 0
         });
       }
-      
+
       // Credit the wallet
       wallet.balance += bankingEntry.amount;
       await wallet.save();
-      
+
       // Create fuel transaction record
       const fuelTransaction = new FuelTransaction({
         type: 'wallet_credit',
@@ -142,16 +139,47 @@ router.post('/', async (req, res) => {
         narration: bankingEntry.narration || `Bank debit for fuel - ${bankingEntry.reference_name}`,
         fuel_type: 'Diesel'
       });
-      
+
       await fuelTransaction.save();
       console.log('✅ Credited fuel wallet from banking:', bankingEntry.reference_name, 'Amount:', bankingEntry.amount);
+    }
+
+    // Handle supplier payments - create ledger entry
+    if (bankingEntry.category === 'supplier_payment' && bankingEntry.reference_name) {
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const Supplier = (await import('../models/Supplier.js')).default;
+
+      // Find the supplier by name
+      const supplier = await Supplier.findOne({ name: bankingEntry.reference_name });
+      const supplierId = supplier ? supplier._id : bankingEntry.reference_name;
+
+      const supplierLedgerEntry = new LedgerEntry({
+        referenceId: supplierId,
+        reference_id: bankingEntry._id.toString(),
+        ledger_type: 'supplier',
+        reference_name: bankingEntry.reference_name,
+        source_type: 'banking',
+        type: 'payment',
+        date: bankingEntry.date,
+        description: `Supplier Payment (Banking) – Bank Payment`,
+        narration: bankingEntry.narration || `Supplier Payment (Banking) – Bank Payment`,
+        debit: bankingEntry.amount,
+        credit: 0,
+        balance: 0,
+        supplierId: supplierId,
+        supplier_id: supplierId
+      });
+
+      await supplierLedgerEntry.save();
+      console.log('✅ Created supplier ledger entry from banking:', supplierLedgerEntry._id);
     }
 
     // Handle memo and bill payments - add to advance_payments array
     if (bankingEntry.category === 'memo_payment' && bankingEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
       const memo = await Memo.findOne({ memo_number: bankingEntry.reference_id });
-      
+
       if (memo) {
         const advancePayment = {
           date: bankingEntry.date,
@@ -160,17 +188,56 @@ router.post('/', async (req, res) => {
           reference: `Banking Entry: ${bankingEntry._id}`,
           description: bankingEntry.narration || 'Bank payment'
         };
-        
+
         memo.advance_payments.push(advancePayment);
+
+        // Update paid amount - accumulate all advance payments
+        memo.paid_amount = (memo.paid_amount || 0) + bankingEntry.amount;
+
+        // Mark as paid if paid_amount >= net_amount
+        if (memo.paid_amount >= memo.net_amount) {
+          memo.status = 'paid';
+          memo.paid_date = new Date();
+        }
+
         await memo.save();
         console.log('✅ Added bank payment to memo:', bankingEntry.reference_id);
+
+        // Create supplier ledger entry for memo payment
+        const Supplier = (await import('../models/Supplier.js')).default;
+        const supplier = await Supplier.findOne({ name: memo.supplier });
+
+        if (supplier) {
+          const supplierLedgerEntry = new LedgerEntry({
+            referenceId: supplier._id,
+            reference_id: bankingEntry._id.toString(),
+            ledger_type: 'supplier',
+            reference_name: memo.supplier,
+            source_type: 'banking',
+            type: 'payment',
+            date: bankingEntry.date,
+            description: `Memo Payment (Banking) – Memo No ${memo.memo_number}`,
+            narration: bankingEntry.narration || `Memo Payment (Banking) – Memo No ${memo.memo_number}`,
+            debit: bankingEntry.amount,
+            credit: 0,
+            balance: 0,
+            memo_number: memo.memo_number,
+            memo_id: memo._id,
+            supplier_id: supplier._id
+          });
+
+          await supplierLedgerEntry.save();
+          console.log('✅ Supplier ledger entry created for banking memo payment:', supplierLedgerEntry._id);
+        } else {
+          console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry.`);
+        }
       }
     }
-    
+
     if (bankingEntry.category === 'bill_payment' && bankingEntry.reference_id) {
       const Bill = (await import('../models/Bill.js')).default;
       const bill = await Bill.findOne({ bill_number: bankingEntry.reference_id });
-      
+
       if (bill) {
         const advancePayment = {
           date: bankingEntry.date,
@@ -179,7 +246,7 @@ router.post('/', async (req, res) => {
           reference: `Banking Entry: ${bankingEntry._id}`,
           description: bankingEntry.narration || 'Bank payment'
         };
-        
+
         bill.advance_payments.push(advancePayment);
         await bill.save();
         console.log('✅ Added bank payment to bill:', bankingEntry.reference_id);
@@ -189,33 +256,33 @@ router.post('/', async (req, res) => {
     // Create ledger entries automatically with duplicate prevention
     // Create appropriate ledger entries based on category
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Exclude specific categories from general ledger (these already create specific ledger entries above)
     const excludedCategories = [
-      'party_commission', 
-      'party_on_account', 
+      'party_commission',
+      'party_on_account',
       'supplier_payment',
       'supplier_on_account',
-      'memo_advance', 
-      'bill_advance', 
-      'memo_payment', 
-      'bill_payment', 
+      'memo_advance',
+      'bill_advance',
+      'memo_payment',
+      'bill_payment',
       'on_account_advance',
       'fuel_wallet'
     ];
-    
+
     if (!excludedCategories.includes(bankingEntry.category)) {
       let ledgerType = 'general';
       let referenceName = bankingEntry.reference_name || bankingEntry.category || 'Bank Transaction';
       let referenceId = bankingEntry._id;
-      
+
       // Handle vehicle expenses specifically
       if (bankingEntry.category === 'vehicle_expense' && bankingEntry.vehicle_no) {
         ledgerType = 'vehicle_expense';
         referenceName = `Vehicle ${bankingEntry.vehicle_no} - Bank Expense`;
         referenceId = bankingEntry.vehicle_no;
       }
-      
+
       const ledgerEntry = new LedgerEntry({
         referenceId: referenceId,
         reference_id: bankingEntry._id.toString(),
@@ -230,14 +297,14 @@ router.post('/', async (req, res) => {
         balance: 0,
         vehicle_no: bankingEntry.vehicle_no || undefined,
       });
-      
+
       // Check if ledger entry already exists to prevent duplicates
       const existingEntry = await LedgerEntry.findOne({
         reference_id: bankingEntry._id.toString(),
         source_type: 'banking',
         ledger_type: ledgerType
       });
-      
+
       if (!existingEntry) {
         await ledgerEntry.save();
         console.log('✅ Created general ledger entry for banking transaction:', ledgerEntry._id, 'Type:', ledgerType);
@@ -250,10 +317,10 @@ router.post('/', async (req, res) => {
     if (bankingEntry.category === 'supplier_on_account' && bankingEntry.reference_name) {
       try {
         const Supplier = (await import('../models/Supplier.js')).default;
-        
+
         // Find supplier by name
         const supplier = await Supplier.findOne({ name: bankingEntry.reference_name });
-        
+
         if (supplier) {
           // Create supplier ledger entry
           const supplierLedgerEntry = new LedgerEntry({
@@ -271,7 +338,7 @@ router.post('/', async (req, res) => {
             supplier_id: supplier._id,
             supplier_name: supplier.name
           });
-          
+
           // Check if ledger entry already exists to prevent duplicates
           const existingSupplierEntry = await LedgerEntry.findOne({
             reference_id: bankingEntry._id.toString(),
@@ -279,7 +346,7 @@ router.post('/', async (req, res) => {
             ledger_type: 'supplier',
             supplier_id: supplier._id
           });
-          
+
           if (!existingSupplierEntry) {
             await supplierLedgerEntry.save();
             console.log('✅ Created supplier ledger entry for on account payment:', supplierLedgerEntry._id, 'Supplier:', supplier.name);
@@ -292,6 +359,11 @@ router.post('/', async (req, res) => {
       } catch (error) {
         console.error('❌ Failed to create supplier ledger entry:', error);
       }
+    }
+
+    // Broadcast change to all connected clients for real-time sync - moved to end to ensure all side effects are complete
+    if (global.broadcastChange) {
+      global.broadcastChange('create', 'banking', bankingEntry);
     }
 
     res.status(201).json({
@@ -320,7 +392,7 @@ router.put('/:id', async (req, res) => {
 
     // Update corresponding ledger entries
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Determine ledger type based on category
     let ledgerType = 'general';
     if (bankingEntry.category === 'party_commission') {
@@ -328,10 +400,10 @@ router.put('/:id', async (req, res) => {
     } else if (bankingEntry.category === 'vehicle_expense') {
       ledgerType = 'vehicle_expense';
     }
-    
+
     // Update all ledger entries with this banking entry reference_id
     const updateResult = await LedgerEntry.updateMany(
-      { 
+      {
         reference_id: bankingEntry._id.toString(),
         source_type: 'banking'
       },
@@ -346,7 +418,7 @@ router.put('/:id', async (req, res) => {
         vehicle_no: bankingEntry.vehicle_no || undefined,
       }
     );
-    
+
     console.log('✅ Updated', updateResult.modifiedCount, 'ledger entries for banking entry:', req.params.id);
 
     // Broadcast change to all connected clients for real-time sync
@@ -368,7 +440,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     console.log('DELETE request for banking entry:', req.params.id);
-    
+
     const bankingEntry = await BankingEntry.findById(req.params.id);
     if (!bankingEntry) {
       return res.status(404).json({ message: 'Banking entry not found' });
@@ -383,13 +455,13 @@ router.delete('/:id', async (req, res) => {
 
     // Delete associated ledger entries
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Delete by reference_id (banking entry ID) to catch all related entries
     const deleteResult = await LedgerEntry.deleteMany({
       reference_id: bankingEntry._id.toString(),
       source_type: 'banking'
     });
-    
+
     console.log('✅ Deleted', deleteResult.deletedCount, 'associated ledger entries for banking entry:', req.params.id);
 
     // Delete the banking entry

@@ -28,9 +28,9 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       const timer = setTimeout(() => {
         const element = document.getElementById(`memo-${highlightMemo}`);
         if (element) {
-          element.scrollIntoView({ 
-            behavior: 'smooth', 
-            block: 'center' 
+          element.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
           });
         }
       }, 100); // Small delay to ensure DOM is rendered
@@ -43,27 +43,27 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       const response = await apiService.createMemo(memoData);
       addMemo(response.memo);
       console.log('Memo created and synced to MongoDB:', response.memo);
-      
+
       // Create ledger entries for own vehicles after memo creation
       // CRITICAL FIX: Check both frontend store and backend memo data for loading slip
       let ls = loadingSlips.find(s => s.id === memoData.loading_slip_id);
-      
+
       // If not found in store, check if memo has embedded loading slip data
       if (!ls && response.memo.loading_slip_id) {
-        const backendLsId = typeof response.memo.loading_slip_id === 'object' 
-          ? response.memo.loading_slip_id._id 
+        const backendLsId = typeof response.memo.loading_slip_id === 'object'
+          ? response.memo.loading_slip_id._id
           : response.memo.loading_slip_id;
         ls = loadingSlips.find(s => s.id === backendLsId);
-        
+
         // If still not found, use embedded loading slip data from backend
         if (!ls && typeof response.memo.loading_slip_id === 'object') {
           ls = response.memo.loading_slip_id;
         }
       }
-      
+
       const vehicle = vehicles.find((v: any) => v.vehicle_no === ls?.vehicle_no);
       const isOwnVehicle = vehicle?.ownership_type === 'own';
-      
+
       console.log('🚛 MEMO LEDGER DEBUG:', {
         memoId: response.memo.id,
         memoNumber: response.memo.memo_number,
@@ -79,7 +79,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         netAmount: memoData.freight - (memoData.commission || 0) - (memoData.mamool || 0),
         allVehicles: vehicles.map(v => ({ no: v.vehicle_no, ownership: v.ownership_type }))
       });
-      
+
       // Backend automatically creates ledger entries, just sync the data
       try {
         const ledgerResponse = await apiService.getLedgerEntries();
@@ -88,7 +88,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       } catch (error) {
         console.error('Failed to sync ledger entries:', error);
       }
-      
+
       // Sync completed
     } catch (error) {
       console.error('Failed to create memo:', error);
@@ -123,7 +123,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         const response = await apiService.updateMemo(editingMemo.id, memoData);
         updateMemo(response.memo);
         console.log('Memo updated and synced:', response.memo);
-        
+
         // Sync ledger entries after memo update
         try {
           const ledgerResponse = await apiService.getLedgerEntries();
@@ -150,8 +150,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
     try {
       const { generateMemoPDF } = await import('../utils/pdfGenerator');
       // Handle both cases: loading_slip_id as string or populated object
-      const relatedLoadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null 
-        ? memo.loading_slip_id 
+      const relatedLoadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null
+        ? memo.loading_slip_id
         : loadingSlips.find(slip => slip.id === memo.loading_slip_id);
       if (relatedLoadingSlip) {
         await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries, cashbookEntries);
@@ -193,10 +193,10 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
           paid_date: paidDate,
           paid_amount: showPaidModal.net_amount
         };
-        
+
         await apiService.updateMemo(showPaidModal.id, updatedMemoData);
         markMemoAsPaid(showPaidModal.id, paidDate, showPaidModal.net_amount);
-        
+
         console.log('✅ Memo marked as paid successfully (no banking entry created)');
       } catch (error) {
         console.error('Failed to mark memo as paid:', error);
@@ -213,7 +213,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
     // Use local viewMode state instead of prop for better control
     const showPaid = showOnlyFullyPaid || viewMode === 'paid';
     let base = showPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
-    
+
     // Sort memos by document number (numeric part) in descending order, then by date
     base = [...base].sort((a, b) => {
       // Extract numeric part from memo numbers for proper sorting
@@ -221,25 +221,31 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         const match = memoNumber.match(/(\d+)$/);
         return match ? parseInt(match[1], 10) : 0;
       };
-      
+
       const aNum = getNumericPart(a.memo_number);
       const bNum = getNumericPart(b.memo_number);
-      
+
       // Primary sort: by numeric part of memo number (descending)
       if (aNum !== bNum) {
         return bNum - aNum;
       }
-      
+
       // Secondary sort: by date (descending - latest first)
       return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
-    
+
     // Optional strict settlement check (kept, in case amounts changed)
     if (showOnlyFullyPaid) {
       base = base.filter(m => {
-        const paid = bankingEntries
+        const bankingPayments = bankingEntries
           .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === m.memo_number)
           .reduce((sum, e) => sum + e.amount, 0);
+
+        const cashbookPayments = cashbookEntries
+          .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === m.memo_number)
+          .reduce((sum, e) => sum + e.amount, 0);
+
+        const paid = bankingPayments + cashbookPayments;
         // Balance = Net Amount - all payments (advance + memo payments)
         const calculatedBalance = (m.net_amount || 0) - paid;
         return calculatedBalance <= 0;
@@ -263,7 +269,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [memos, bankingEntries, showOnlyFullyPaid, viewMode, search, loadingSlips]);
+  }, [memos, bankingEntries, cashbookEntries, showOnlyFullyPaid, viewMode, search, loadingSlips]);
 
   return (
     <div className="space-y-6">
@@ -274,21 +280,19 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
             <div className="flex bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('pending')}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'pending'
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'pending'
                     ? 'bg-white text-gray-900 shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
-                }`}
+                  }`}
               >
                 Pending ({memos.filter(m => m.status !== 'paid').length})
               </button>
               <button
                 onClick={() => setViewMode('paid')}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'paid'
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'paid'
                     ? 'bg-white text-gray-900 shadow-sm'
                     : 'text-gray-600 hover:text-gray-900'
-                }`}
+                  }`}
               >
                 Paid ({memos.filter(m => m.status === 'paid').length})
               </button>
@@ -351,27 +355,32 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         <div className="space-y-4">
           {filteredMemos.map((memo: Memo, index: number) => {
             // Handle both cases: loading_slip_id as string or populated object
-            const loadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null 
-              ? memo.loading_slip_id 
+            const loadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null
+              ? memo.loading_slip_id
               : loadingSlips.find(ls => ls.id === memo.loading_slip_id);
-            const paid = bankingEntries
+            const bankingPayments = bankingEntries
               .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
               .reduce((sum, e) => sum + e.amount, 0);
+
+            const cashbookPayments = cashbookEntries
+              .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
+              .reduce((sum, e) => sum + e.amount, 0);
+
+            const paid = bankingPayments + cashbookPayments;
             // Balance = Net Amount - all payments (advance + memo payments)
             const rawBalance = (memo.net_amount || 0) - paid;
             const isFullyPaid = rawBalance <= 0;
             const balance = Math.max(0, rawBalance);
             const isHighlighted = highlightMemo === memo.memo_number;
-            
+
             return (
-            <div 
-              key={memo.id || `memo-${index}-${memo.memo_number}`} 
-              id={`memo-${memo.memo_number}`}
-              className={`bg-white rounded-xl shadow-sm border transition-shadow ${
-                isHighlighted 
-                  ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg' 
-                  : 'border-gray-200 hover:shadow-md'
-              }`}>
+              <div
+                key={memo.id || `memo-${index}-${memo.memo_number}`}
+                id={`memo-${memo.memo_number}`}
+                className={`bg-white rounded-xl shadow-sm border transition-shadow ${isHighlighted
+                    ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg'
+                    : 'border-gray-200 hover:shadow-md'
+                  }`}>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
@@ -399,7 +408,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                       )}
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                     <div>
                       <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vehicle & Material</div>
@@ -420,7 +429,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                       <div className="text-lg font-bold text-green-600">{formatCurrency(balance)}</div>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-4 text-sm">
                     <div>
                       <span className="text-gray-500">Commission:</span>
@@ -447,7 +456,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                       <span className="ml-1 font-medium">{formatCurrency((memo as any).deduction || 0)}</span>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                     <div className="flex items-center space-x-4">
                       <div className="text-sm">
@@ -568,13 +577,13 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               </div>
             </div>
             <div className="px-6 py-4 border-t flex justify-end space-x-3">
-              <button 
+              <button
                 onClick={() => setShowPaidModal(null)}
                 className="px-4 py-2 rounded bg-gray-100 hover:bg-gray-200"
               >
                 Cancel
               </button>
-              <button 
+              <button
                 onClick={confirmMarkAsPaid}
                 className="px-4 py-2 rounded bg-green-600 text-white hover:bg-green-700"
               >

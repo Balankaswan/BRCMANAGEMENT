@@ -1,9 +1,11 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Memo from '../models/Memo.js';
 import LoadingSlip from '../models/LoadingSlip.js';
 import LedgerEntry from '../models/LedgerEntry.js';
 import { authenticateToken } from '../middleware/auth.js';
 import { createMemoLedgerEntries } from '../services/ledgerService.js';
+import { generateMemoNumber } from '../utils/autoIncrement.js';
 
 const router = express.Router();
 
@@ -14,7 +16,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { status, supplier, vehicle_no, page = 1, limit = 50 } = req.query;
-    
+
     const filter = {};
     if (status) filter.status = status;
     if (supplier) filter.supplier = new RegExp(supplier, 'i');
@@ -49,8 +51,11 @@ router.get('/', async (req, res) => {
 // Get memo by ID
 router.get('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Memo not found (invalid ID)' });
+    }
     const memo = await Memo.findById(req.params.id).populate({ path: 'loading_slip_id', model: 'LoadingSlip' });
-    
+
     if (!memo) {
       return res.status(404).json({ message: 'Memo not found' });
     }
@@ -69,10 +74,14 @@ router.post('/', async (req, res) => {
   try {
     const memoData = req.body;
 
+    if (memoData.loading_slip_id && !mongoose.Types.ObjectId.isValid(memoData.loading_slip_id)) {
+      return res.status(400).json({ message: 'Invalid Loading Slip ID. Please refresh to ensure you are using a valid Loading Slip.' });
+    }
+
     // Check if memo already exists for this loading slip
     const existingMemo = await Memo.findOne({ loading_slip_id: memoData.loading_slip_id });
     if (existingMemo) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         message: 'Memo already exists for this loading slip',
         existingMemo: {
           id: existingMemo._id,
@@ -86,6 +95,12 @@ router.post('/', async (req, res) => {
     const loadingSlip = await LoadingSlip.findById(memoData.loading_slip_id);
     if (!loadingSlip) {
       return res.status(400).json({ message: 'Loading slip not found' });
+    }
+
+    // Auto-generate memo number if not provided
+    if (!memoData.memo_number) {
+      memoData.memo_number = await generateMemoNumber();
+      console.log('🔢 Auto-generated memo number:', memoData.memo_number);
     }
 
     const memo = new Memo(memoData);
@@ -105,7 +120,7 @@ router.post('/', async (req, res) => {
 
     const memoObj = memo.toObject();
     memoObj.id = memoObj._id.toString();
-    
+
     res.status(201).json({
       message: 'Memo created successfully',
       memo: memoObj
@@ -120,16 +135,16 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   try {
     console.log(`🔄 Updating memo ${req.params.id}`);
-    
+
     // Delete existing ledger entries for this memo (both old and new field names)
-    const deleteResult = await LedgerEntry.deleteMany({ 
+    const deleteResult = await LedgerEntry.deleteMany({
       $or: [
         { referenceId: req.params.id },
         { reference_id: req.params.id }
       ]
     });
     console.log(`🗑️ Deleted ${deleteResult.deletedCount} existing ledger entries for memo ${req.params.id}`);
-    
+
     const memo = await Memo.findByIdAndUpdate(
       req.params.id,
       req.body,
@@ -149,7 +164,7 @@ router.put('/:id', async (req, res) => {
 
     const memoObj = memo.toObject();
     memoObj.id = memoObj._id.toString();
-    
+
     res.json({
       message: 'Memo updated successfully',
       memo: memoObj
@@ -163,14 +178,14 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     // Delete associated ledger entries first (both old and new field names)
-    const deleteResult = await LedgerEntry.deleteMany({ 
+    const deleteResult = await LedgerEntry.deleteMany({
       $or: [
         { referenceId: req.params.id },
         { reference_id: req.params.id }
       ]
     });
     console.log(`🗑️ Deleted ${deleteResult.deletedCount} ledger entries for memo ${req.params.id}`);
-    
+
     const memo = await Memo.findByIdAndDelete(req.params.id);
 
     if (!memo) {
@@ -204,7 +219,7 @@ router.patch('/:id/paid', async (req, res) => {
 
     const memoObj = memo.toObject();
     memoObj.id = memoObj._id.toString();
-    
+
     res.json({
       message: 'Memo marked as paid',
       memo: memoObj
@@ -238,7 +253,7 @@ router.post('/:id/advance', async (req, res) => {
 
     const memoObj = memo.toObject();
     memoObj.id = memoObj._id.toString();
-    
+
     res.json({
       message: 'Advance payment added successfully',
       memo: memoObj

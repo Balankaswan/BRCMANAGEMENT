@@ -112,7 +112,7 @@ export interface CashbookEntry {
   id: string;
   _id?: string; // MongoDB ObjectId
   type: 'credit' | 'debit';
-  category: 'vehicle_expense' | 'office_expense' | 'fuel_expense' | 'maintenance' | 'salary' | 'party_on_account' | 'party_commission' | 'supplier_payment' | 'supplier_on_account' | 'bill_payment' | 'bill_advance' | 'other';
+  category: 'vehicle_expense' | 'vehicle_credit_note' | 'office_expense' | 'fuel_expense' | 'maintenance' | 'salary' | 'party_on_account' | 'party_commission' | 'party_payment' | 'supplier_payment' | 'supplier_on_account' | 'bill_payment' | 'bill_advance' | 'memo_advance' | 'memo_payment' | 'other';
   amount: number;
   date: string;
   reference_id?: string;

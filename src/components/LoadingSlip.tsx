@@ -114,15 +114,15 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
       const match = slipNumber.match(/(\d+)$/);
       return match ? parseInt(match[1], 10) : 0;
     };
-    
+
     const aNum = getNumericPart(a.slip_number);
     const bNum = getNumericPart(b.slip_number);
-    
+
     // Primary sort: by numeric part of slip number (descending)
     if (aNum !== bNum) {
       return bNum - aNum;
     }
-    
+
     // Secondary sort: by date (descending - latest first)
     return new Date(b.date).getTime() - new Date(a.date).getTime();
   });
@@ -194,10 +194,10 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
       ) : (
         <div className="space-y-4">
           {filteredSlips.map((slip, index) => {
-            
+
             return (
-            <div key={slip.id || `slip-${index}-${slip.slip_number}`} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
-              <div className="p-6">
+              <div key={slip.id || `slip-${index}-${slip.slip_number}`} className="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
+                <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
                       <h3 className="text-lg font-semibold text-blue-600 mb-1">
@@ -241,7 +241,7 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                       </button>
                     </div>
                   </div>
-                  
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
                     <div>
                       <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Vehicle & Material</p>
@@ -250,11 +250,10 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                         {(() => {
                           const vehicle = vehicles.find(v => v.vehicle_no === slip.vehicle_no);
                           return vehicle ? (
-                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                              vehicle.ownership_type === 'own' 
-                                ? 'bg-green-100 text-green-800' 
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${vehicle.ownership_type === 'own'
+                                ? 'bg-green-100 text-green-800'
                                 : 'bg-blue-100 text-blue-800'
-                            }`}>
+                              }`}>
                               {vehicle.ownership_type === 'own' ? 'Own' : 'Market'}
                             </span>
                           ) : null;
@@ -273,7 +272,7 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                       <p className="text-lg font-bold text-green-600">{formatCurrency(slip.total_freight)}</p>
                     </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                     <div className="flex items-center space-x-4">
                       {slip.memo_number ? (
@@ -301,7 +300,7 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                           Create Memo
                         </button>
                       )}
-                      
+
                       {slip.bill_number ? (
                         <div className="flex items-center space-x-2">
                           <span className="text-xs text-gray-500">Bill:</span>
@@ -361,7 +360,7 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                     </div>
                   </div>
                 </div>
-            </div>
+              </div>
             );
           })}
         </div>
@@ -379,16 +378,15 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
               <div><span className="text-gray-500">Party:</span> {viewSlip.party}</div>
               <div><span className="text-gray-500">Supplier:</span> {viewSlip.supplier}</div>
               <div className="flex items-center space-x-2">
-                <span className="text-gray-500">Vehicle No:</span> 
+                <span className="text-gray-500">Vehicle No:</span>
                 <span>{viewSlip.vehicle_no}</span>
                 {(() => {
                   const vehicle = vehicles.find(v => v.vehicle_no === viewSlip.vehicle_no);
                   return vehicle ? (
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                      vehicle.ownership_type === 'own' 
-                        ? 'bg-green-100 text-green-800' 
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${vehicle.ownership_type === 'own'
+                        ? 'bg-green-100 text-green-800'
                         : 'bg-blue-100 text-blue-800'
-                    }`}>
+                      }`}>
                       {vehicle.ownership_type === 'own' ? 'Own Vehicle' : 'Market Vehicle'}
                     </span>
                   ) : null;
@@ -427,43 +425,43 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
               if (!token) {
                 throw new Error('Authentication required - please log in');
               }
-              
+
               // Ensure loading_slip_id is included in the memo data
               const memoDataWithSlipId = {
                 ...memoData,
                 loading_slip_id: selectedSlipForMemo?.id
               };
-              
+
               console.log('LoadingSlip component - selectedSlipForMemo:', selectedSlipForMemo);
               console.log('LoadingSlip component - selectedSlipForMemo.id:', selectedSlipForMemo?.id);
               console.log('LoadingSlip component - memoData received:', memoData);
               console.log('LoadingSlip component - final data with slip ID:', memoDataWithSlipId);
               console.log('LoadingSlip component - auth token present:', !!token);
-              
+
               if (!selectedSlipForMemo) {
                 throw new Error('No loading slip selected for memo creation');
               }
-              
+
               if (!selectedSlipForMemo.id) {
                 throw new Error('Selected loading slip is missing ID field');
               }
-              
+
               if (!memoDataWithSlipId.loading_slip_id) {
                 throw new Error('Loading slip ID is missing - cannot create memo');
               }
-              
+
               // Mark memo creation timestamp to prevent immediate sync overwrite
               localStorage.setItem('lastMemoCreation', Date.now().toString());
-              
+
               // Create memo directly via API service to bypass sync issues
               const response = await apiService.createMemo(memoDataWithSlipId);
               console.log('Memo created successfully:', response);
-              
+
               // Add memo to local store for immediate display
               if (response && response.memo) {
                 addMemo(response.memo);
                 console.log('Memo added to local store:', response.memo.memo_number);
-                
+
                 // Update loading slip with memo number for immediate display
                 if (selectedSlipForMemo) {
                   const updatedSlip = {
@@ -474,19 +472,19 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                   console.log('Loading slip updated with memo number:', response.memo.memo_number);
                 }
               }
-              
+
               setShowMemoForm(false);
               setSelectedSlipForMemo(null);
-              
+
               console.log('Memo created and displayed successfully');
             } catch (error) {
               console.error('Failed to create memo - Full error details:', error);
               console.error('Error message:', error instanceof Error ? error.message : 'Unknown error');
               console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
-              
+
               // Show user-friendly error message
               alert(`Failed to create memo: ${error instanceof Error ? error.message : 'Unknown error'}`);
-              
+
               setShowMemoForm(false);
               setSelectedSlipForMemo(null);
             }
@@ -510,27 +508,27 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                 ...billData,
                 loading_slip_id: selectedSlipForBill?.id
               };
-              
+
               console.log('LoadingSlip component - selectedSlipForBill:', selectedSlipForBill);
               console.log('LoadingSlip component - billData received:', billData);
               console.log('LoadingSlip component - final data with slip ID:', billDataWithSlipId);
-              
+
               if (!billDataWithSlipId.loading_slip_id) {
                 throw new Error('Loading slip ID is missing - cannot create bill');
               }
-              
+
               // Mark bill creation timestamp to prevent immediate sync overwrite
               localStorage.setItem('lastBillCreation', Date.now().toString());
-              
+
               // Create bill directly via API service to bypass sync issues
               const response = await apiService.createBill(billDataWithSlipId);
               console.log('Bill created successfully:', response);
-              
+
               // Add bill to local store for immediate display
               if (response && response.bill) {
                 addBill(response.bill);
                 console.log('Bill added to local store:', response.bill.bill_number);
-                
+
                 // Update loading slip with bill number for immediate display
                 if (selectedSlipForBill) {
                   const updatedSlip = {
@@ -541,10 +539,10 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                   console.log('Loading slip updated with bill number:', response.bill.bill_number);
                 }
               }
-              
+
               setShowBillForm(false);
               setSelectedSlipForBill(null);
-              
+
               console.log('Bill created and displayed successfully');
             } catch (error) {
               console.error('Failed to create bill:', error);

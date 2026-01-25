@@ -1,8 +1,10 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import { authenticateToken } from '../middleware/auth.js';
 import LoadingSlip from '../models/LoadingSlip.js';
 import Memo from '../models/Memo.js';
 import Bill from '../models/Bill.js';
+import { generateLoadingSlipNumber } from '../utils/autoIncrement.js';
 
 const router = express.Router();
 
@@ -13,7 +15,7 @@ const router = express.Router();
 router.get('/', async (req, res) => {
   try {
     const { party, vehicle_no, supplier, page = 1, limit = 50 } = req.query;
-    
+
     const filter = {};
     if (party) filter.party = new RegExp(party, 'i');
     if (vehicle_no) filter.vehicle_no = new RegExp(vehicle_no, 'i');
@@ -33,14 +35,14 @@ router.get('/', async (req, res) => {
 
         // Find memo and bill associated with this loading slip
         try {
-          const memo = await Memo.findOne({ 
+          const memo = await Memo.findOne({
             $or: [
               { loading_slip_id: slip._id },
               { loading_slip_id: slip._id.toString() }
             ]
           });
-          
-          const bill = await Bill.findOne({ 
+
+          const bill = await Bill.findOne({
             $or: [
               { loading_slip_id: slip._id },
               { loading_slip_id: slip._id.toString() }
@@ -54,7 +56,7 @@ router.get('/', async (req, res) => {
           slipObj.memo_number = null;
           slipObj.bill_number = null;
         }
-        
+
         // Ensure id field is present for frontend compatibility
         slipObj.id = slipObj._id.toString();
 
@@ -77,8 +79,11 @@ router.get('/', async (req, res) => {
 // Get loading slip by ID
 router.get('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Loading slip not found (invalid ID)' });
+    }
     const loadingSlip = await LoadingSlip.findById(req.params.id);
-    
+
     if (!loadingSlip) {
       return res.status(404).json({ message: 'Loading slip not found' });
     }
@@ -95,12 +100,20 @@ router.get('/:id', async (req, res) => {
 // Create new loading slip
 router.post('/', async (req, res) => {
   try {
-    const loadingSlip = new LoadingSlip(req.body);
+    const loadingSlipData = req.body;
+
+    // Auto-generate slip number if not provided
+    if (!loadingSlipData.slip_number) {
+      loadingSlipData.slip_number = await generateLoadingSlipNumber();
+      console.log('🔢 Auto-generated loading slip number:', loadingSlipData.slip_number);
+    }
+
+    const loadingSlip = new LoadingSlip(loadingSlipData);
     await loadingSlip.save();
 
     const slipObj = loadingSlip.toObject();
     slipObj.id = slipObj._id.toString();
-    
+
     res.status(201).json({
       message: 'Loading slip created successfully',
       loadingSlip: slipObj
@@ -114,6 +127,9 @@ router.post('/', async (req, res) => {
 // Update loading slip
 router.put('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Loading slip not found (invalid ID)' });
+    }
     const loadingSlip = await LoadingSlip.findByIdAndUpdate(
       req.params.id,
       req.body,
@@ -126,7 +142,7 @@ router.put('/:id', async (req, res) => {
 
     const slipObj = loadingSlip.toObject();
     slipObj.id = slipObj._id.toString();
-    
+
     res.json({
       message: 'Loading slip updated successfully',
       loadingSlip: slipObj
@@ -140,6 +156,9 @@ router.put('/:id', async (req, res) => {
 // Delete loading slip
 router.delete('/:id', async (req, res) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(404).json({ message: 'Loading slip not found (invalid ID)' });
+    }
     const loadingSlip = await LoadingSlip.findByIdAndDelete(req.params.id);
 
     if (!loadingSlip) {

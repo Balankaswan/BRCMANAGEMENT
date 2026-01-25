@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Truck, Filter, Download, Table, FileDown, Plus } from 'lucide-react';
+import { Truck, Filter, Download, Table, FileDown, Plus, MessageCircle } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { formatCurrency } from '../utils/numberGenerator';
 import { apiService } from '../lib/api';
@@ -83,7 +83,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       const loadingSlip = memo ? loadingSlips.find(ls => ls.id === memo.loading_slip_id) : null;
 
       const tripDetails = loadingSlip ? `${loadingSlip.from_location}–${loadingSlip.to_location}/${loadingSlip.vehicle_no}` : '';
-      
+
       const credit = entry.credit || 0;
       const debit = entry.debit || 0;
       runningBalance += credit - debit;
@@ -180,18 +180,18 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       netAmount: acc.netAmount + (entry.netAmount || 0),
       debitPayment: acc.debitPayment + (entry.debitPayment || 0),
       debitAdvance: acc.debitAdvance + (entry.debitAdvance || 0),
-    }), { 
+    }), {
       credit: 0,
-      freight: 0, 
-      commission: 0, 
-      mamool: 0, 
-      detention: 0, 
-      extra: 0, 
+      freight: 0,
+      commission: 0,
+      mamool: 0,
+      detention: 0,
+      extra: 0,
       extraWeight: 0,
-      rto: 0, 
-      netAmount: 0, 
-      debitPayment: 0, 
-      debitAdvance: 0 
+      rto: 0,
+      netAmount: 0,
+      debitPayment: 0,
+      debitAdvance: 0
     });
   }, [filteredEntries]);
 
@@ -203,7 +203,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     memoTypeFilter !== 'all' ||
     minAmount !== '' ||
     maxAmount !== '';
-  
+
 
   const handleCreateDebitNote = async () => {
     if (!supplierFilter) {
@@ -232,10 +232,10 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       console.log('🔄 Creating supplier debit note (ledger only):', debitNoteData);
       const response = await apiService.createSupplierDebitNote(debitNoteData);
       console.log('✅ Supplier debit note created in backend:', response.ledgerEntry);
-      
+
       // No banking entry is created - only ledger entry
       // The ledger will be refreshed automatically by the sync system
-      
+
       // Reset form and close modal
       setDebitNoteForm({
         amount: 0,
@@ -243,7 +243,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         date: new Date().toISOString().split('T')[0]
       });
       setShowDebitNoteModal(false);
-      
+
       alert(`Debit note of ₹${debitNoteForm.amount.toLocaleString('en-IN')} created successfully for ${supplierFilter}`);
     } catch (error) {
       console.error('Failed to create debit note:', error);
@@ -255,9 +255,9 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
     if (!filteredEntries.length) return;
 
     const headers = [
-      'Date', 
-      'Memo No', 
-      'Trip Details', 
+      'Date',
+      'Memo No',
+      'Trip Details',
       'Freight (₹)',
       '(-) Commission (₹)',
       '(-) Mamool (₹)',
@@ -266,10 +266,10 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
       '(+) RTO (₹)',
       '= Net Amount (₹)',
       'Debit - Payment (₹)',
-      'Running Balance (₹)', 
+      'Running Balance (₹)',
       'Remarks'
     ];
-    
+
     const csvContent = [
       headers.join(','),
       ...filteredEntries.flatMap(entry => {
@@ -288,7 +288,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
           entry.runningBalance,
           `"${entry.remarks}"`
         ].join(',');
-        
+
         // Add a detail row if it's a memo entry with deductions
         if (entry.memoNo && (entry.commission > 0 || entry.mamool > 0 || entry.detention > 0 || entry.extra > 0 || entry.rto > 0)) {
           const detailRow = [
@@ -306,10 +306,10 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
             '', // Empty running balance
             ''  // Empty remarks
           ].join(',');
-          
+
           return [mainRow, detailRow];
         }
-        
+
         return [mainRow];
       }).flat()
     ].join('\n');
@@ -331,21 +331,21 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
     try {
       console.log('🔄 Starting Professional Supplier Ledger PDF export...');
-      
+
       const { generateProfessionalLedgerPDF, testLibraries } = await import('../utils/simpleProfessionalLedgerPdf');
-      
+
       // Test libraries first
       console.log('🧪 Testing libraries before PDF generation...');
       const librariesWork = testLibraries();
       if (!librariesWork) {
         throw new Error('Required libraries (jsPDF, XLSX) are not working properly');
       }
-      
+
       // Calculate current balance (last entry's running balance)
-      const currentBalance = filteredEntries.length > 0 
-        ? filteredEntries[filteredEntries.length - 1].runningBalance 
+      const currentBalance = filteredEntries.length > 0
+        ? filteredEntries[filteredEntries.length - 1].runningBalance
         : 0;
-      
+
       await generateProfessionalLedgerPDF({
         type: 'SUPPLIER',
         name: supplierFilter,
@@ -357,14 +357,14 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         },
         currentBalance: currentBalance
       });
-      
+
       console.log('✅ Professional Supplier Ledger PDF generated successfully');
     } catch (error: any) {
       console.error('❌ Failed to generate Supplier Ledger PDF:', error);
       alert(`Failed to generate PDF: ${error?.message || 'Unknown error'}. Please check the console for details.`);
     }
   };
-  
+
   const exportToExcel = async () => {
     if (!filteredEntries.length || !supplierFilter) {
       alert('Please select a supplier and ensure there are entries to export.');
@@ -373,21 +373,21 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
     try {
       console.log('🔄 Starting Supplier Ledger Excel export...');
-      
+
       const { exportLedgerToExcel, testLibraries } = await import('../utils/simpleProfessionalLedgerPdf');
-      
+
       // Test libraries first
       console.log('🧪 Testing libraries before Excel export...');
       const librariesWork = testLibraries();
       if (!librariesWork) {
         throw new Error('Required libraries (jsPDF, XLSX) are not working properly');
       }
-      
+
       // Calculate current balance
-      const currentBalance = filteredEntries.length > 0 
-        ? filteredEntries[filteredEntries.length - 1].runningBalance 
+      const currentBalance = filteredEntries.length > 0
+        ? filteredEntries[filteredEntries.length - 1].runningBalance
         : 0;
-      
+
       await exportLedgerToExcel({
         type: 'SUPPLIER',
         name: supplierFilter,
@@ -399,12 +399,31 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         },
         currentBalance: currentBalance
       });
-      
+
       console.log('✅ Supplier Ledger Excel exported successfully');
     } catch (error: any) {
       console.error('❌ Failed to export Excel:', error);
       alert(`Failed to export Excel: ${error?.message || 'Unknown error'}`);
     }
+  };
+
+  const handleWhatsAppShare = () => {
+    if (!supplierFilter || !filteredEntries.length) return;
+
+    const startDate = dateFrom ? new Date(dateFrom).toLocaleDateString('en-IN') : 'Start';
+    const endDate = dateTo ? new Date(dateTo).toLocaleDateString('en-IN') : 'Present';
+
+    const message = `*Supplier Ledger Statement*\n` +
+      `Supplier: *${supplierFilter}*\n` +
+      `Period: ${startDate} to ${endDate}\n\n` +
+      `*Summary:*\n` +
+      `Total Credit: ${formatCurrency(totals.credit)}\n` +
+      `Total Debit: ${formatCurrency(totals.debitPayment)}\n` +
+      `*Net Balance: ${formatCurrency(finalBalance)}*\n\n` +
+      `Generated via BRC Management`;
+
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank');
   };
 
   return (
@@ -418,7 +437,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
             <p className="text-gray-600">Track supplier memos, payments, and advances</p>
           </div>
         </div>
-        
+
         {supplierFilter && (
           <button
             onClick={() => setShowDebitNoteModal(true)}
@@ -436,7 +455,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
           <Filter className="w-5 h-5 text-gray-400" />
           <h3 className="text-lg font-medium text-gray-900">Filters</h3>
         </div>
-        
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -453,7 +472,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
               ))}
             </select>
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               From Date
@@ -465,7 +484,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
             />
           </div>
-          
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               To Date
@@ -502,6 +521,15 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
             >
               <Table className="w-4 h-4" />
               <span>Excel</span>
+            </button>
+            <button
+              onClick={handleWhatsAppShare}
+              disabled={!filteredEntries.length}
+              className="px-4 py-2 bg-[#25D366] text-white rounded-lg hover:bg-[#128C7E] disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2"
+              title="Share on WhatsApp"
+            >
+              <MessageCircle className="w-4 h-4" />
+              <span>Share</span>
             </button>
           </div>
         </div>
@@ -635,7 +663,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
               Ledger for {supplierFilter}
             </h3>
           </div>
-          
+
           {(() => {
             console.log(`🎯 Table rendering check - filteredEntries.length: ${filteredEntries.length}`);
             return filteredEntries.length > 0;
@@ -700,7 +728,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
                         </td>
                         <td className="px-4 py-2 border">{entry.remarks}</td>
                       </tr>
-                      
+
                       {/* Deduction Details Row */}
                       {entry.showDetails && (entry.commission > 0 || entry.mamool > 0 || entry.detention > 0 || entry.extra > 0 || entry.rto > 0) && (
                         <tr className="bg-gray-50 text-sm">
@@ -766,9 +794,8 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-right font-bold text-blue-600">
                       {totals.debitPayment.toLocaleString('en-IN')}
                     </td>
-                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${
-                      finalBalance >= 0 ? 'text-red-600' : 'text-green-600'
-                    }`}>
+                    <td className={`px-6 py-4 whitespace-nowrap text-sm text-right font-bold ${finalBalance >= 0 ? 'text-red-600' : 'text-green-600'
+                      }`}>
                       {finalBalance.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4"></td>
@@ -814,7 +841,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
                   step="0.01"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Date
@@ -826,7 +853,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-transparent"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Narration
@@ -839,7 +866,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
                   rows={3}
                 />
               </div>
-              
+
               <div className="flex space-x-3 pt-4">
                 <button
                   onClick={handleCreateDebitNote}

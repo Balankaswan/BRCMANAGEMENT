@@ -20,7 +20,7 @@ interface PendingMemo {
 }
 
 const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierName, onNavigate }) => {
-  const { suppliers, memos, vehicles, loadingSlips, bankingEntries } = useDataStore();
+  const { suppliers, memos, vehicles, loadingSlips, bankingEntries, cashbookEntries } = useDataStore();
   const [pendingMemos, setPendingMemos] = useState<PendingMemo[]>([]);
   const [supplierInfo, setSupplierInfo] = useState<any>(null);
 
@@ -33,7 +33,7 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
 
     // Calculate pending memos for this supplier (only market vehicles)
     const supplierMemos = memos.filter(memo => memo.supplier === supplierName);
-    
+
     const pendingMemosData: PendingMemo[] = [];
 
     supplierMemos.forEach(memo => {
@@ -46,7 +46,7 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
       } else {
         return; // Skip invalid loading slip IDs
       }
-      
+
       // Find the loading slip and vehicle to check ownership
       const ls = loadingSlips.find(s => {
         const idMatch = s.id === loadingSlipId;
@@ -54,22 +54,27 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
         const objectIdStringMatch = String((s as any)._id) === String(loadingSlipId);
         return idMatch || objectIdMatch || objectIdStringMatch;
       });
-      
+
       const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
-      
+
       // Only include market vehicles in supplier balance
       if (vehicle?.ownership_type !== 'market') {
         return;
       }
 
-      // Check for payments made to this memo
-      const memoPayments = bankingEntries
+      // Check for payments made to this memo from both banking and cashbook
+      const bankingPayments = bankingEntries
         .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
         .reduce((total, entry) => total + entry.amount, 0);
-      
+
+      const cashbookPayments = cashbookEntries
+        .filter(entry => entry.reference_id === memo.memo_number && entry.category === 'memo_payment')
+        .reduce((total, entry) => total + entry.amount, 0);
+
+      const memoPayments = bankingPayments + cashbookPayments;
       const totalAmount = memo.net_amount;
       const pendingAmount = totalAmount - memoPayments;
-      
+
       if (pendingAmount > 0) {
         pendingMemosData.push({
           memoNo: memo.memo_number,
@@ -86,7 +91,7 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
     // Sort by date (newest first)
     pendingMemosData.sort((a, b) => new Date(b.memoDate).getTime() - new Date(a.memoDate).getTime());
     setPendingMemos(pendingMemosData);
-  }, [supplierName, supplierId, suppliers, memos, vehicles, loadingSlips, bankingEntries]);
+  }, [supplierName, supplierId, suppliers, memos, vehicles, loadingSlips, bankingEntries, cashbookEntries]);
 
   const totalPendingAmount = pendingMemos.reduce((sum, memo) => sum + memo.pendingAmount, 0);
   const activeTripCount = pendingMemos.length;
@@ -94,7 +99,7 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
   const handlePayNow = (memoNo: string) => {
     // Navigate to banking entry with pre-filled data
     if (onNavigate) {
-      onNavigate('banking', { 
+      onNavigate('banking', {
         prefill: {
           type: 'debit',
           reference_id: memoNo,

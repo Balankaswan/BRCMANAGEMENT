@@ -14,7 +14,7 @@ router.use((req, res, next) => {
 router.get('/', async (req, res) => {
   try {
     const { vehicleNo, partyId, supplierId, type, page = 1, limit = 100 } = req.query;
-    
+
     const filter = {};
     if (vehicleNo) filter.vehicleNo = vehicleNo;
     if (partyId) filter.partyId = partyId;
@@ -54,7 +54,7 @@ router.delete('/all', async (req, res) => {
   try {
     const deleteResult = await LedgerEntry.deleteMany({});
     console.log(`🗑️ Bulk deleted ${deleteResult.deletedCount} ledger entries`);
-    
+
     res.json({
       message: `Successfully deleted ${deleteResult.deletedCount} ledger entries`,
       deletedCount: deleteResult.deletedCount
@@ -102,7 +102,7 @@ router.post('/regenerate', async (req, res) => {
       let ledgerType = null;
       let referenceName = entry.reference_name || 'Bank Transaction';
       let referenceId = entry._id;
-      
+
       // Categorize based on banking category
       if (entry.category === 'party_commission') {
         continue; // Skip - handled by Party Commission Ledger
@@ -112,7 +112,7 @@ router.post('/regenerate', async (req, res) => {
         ledgerType = 'party';
         referenceName = entry.reference_name || 'Party Transaction';
         referenceId = entry.reference_name || entry._id;
-      } else if (entry.category === 'memo_advance') {
+      } else if (entry.category === 'memo_advance' || entry.category === 'memo_payment' || entry.category === 'supplier_payment') {
         ledgerType = 'supplier';
         referenceName = entry.reference_name || 'Supplier Transaction';
         referenceId = entry.reference_name || entry._id;
@@ -135,10 +135,10 @@ router.post('/regenerate', async (req, res) => {
         referenceName = entry.reference_name || 'General Transaction';
         referenceId = entry._id;
       }
-      
+
       // Skip if no ledger type assigned
       if (!ledgerType) continue;
-      
+
       await new LedgerEntry({
         referenceId: referenceId,
         reference_id: entry._id.toString(),
@@ -162,28 +162,30 @@ router.post('/regenerate', async (req, res) => {
       let ledgerType = null;
       let referenceName = entry.reference_name || 'Cash Transaction';
       let referenceId = entry._id;
-      
+
       // Categorize based on cashbook category (same logic as banking)
       switch (entry.category) {
         case 'party_commission':
           continue; // Skip - handled by Party Commission Ledger
-          
+
         case 'party_on_account':
           continue; // Skip - handled by Party Ledger separately
-          
+
         case 'bill_advance':
         case 'bill_payment':
           ledgerType = 'party';
           referenceName = entry.reference_name || 'Party Transaction';
           referenceId = entry.reference_name || entry._id;
           break;
-          
+
         case 'memo_advance':
+        case 'memo_payment':
+        case 'supplier_payment':
           ledgerType = 'supplier';
           referenceName = entry.reference_name || 'Supplier Transaction';
           referenceId = entry.reference_name || entry._id;
           break;
-          
+
         case 'vehicle_expense':
           if (entry.vehicle_no) {
             ledgerType = 'vehicle_expense';
@@ -191,10 +193,10 @@ router.post('/regenerate', async (req, res) => {
             referenceId = entry.vehicle_no;
           }
           break;
-          
+
         case 'fuel_wallet':
           continue; // Skip - handled by Fuel system
-          
+
         case 'expense':
         case 'other':
           // Only these go to General Ledger
@@ -202,7 +204,7 @@ router.post('/regenerate', async (req, res) => {
           referenceName = entry.reference_name || 'General Transaction';
           referenceId = entry._id;
           break;
-          
+
         default:
           // Unknown categories go to general for now
           ledgerType = 'general';
@@ -210,10 +212,10 @@ router.post('/regenerate', async (req, res) => {
           referenceId = entry._id;
           break;
       }
-      
+
       // Skip if no ledger type assigned
       if (!ledgerType) continue;
-      
+
       await new LedgerEntry({
         referenceId: referenceId,
         reference_id: entry._id.toString(),
@@ -236,18 +238,18 @@ router.post('/regenerate', async (req, res) => {
     const Memo = (await import('../models/Memo.js')).default;
     const Vehicle = (await import('../models/Vehicle.js')).default;
     const LoadingSlip = (await import('../models/LoadingSlip.js')).default;
-    
+
     const memos = await Memo.find({}).populate('loading_slip_id');
-    
+
     for (const memo of memos) {
       if (memo.loading_slip_id && memo.loading_slip_id.vehicle_no) {
         const vehicle = await Vehicle.findOne({ vehicle_no: memo.loading_slip_id.vehicle_no });
         const isOwnVehicle = vehicle?.ownership_type === 'own';
-        
+
         if (isOwnVehicle) {
           // Calculate net amount after deductions
           const netAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0);
-          
+
           // Main freight entry
           if (netAmount > 0) {
             await new LedgerEntry({
@@ -266,7 +268,7 @@ router.post('/regenerate', async (req, res) => {
             }).save();
             count++;
           }
-          
+
           // Detention entry
           if (memo.detention && memo.detention > 0) {
             await new LedgerEntry({
@@ -285,7 +287,7 @@ router.post('/regenerate', async (req, res) => {
             }).save();
             count++;
           }
-          
+
           // Extra charges entry
           if (memo.extra && memo.extra > 0) {
             await new LedgerEntry({
@@ -319,12 +321,12 @@ router.get('/summary/:referenceName', async (req, res) => {
   try {
     const { referenceName } = req.params;
     const { ledger_type } = req.query;
-    
+
     const filter = { reference_name: referenceName };
     if (ledger_type) filter.ledger_type = ledger_type;
 
     const entries = await LedgerEntry.find(filter).sort({ date: 1 });
-    
+
     let balance = 0;
     const entriesWithBalance = entries.map(entry => {
       balance += entry.debit - entry.credit;
@@ -363,13 +365,13 @@ router.delete('/clear', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const ledgerData = req.body;
-    
+
     const ledgerEntry = new LedgerEntry(ledgerData);
     await ledgerEntry.save();
 
     const entryObj = ledgerEntry.toObject();
     entryObj.id = entryObj._id.toString();
-    
+
     res.status(201).json({
       message: 'Ledger entry created successfully',
       ledgerEntry: entryObj
@@ -407,15 +409,15 @@ router.put('/:id', async (req, res) => {
 router.post('/cleanup-duplicates', async (req, res) => {
   try {
     console.log('🧹 Starting duplicate memo ledger cleanup...');
-    
+
     // Find all vehicle income entries from memos
     const memoEntries = await LedgerEntry.find({
       ledger_type: 'vehicle_income',
       source_type: 'memo'
     }).sort({ createdAt: 1 });
-    
+
     console.log(`📊 Found ${memoEntries.length} memo ledger entries`);
-    
+
     // Group by reference_id (memo ID) and vehicle_no
     const groupedEntries = {};
     memoEntries.forEach(entry => {
@@ -425,10 +427,10 @@ router.post('/cleanup-duplicates', async (req, res) => {
       }
       groupedEntries[key].push(entry);
     });
-    
+
     let duplicatesRemoved = 0;
     let duplicateGroups = 0;
-    
+
     // Remove duplicates (keep the first one, delete the rest)
     for (const [key, entries] of Object.entries(groupedEntries)) {
       if (entries.length > 1) {
@@ -437,7 +439,7 @@ router.post('/cleanup-duplicates', async (req, res) => {
         entries.forEach((entry, index) => {
           console.log(`  ${index + 1}. ${entry._id} - ${entry.description} (${entry.createdAt})`);
         });
-        
+
         // Keep the first entry, delete the rest
         for (let i = 1; i < entries.length; i++) {
           await LedgerEntry.findByIdAndDelete(entries[i]._id);
@@ -446,9 +448,9 @@ router.post('/cleanup-duplicates', async (req, res) => {
         }
       }
     }
-    
+
     console.log(`✅ Cleanup completed: ${duplicatesRemoved} duplicates removed from ${duplicateGroups} groups`);
-    
+
     res.json({
       message: 'Duplicate memo ledger entries cleaned up successfully',
       duplicateGroups,
@@ -466,12 +468,12 @@ router.delete('/clear-all', async (req, res) => {
   try {
     const result = await LedgerEntry.deleteMany({});
     console.log(`🗑️ Cleared ${result.deletedCount} ledger entries`);
-    
+
     // Also clear party commission ledger entries
     const PartyCommissionLedger = (await import('../models/PartyCommissionLedger.js')).default;
     const commissionResult = await PartyCommissionLedger.deleteMany({});
     console.log(`🗑️ Cleared ${commissionResult.deletedCount} party commission entries`);
-    
+
     res.json({
       message: 'All ledger entries cleared successfully',
       deletedLedgerEntries: result.deletedCount,
@@ -487,7 +489,7 @@ router.delete('/clear-all', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const ledgerEntry = await LedgerEntry.findByIdAndDelete(req.params.id);
-    
+
     if (!ledgerEntry) {
       return res.status(404).json({ message: 'Ledger entry not found' });
     }

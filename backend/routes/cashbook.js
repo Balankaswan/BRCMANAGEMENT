@@ -11,19 +11,19 @@ router.get('/', authenticateToken, async (req, res) => {
     // Increase capacity 10x to handle larger data pulls
     const { page = 1, limit = 1000000 } = req.query;
     const skip = (page - 1) * limit;
-    
+
     const cashbookEntries = await CashbookEntry.find({})
       .sort({ date: -1, createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit));
-    
+
     const total = await CashbookEntry.countDocuments();
     const totalPages = Math.ceil(total / limit);
-    
+
     // Get current cash balance (latest running balance)
     const latestEntry = await CashbookEntry.findOne({}, {}, { sort: { date: -1, createdAt: -1 } });
     const currentBalance = latestEntry ? latestEntry.running_balance : 0;
-    
+
     res.json({
       cashbookEntries,
       total,
@@ -42,7 +42,7 @@ router.post('/', async (req, res) => {
   try {
     // Generate unique transaction ID
     const transaction_id = generateCashbookTransactionId();
-    
+
     const cashbookEntry = new CashbookEntry({
       ...req.body,
       transaction_id
@@ -64,11 +64,11 @@ router.post('/', async (req, res) => {
     if (cashbookEntry.category === 'party_on_account' && cashbookEntry.reference_name) {
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
       const Party = (await import('../models/Party.js')).default;
-      
+
       // Find the party by name
       const party = await Party.findOne({ name: cashbookEntry.reference_name });
       const partyId = party ? party._id : cashbookEntry.reference_name;
-      
+
       const onAccountLedgerEntry = new LedgerEntry({
         referenceId: partyId,
         reference_id: cashbookEntry._id.toString(),
@@ -84,7 +84,7 @@ router.post('/', async (req, res) => {
         balance: 0,
         partyId: partyId
       });
-      
+
       await onAccountLedgerEntry.save();
       console.log('✅ Created party on account ledger entry from cashbook:', onAccountLedgerEntry._id);
     }
@@ -93,11 +93,11 @@ router.post('/', async (req, res) => {
     if (cashbookEntry.category === 'supplier_payment' && cashbookEntry.reference_name) {
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
       const Supplier = (await import('../models/Supplier.js')).default;
-      
+
       // Find the supplier by name
       const supplier = await Supplier.findOne({ name: cashbookEntry.reference_name });
       const supplierId = supplier ? supplier._id : cashbookEntry.reference_name;
-      
+
       const supplierLedgerEntry = new LedgerEntry({
         referenceId: supplierId,
         reference_id: cashbookEntry._id.toString(),
@@ -106,14 +106,14 @@ router.post('/', async (req, res) => {
         source_type: 'cashbook',
         type: 'payment',
         date: cashbookEntry.date,
-        description: `Supplier Payment – Cash Payment`,
-        narration: `Supplier Payment – Cash Payment`,
+        description: `Supplier Payment (Cash) – Cash Payment`,
+        narration: `Supplier Payment (Cash) – Cash Payment`,
         debit: cashbookEntry.amount,
         credit: 0,
         balance: 0,
         supplierId: supplierId
       });
-      
+
       await supplierLedgerEntry.save();
       console.log('✅ Created supplier ledger entry from cashbook:', supplierLedgerEntry._id);
     }
@@ -122,11 +122,11 @@ router.post('/', async (req, res) => {
     if (cashbookEntry.category === 'supplier_on_account' && cashbookEntry.reference_name) {
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
       const Supplier = (await import('../models/Supplier.js')).default;
-      
+
       // Find the supplier by name
       const supplier = await Supplier.findOne({ name: cashbookEntry.reference_name });
       const supplierId = supplier ? supplier._id : cashbookEntry.reference_name;
-      
+
       const supplierOnAccountLedgerEntry = new LedgerEntry({
         referenceId: supplierId,
         reference_id: cashbookEntry._id.toString(),
@@ -143,7 +143,7 @@ router.post('/', async (req, res) => {
         supplier_id: supplierId,
         supplier_name: cashbookEntry.reference_name
       });
-      
+
       await supplierOnAccountLedgerEntry.save();
       console.log('✅ Created supplier on account ledger entry from cashbook:', supplierOnAccountLedgerEntry._id);
     }
@@ -155,7 +155,7 @@ router.post('/', async (req, res) => {
     if (cashbookEntry.category === 'bill_advance' && cashbookEntry.reference_id) {
       const Bill = (await import('../models/Bill.js')).default;
       const bill = await Bill.findOne({ bill_number: cashbookEntry.reference_id });
-      
+
       if (bill) {
         const advancePayment = {
           date: cashbookEntry.date,
@@ -164,17 +164,17 @@ router.post('/', async (req, res) => {
           reference: `Cashbook Entry: ${cashbookEntry._id}`,
           description: cashbookEntry.narration || 'Cash advance payment'
         };
-        
+
         bill.advance_payments.push(advancePayment);
         await bill.save();
         console.log('✅ Added cash advance payment to bill:', cashbookEntry.reference_id);
       }
     }
-    
+
     if (cashbookEntry.category === 'memo_advance' && cashbookEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
       const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
-      
+
       if (memo) {
         const advancePayment = {
           date: cashbookEntry.date,
@@ -183,78 +183,56 @@ router.post('/', async (req, res) => {
           reference: `Cashbook Entry: ${cashbookEntry._id}`,
           description: cashbookEntry.narration || 'Cash advance payment'
         };
-        
+
         memo.advance_payments.push(advancePayment);
         await memo.save();
         console.log('✅ Added cash advance payment to memo:', cashbookEntry.reference_id);
       }
     }
-    
+
     if (cashbookEntry.category === 'memo_payment' && cashbookEntry.reference_id) {
-      console.log('🔍 DEBUG memo_payment: category=', cashbookEntry.category, 'reference_id=', cashbookEntry.reference_id);
-      
-      const Memo = (await import('../models/Memo.js')).default;
-      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-      
-      // First, try to find ALL memos to debug
-      const allMemos = await Memo.find({});
-      console.log('🔍 DEBUG: Total memos in DB:', allMemos.length);
-      console.log('🔍 DEBUG: Looking for memo_number:', cashbookEntry.reference_id);
-      console.log('🔍 DEBUG: Sample memo numbers:', allMemos.slice(0, 3).map(m => m.memo_number));
-      
-      const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
-      console.log('🔍 DEBUG: Memo found?', !!memo);
-      
-      if (memo) {
-        console.log('✅ Found memo:', memo.memo_number, 'Supplier:', memo.supplier);
-        const advancePayment = {
-          date: cashbookEntry.date,
-          amount: cashbookEntry.amount,
-          mode: 'cash',
-          reference: `Cashbook Entry: ${cashbookEntry._id}`,
-          description: cashbookEntry.narration || 'Cash payment'
-        };
-        
-        memo.advance_payments.push(advancePayment);
-        
-        // Update paid amount - accumulate all advance payments
-        memo.paid_amount = (memo.paid_amount || 0) + cashbookEntry.amount;
-        
-        // Mark as paid if paid_amount >= net_amount
-        if (memo.paid_amount >= memo.net_amount) {
-          memo.status = 'paid';
-          memo.paid_date = new Date();
-        }
-        
-        const savedMemo = await memo.save();
-        console.log('✅ Memo saved. advance_payments count:', savedMemo.advance_payments.length, 'paid_amount:', savedMemo.paid_amount);
+      try {
+        console.log('🔍 DEBUG memo_payment: category=', cashbookEntry.category, 'reference_id=', cashbookEntry.reference_id);
 
-        // Create supplier ledger entry for memo payment
-        const supplierLedgerEntry = new LedgerEntry({
-          referenceId: memo.supplier,
-          reference_id: cashbookEntry._id.toString(),
-          ledger_type: 'supplier',
-          reference_name: memo.supplier,
-          source_type: 'cashbook',
-          type: 'payment',
-          date: cashbookEntry.date,
-          description: `Memo Payment – Memo No ${memo.memo_number}`,
-          narration: cashbookEntry.narration || `Memo Payment – Memo No ${memo.memo_number}`,
-          debit: cashbookEntry.amount,
-          credit: 0,
-          balance: 0,
-          memo_number: memo.memo_number,
-          memo_id: memo._id
-        });
-        
-        // Find supplier to get their ID for correct ledger mapping
-        const Supplier = (await import('../models/Supplier.js')).default;
-        const supplier = await Supplier.findOne({ name: memo.supplier });
+        const Memo = (await import('../models/Memo.js')).default;
+        const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
 
-        if (supplier) {
+        // First, try to find ALL memos to debug
+        const allMemos = await Memo.find({});
+        console.log('🔍 DEBUG: Total memos in DB:', allMemos.length);
+        console.log('🔍 DEBUG: Looking for memo_number:', cashbookEntry.reference_id);
+        console.log('🔍 DEBUG: Sample memo numbers:', allMemos.slice(0, 3).map(m => m.memo_number));
+
+        const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
+        console.log('🔍 DEBUG: Memo found?', !!memo);
+
+        if (memo) {
+          console.log('✅ Found memo:', memo.memo_number, 'Supplier:', memo.supplier);
+          const advancePayment = {
+            date: cashbookEntry.date,
+            amount: cashbookEntry.amount,
+            mode: 'cash',
+            reference: `Cashbook Entry: ${cashbookEntry._id}`,
+            description: cashbookEntry.narration || 'Cash payment'
+          };
+
+          memo.advance_payments.push(advancePayment);
+
+          // Update paid amount - accumulate all advance payments
+          memo.paid_amount = (memo.paid_amount || 0) + cashbookEntry.amount;
+
+          // Mark as paid if paid_amount >= net_amount
+          if (memo.paid_amount >= memo.net_amount) {
+            memo.status = 'paid';
+            memo.paid_date = new Date();
+          }
+
+          const savedMemo = await memo.save();
+          console.log('✅ Memo saved. advance_payments count:', savedMemo.advance_payments.length, 'paid_amount:', savedMemo.paid_amount);
+
           // Create supplier ledger entry for memo payment
           const supplierLedgerEntry = new LedgerEntry({
-            referenceId: supplier._id, // Use supplier's actual ID
+            referenceId: memo.supplier,
             reference_id: cashbookEntry._id.toString(),
             ledger_type: 'supplier',
             reference_name: memo.supplier,
@@ -267,24 +245,50 @@ router.post('/', async (req, res) => {
             credit: 0,
             balance: 0,
             memo_number: memo.memo_number,
-            memo_id: memo._id,
-            supplier_id: supplier._id // Ensure supplier_id is also set
+            memo_id: memo._id
           });
-          
-          const savedLedger = await supplierLedgerEntry.save();
-          console.log('✅ Supplier ledger entry created:', savedLedger._id);
+
+          // Find supplier to get their ID for correct ledger mapping
+          const Supplier = (await import('../models/Supplier.js')).default;
+          const supplier = await Supplier.findOne({ name: memo.supplier });
+
+          if (supplier) {
+            // Create supplier ledger entry for memo payment
+            const supplierLedgerEntry = new LedgerEntry({
+              referenceId: supplier._id, // Use supplier's actual ID
+              reference_id: cashbookEntry._id.toString(),
+              ledger_type: 'supplier',
+              reference_name: memo.supplier,
+              source_type: 'cashbook',
+              type: 'payment',
+              date: cashbookEntry.date,
+              description: `Memo Payment (Cash) – Memo No ${memo.memo_number}`,
+              narration: cashbookEntry.narration || `Memo Payment (Cash) – Memo No ${memo.memo_number}`,
+              debit: cashbookEntry.amount,
+              credit: 0,
+              balance: 0,
+              memo_number: memo.memo_number,
+              memo_id: memo._id,
+              supplier_id: supplier._id // Ensure supplier_id is also set
+            });
+
+            const savedLedger = await supplierLedgerEntry.save();
+            console.log('✅ Supplier ledger entry created:', savedLedger._id);
+          } else {
+            console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry.`);
+          }
         } else {
-          console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry.`);
+          console.error('❌ MEMO NOT FOUND! reference_id:', cashbookEntry.reference_id);
         }
-      } else {
-        console.error('❌ MEMO NOT FOUND! reference_id:', cashbookEntry.reference_id);
+      } catch (memoError) {
+        console.error('❌ Error processing memo_payment:', memoError.message);
       }
     }
-    
+
     if (cashbookEntry.category === 'bill_payment' && cashbookEntry.reference_id) {
       const Bill = (await import('../models/Bill.js')).default;
       const bill = await Bill.findOne({ bill_number: cashbookEntry.reference_id });
-      
+
       if (bill) {
         const advancePayment = {
           date: cashbookEntry.date,
@@ -293,7 +297,7 @@ router.post('/', async (req, res) => {
           reference: `Cashbook Entry: ${cashbookEntry._id}`,
           description: cashbookEntry.narration || 'Cash payment'
         };
-        
+
         bill.advance_payments.push(advancePayment);
         await bill.save();
         console.log('✅ Added cash payment to bill:', cashbookEntry.reference_id);
@@ -303,33 +307,33 @@ router.post('/', async (req, res) => {
     // Create ledger entries automatically with duplicate prevention
     // Create appropriate ledger entries based on category
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Exclude specific categories from general ledger (these already create specific ledger entries above)
     const excludedCategories = [
-      'party_commission', 
-      'party_on_account', 
+      'party_commission',
+      'party_on_account',
       'supplier_payment',
       'supplier_on_account',
-      'memo_advance', 
-      'bill_advance', 
-      'memo_payment', 
-      'bill_payment', 
+      'memo_advance',
+      'bill_advance',
+      'memo_payment',
+      'bill_payment',
       'on_account_advance',
       'fuel_wallet'
     ];
-    
+
     if (!excludedCategories.includes(cashbookEntry.category)) {
       let ledgerType = 'general';
       let referenceName = cashbookEntry.reference_name || cashbookEntry.category || 'Cash Transaction';
       let referenceId = cashbookEntry._id;
-      
+
       // Handle vehicle expenses specifically
       if (cashbookEntry.category === 'vehicle_expense' && cashbookEntry.vehicle_no) {
         ledgerType = 'vehicle_expense';
         referenceName = `Vehicle ${cashbookEntry.vehicle_no} - Cash Expense`;
         referenceId = cashbookEntry.vehicle_no;
       }
-      
+
       const ledgerEntry = new LedgerEntry({
         referenceId: referenceId,
         reference_id: cashbookEntry._id.toString(),
@@ -344,14 +348,14 @@ router.post('/', async (req, res) => {
         balance: 0,
         vehicle_no: cashbookEntry.vehicle_no || undefined,
       });
-      
+
       // Check if ledger entry already exists to prevent duplicates
       const existingEntry = await LedgerEntry.findOne({
         reference_id: cashbookEntry._id.toString(),
         source_type: 'cashbook',
         ledger_type: ledgerType
       });
-      
+
       if (!existingEntry) {
         await ledgerEntry.save();
         console.log('✅ Created general ledger entry for cashbook transaction:', ledgerEntry._id, 'Type:', ledgerType);
@@ -387,16 +391,16 @@ router.put('/:id', async (req, res) => {
       ...req.body,
       payment_mode: 'cash' // Ensure it remains a cash transaction
     };
-    
+
     const cashbookEntry = await CashbookEntry.findByIdAndUpdate(
       req.params.id,
       updateData,
       { new: true }
     );
-    
+
     // Update corresponding ledger entries
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Determine ledger type based on category
     let ledgerType = 'general';
     if (cashbookEntry.category === 'party_commission') {
@@ -404,10 +408,10 @@ router.put('/:id', async (req, res) => {
     } else if (cashbookEntry.category === 'vehicle_expense') {
       ledgerType = 'vehicle_expense';
     }
-    
+
     // Update all ledger entries with this cashbook entry reference_id
     const updateResult = await LedgerEntry.updateMany(
-      { 
+      {
         reference_id: cashbookEntry._id.toString(),
         source_type: 'cashbook'
       },
@@ -422,14 +426,14 @@ router.put('/:id', async (req, res) => {
         vehicle_no: cashbookEntry.vehicle_no || undefined,
       }
     );
-    
+
     console.log('✅ Updated', updateResult.modifiedCount, 'ledger entries for cashbook entry:', req.params.id);
-    
+
     // Broadcast change to all connected clients for real-time sync
     if (global.broadcastChange) {
       global.broadcastChange('update', 'cashbook', cashbookEntry);
     }
-    
+
     res.json({
       message: 'Cashbook entry updated successfully',
       cashbookEntry
@@ -444,7 +448,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const cashbookEntry = await CashbookEntry.findById(req.params.id);
-    
+
     if (!cashbookEntry) {
       return res.status(404).json({ error: 'Cashbook entry not found' });
     }
@@ -453,7 +457,7 @@ router.delete('/:id', async (req, res) => {
     if (cashbookEntry.category === 'bill_advance' && cashbookEntry.reference_id) {
       const Bill = (await import('../models/Bill.js')).default;
       const bill = await Bill.findOne({ bill_number: cashbookEntry.reference_id });
-      
+
       if (bill) {
         bill.advance_payments = bill.advance_payments.filter(
           payment => payment.reference !== `Cashbook Entry: ${cashbookEntry._id}`
@@ -462,11 +466,11 @@ router.delete('/:id', async (req, res) => {
         console.log('✅ Removed cash advance payment from bill:', cashbookEntry.reference_id);
       }
     }
-    
+
     if (cashbookEntry.category === 'memo_advance' && cashbookEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
       const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
-      
+
       if (memo) {
         memo.advance_payments = memo.advance_payments.filter(
           payment => payment.reference !== `Cashbook Entry: ${cashbookEntry._id}`
@@ -479,7 +483,7 @@ router.delete('/:id', async (req, res) => {
     if (cashbookEntry.category === 'memo_payment' && cashbookEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
       const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
-      
+
       if (memo) {
         memo.advance_payments = memo.advance_payments.filter(
           payment => payment.reference !== `Cashbook Entry: ${cashbookEntry._id}`
@@ -492,7 +496,7 @@ router.delete('/:id', async (req, res) => {
     if (cashbookEntry.category === 'bill_payment' && cashbookEntry.reference_id) {
       const Bill = (await import('../models/Bill.js')).default;
       const bill = await Bill.findOne({ bill_number: cashbookEntry.reference_id });
-      
+
       if (bill) {
         bill.advance_payments = bill.advance_payments.filter(
           payment => payment.reference !== `Cashbook Entry: ${cashbookEntry._id}`
@@ -511,23 +515,23 @@ router.delete('/:id', async (req, res) => {
 
     // Delete associated ledger entries
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Delete by reference_id (cashbook entry ID) to catch all related entries
     const deleteResult = await LedgerEntry.deleteMany({
       reference_id: cashbookEntry._id.toString(),
       source_type: 'cashbook'
     });
-    
+
     console.log('✅ Deleted', deleteResult.deletedCount, 'associated ledger entries for cashbook entry:', req.params.id);
 
     // Delete the cashbook entry
     await CashbookEntry.findByIdAndDelete(req.params.id);
-    
+
     // Broadcast change to all connected clients for real-time sync
     if (global.broadcastChange) {
       global.broadcastChange('delete', 'cashbook', { _id: req.params.id });
     }
-    
+
     res.json({
       message: 'Cashbook entry deleted successfully',
       cashbookEntry
@@ -544,39 +548,39 @@ router.get('/balance', async (req, res) => {
     // Get current balance
     const latestEntry = await CashbookEntry.findOne({}, {}, { sort: { date: -1, createdAt: -1 } });
     const currentBalance = latestEntry ? latestEntry.running_balance : 0;
-    
+
     // Get today's transactions
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-    
+
     const todayTransactions = await CashbookEntry.find({
       date: { $gte: today, $lt: tomorrow }
     });
-    
+
     const todayCredits = todayTransactions
       .filter(t => t.type === 'credit')
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     const todayDebits = todayTransactions
       .filter(t => t.type === 'debit')
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     // Get monthly summary
     const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const monthlyTransactions = await CashbookEntry.find({
       date: { $gte: startOfMonth }
     });
-    
+
     const monthlyCredits = monthlyTransactions
       .filter(t => t.type === 'credit')
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     const monthlyDebits = monthlyTransactions
       .filter(t => t.type === 'debit')
       .reduce((sum, t) => sum + t.amount, 0);
-    
+
     res.json({
       currentBalance,
       today: {

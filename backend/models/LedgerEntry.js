@@ -20,12 +20,12 @@ const ledgerEntrySchema = new mongoose.Schema({
   },
   source_type: {
     type: String,
-    enum: ['memo', 'bill', 'banking', 'cashbook', 'fuel', 'manual']
+    enum: ['memo', 'bill', 'banking', 'cashbook', 'fuel', 'manual', 'debit_note']
   },
   type: {
     type: String,
     required: true,
-    enum: ['memo', 'payment', 'bill', 'expense', 'commission', 'party', 'on_account']
+    enum: ['memo', 'payment', 'bill', 'expense', 'commission', 'party', 'on_account', 'adjustment']
   },
   vehicleNo: {
     type: String,

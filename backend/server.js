@@ -17,6 +17,7 @@ import fuelRoutes from './routes/fuel.js';
 import podRoutes from './routes/pod.js';
 import authRoutes from './routes/auth.js';
 import partyCommissionLedgerRoutes from './routes/partyCommissionLedger.js';
+import autoIncrementRoutes from './routes/autoIncrement.js';
 
 dotenv.config();
 
@@ -57,26 +58,12 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API routes
-app.use('/api/auth', authRoutes);
-app.use('/api/bills', billRoutes);
-app.use('/api/memos', memoRoutes);
-app.use('/api/loading-slips', loadingSlipRoutes);
-app.use('/api/banking', bankingRoutes);
-app.use('/api/cashbook', cashbookRoutes);
-app.use('/api/parties', partyRoutes);
-app.use('/api/suppliers', supplierRoutes);
-app.use('/api/vehicles', vehicleRoutes);
-app.use('/api/ledgers', ledgerRoutes);
-app.use('/api/fuel', fuelRoutes);
-app.use('/api/pod', podRoutes);
-app.use('/api/party-commission-ledger', partyCommissionLedgerRoutes);
-
 // Store connected clients for real-time updates
 const connectedClients = new Set();
 
-// SSE endpoint for real-time sync
+// SSE endpoint for real-time sync - MUST be before other routes
 app.get('/api/sync/events', (req, res) => {
+  console.log('📡 SSE connection request received');
   // Set headers for SSE
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -135,6 +122,22 @@ app.get('/api/sync/status', (req, res) => {
     status: 'active'
   });
 });
+
+// API routes
+app.use('/api/auth', authRoutes);
+app.use('/api/bills', billRoutes);
+app.use('/api/memos', memoRoutes);
+app.use('/api/loading-slips', loadingSlipRoutes);
+app.use('/api/banking', bankingRoutes);
+app.use('/api/cashbook', cashbookRoutes);
+app.use('/api/parties', partyRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/ledgers', ledgerRoutes);
+app.use('/api/fuel', fuelRoutes);
+app.use('/api/pod', podRoutes);
+app.use('/api/party-commission-ledger', partyCommissionLedgerRoutes);
+app.use('/api/auto-increment', autoIncrementRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {
