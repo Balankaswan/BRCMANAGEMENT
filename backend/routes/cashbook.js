@@ -154,6 +154,9 @@ router.post('/', async (req, res) => {
     // Handle bill and memo advance payments
     if (cashbookEntry.category === 'bill_advance' && cashbookEntry.reference_id) {
       const Bill = (await import('../models/Bill.js')).default;
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const Party = (await import('../models/Party.js')).default;
+
       const bill = await Bill.findOne({ bill_number: cashbookEntry.reference_id });
 
       if (bill) {
@@ -168,11 +171,42 @@ router.post('/', async (req, res) => {
         bill.advance_payments.push(advancePayment);
         await bill.save();
         console.log('✅ Added cash advance payment to bill:', cashbookEntry.reference_id);
+
+        // Create party ledger entry for bill advance
+        const party = await Party.findOne({ name: bill.party });
+
+        if (party) {
+          const partyLedgerEntry = new LedgerEntry({
+            referenceId: party._id,
+            reference_id: cashbookEntry._id.toString(),
+            ledger_type: 'party',
+            reference_name: bill.party,
+            source_type: 'cashbook',
+            type: 'payment',
+            date: cashbookEntry.date,
+            description: `Bill Advance (Cash) – Bill No ${bill.bill_number}`,
+            narration: cashbookEntry.narration || `Bill Advance (Cash) – Bill No ${bill.bill_number}`,
+            debit: 0,
+            credit: cashbookEntry.amount,
+            balance: 0,
+            bill_number: bill.bill_number,
+            bill_id: bill._id,
+            party_id: party._id
+          });
+
+          await partyLedgerEntry.save();
+          console.log('✅ Party ledger entry created for cash bill advance:', partyLedgerEntry._id);
+        } else {
+          console.error(`❌ Could not find party named '${bill.party}' to create ledger entry for advance.`);
+        }
       }
     }
 
     if (cashbookEntry.category === 'memo_advance' && cashbookEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const Supplier = (await import('../models/Supplier.js')).default;
+
       const memo = await Memo.findOne({ memo_number: cashbookEntry.reference_id });
 
       if (memo) {
@@ -187,6 +221,34 @@ router.post('/', async (req, res) => {
         memo.advance_payments.push(advancePayment);
         await memo.save();
         console.log('✅ Added cash advance payment to memo:', cashbookEntry.reference_id);
+
+        // Create supplier ledger entry for memo advance
+        const supplier = await Supplier.findOne({ name: memo.supplier });
+
+        if (supplier) {
+          const supplierLedgerEntry = new LedgerEntry({
+            referenceId: supplier._id,
+            reference_id: cashbookEntry._id.toString(),
+            ledger_type: 'supplier',
+            reference_name: memo.supplier,
+            source_type: 'cashbook',
+            type: 'payment',
+            date: cashbookEntry.date,
+            description: `Memo Advance (Cash) – Memo No ${memo.memo_number}`,
+            narration: cashbookEntry.narration || `Memo Advance (Cash) – Memo No ${memo.memo_number}`,
+            debit: cashbookEntry.amount,
+            credit: 0,
+            balance: 0,
+            memo_number: memo.memo_number,
+            memo_id: memo._id,
+            supplier_id: supplier._id
+          });
+
+          await supplierLedgerEntry.save();
+          console.log('✅ Supplier ledger entry created for cash memo advance:', supplierLedgerEntry._id);
+        } else {
+          console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry for advance.`);
+        }
       }
     }
 

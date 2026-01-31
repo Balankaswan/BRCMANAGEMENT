@@ -175,6 +175,56 @@ router.post('/', async (req, res) => {
     }
 
     // Handle memo and bill payments - add to advance_payments array
+    if (bankingEntry.category === 'memo_advance' && bankingEntry.reference_id) {
+      const Memo = (await import('../models/Memo.js')).default;
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const Supplier = (await import('../models/Supplier.js')).default;
+
+      const memo = await Memo.findOne({ memo_number: bankingEntry.reference_id });
+
+      if (memo) {
+        const advancePayment = {
+          date: bankingEntry.date,
+          amount: bankingEntry.amount,
+          mode: 'bank',
+          reference: `Banking Entry: ${bankingEntry._id}`,
+          description: bankingEntry.narration || 'Bank advance payment'
+        };
+
+        memo.advance_payments.push(advancePayment);
+        await memo.save();
+        console.log('✅ Added bank advance payment to memo:', bankingEntry.reference_id);
+
+        // Create supplier ledger entry for memo advance
+        const supplier = await Supplier.findOne({ name: memo.supplier });
+
+        if (supplier) {
+          const supplierLedgerEntry = new LedgerEntry({
+            referenceId: supplier._id,
+            reference_id: bankingEntry._id.toString(),
+            ledger_type: 'supplier',
+            reference_name: memo.supplier,
+            source_type: 'banking',
+            type: 'payment',
+            date: bankingEntry.date,
+            description: `Memo Advance (Banking) – Memo No ${memo.memo_number}`,
+            narration: bankingEntry.narration || `Memo Advance (Banking) – Memo No ${memo.memo_number}`,
+            debit: bankingEntry.amount,
+            credit: 0,
+            balance: 0,
+            memo_number: memo.memo_number,
+            memo_id: memo._id,
+            supplier_id: supplier._id
+          });
+
+          await supplierLedgerEntry.save();
+          console.log('✅ Supplier ledger entry created for banking memo advance:', supplierLedgerEntry._id);
+        } else {
+          console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry for advance.`);
+        }
+      }
+    }
+
     if (bankingEntry.category === 'memo_payment' && bankingEntry.reference_id) {
       const Memo = (await import('../models/Memo.js')).default;
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
@@ -230,6 +280,56 @@ router.post('/', async (req, res) => {
           console.log('✅ Supplier ledger entry created for banking memo payment:', supplierLedgerEntry._id);
         } else {
           console.error(`❌ Could not find supplier named '${memo.supplier}' to create ledger entry.`);
+        }
+      }
+    }
+
+    if (bankingEntry.category === 'bill_advance' && bankingEntry.reference_id) {
+      const Bill = (await import('../models/Bill.js')).default;
+      const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
+      const Party = (await import('../models/Party.js')).default;
+
+      const bill = await Bill.findOne({ bill_number: bankingEntry.reference_id });
+
+      if (bill) {
+        const advancePayment = {
+          date: bankingEntry.date,
+          amount: bankingEntry.amount,
+          mode: 'bank',
+          reference: `Banking Entry: ${bankingEntry._id}`,
+          description: bankingEntry.narration || 'Bank advance payment'
+        };
+
+        bill.advance_payments.push(advancePayment);
+        await bill.save();
+        console.log('✅ Added bank advance payment to bill:', bankingEntry.reference_id);
+
+        // Create party ledger entry for bill advance
+        const party = await Party.findOne({ name: bill.party });
+
+        if (party) {
+          const partyLedgerEntry = new LedgerEntry({
+            referenceId: party._id,
+            reference_id: bankingEntry._id.toString(),
+            ledger_type: 'party',
+            reference_name: bill.party,
+            source_type: 'banking',
+            type: 'payment',
+            date: bankingEntry.date,
+            description: `Bill Advance (Banking) – Bill No ${bill.bill_number}`,
+            narration: bankingEntry.narration || `Bill Advance (Banking) – Bill No ${bill.bill_number}`,
+            debit: 0,
+            credit: bankingEntry.amount,
+            balance: 0,
+            bill_number: bill.bill_number,
+            bill_id: bill._id,
+            party_id: party._id
+          });
+
+          await partyLedgerEntry.save();
+          console.log('✅ Party ledger entry created for banking bill advance:', partyLedgerEntry._id);
+        } else {
+          console.error(`❌ Could not find party named '${bill.party}' to create ledger entry for advance.`);
         }
       }
     }
