@@ -39,7 +39,7 @@ export const createLedgerEntry = async ({ referenceId, type, vehicleNo, partyId,
       previousBalance,
       newBalance: runningBalance
     });
-    
+
     return entry;
   } catch (error) {
     console.error('Failed to create ledger entry:', error);
@@ -58,8 +58,8 @@ export const handleOwnVehicleMemo = async (memo) => {
     }
 
     // Create single consolidated entry for the memo (total amount)
-  const totalAmount = memo.freight + (memo.detention || 0) + (memo.extra || 0) - (memo.commission || 0) - (memo.mamool || 0);
-    
+    const totalAmount = memo.freight + (memo.detention || 0) + (memo.extra || 0) + (memo.rto || 0) - (memo.commission || 0) - (memo.mamool || 0);
+
     if (totalAmount > 0) {
       // Check if ledger entry already exists for this memo to prevent duplicates
       const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
@@ -68,7 +68,7 @@ export const handleOwnVehicleMemo = async (memo) => {
         source_type: 'memo',
         ledger_type: 'vehicle_income'
       });
-      
+
       if (!existingEntry) {
         await LedgerEntry.create({
           referenceId: loadingSlip.vehicle_no,
@@ -78,7 +78,7 @@ export const handleOwnVehicleMemo = async (memo) => {
           source_type: 'memo',
           type: 'payment',
           date: memo.date,
-          description: `Memo ${memo.memo_number} - Total: ₹${totalAmount} (Freight: ₹${memo.freight}, Detention: ₹${memo.detention || 0}, Extra: ₹${memo.extra || 0}, Commission: -₹${memo.commission || 0}, Mamool: -₹${memo.mamool || 0})`,
+          description: `Memo ${memo.memo_number} - Total: ₹${totalAmount} (Freight: ₹${memo.freight}, Detention: ₹${memo.detention || 0}, Extra: ₹${memo.extra || 0}, RTO: ₹${memo.rto || 0}, Commission: -₹${memo.commission || 0}, Mamool: -₹${memo.mamool || 0})`,
           debit: 0,
           credit: totalAmount,
           vehicle_no: loadingSlip.vehicle_no,
@@ -111,10 +111,10 @@ export const handleOwnVehicleMemo = async (memo) => {
 export const handleMarketVehicleMemo = async (memo) => {
   try {
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Calculate net amount
-    const netAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0);
-    
+    const netAmount = memo.freight - (memo.commission || 0) - (memo.mamool || 0) + (memo.detention || 0) + (memo.extra || 0) + (memo.rto || 0);
+
     // Credit Supplier Ledger with net amount (after all deductions)
     try {
       const creditEntry = await LedgerEntry.create({
@@ -155,13 +155,13 @@ export const handleMarketVehicleMemo = async (memo) => {
 export const createBillLedgerEntries = async (bill) => {
   try {
     const LedgerEntry = (await import('../models/LedgerEntry.js')).default;
-    
+
     // Calculate total freight: freight - mamool - commission + detention + rto + extra - tds - penalties
     const totalFreight = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
-    
+
     // Net amount for supplier payment (total freight minus party commission cut)
     const netAmount = totalFreight - (bill.party_commission_cut || 0);
-    
+
     // Debit Party Ledger with total freight (amount receivable from party)
     await LedgerEntry.create({
       referenceId: bill._id.toString(),

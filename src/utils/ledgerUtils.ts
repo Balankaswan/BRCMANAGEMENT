@@ -17,6 +17,7 @@ export interface SupplierOutstandingBalance {
   totalAdvances: number;
   totalCommission: number;
   totalMamul: number;
+  totalRTO: number;
   outstandingAmount: number;
 }
 
@@ -30,30 +31,30 @@ export const calculatePartyBalance = (
 ): OutstandingBalance => {
   // Get all bills for this party
   const partyBills = bills.filter(bill => bill.party === partyName);
-  
+
   // Calculate total bill amounts including detention, extra, RTO minus deductions
   const totalBills = partyBills.reduce((sum, bill) => {
     const netAmount = bill.bill_amount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.mamool || 0) - (bill.penalties || 0) - (bill.tds || 0);
     return sum + netAmount;
   }, 0);
-  
+
   // Get all payments and advances for this party's bills
-  const partyBankingEntries = bankingEntries.filter(entry => 
+  const partyBankingEntries = bankingEntries.filter(entry =>
     (entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
     partyBills.some(bill => bill.bill_number === entry.reference_id)
   );
-  
+
   const totalPayments = partyBankingEntries
     .filter(entry => entry.category === 'bill_payment')
     .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
   const totalAdvances = partyBankingEntries
     .filter(entry => entry.category === 'bill_advance')
     .reduce((sum, entry) => sum + entry.amount, 0);
-  
+
   // Balance = Total Bill Amount – (Payments Received + Advance Received)
   const outstandingAmount = totalBills - (totalPayments + totalAdvances);
-  
+
   return {
     partyName,
     totalBills,
@@ -80,24 +81,25 @@ export const calculateSupplierBalance = (
   const totalExtraWeight = supplierMemos.reduce((sum, memo) => sum + (memo.extra || 0), 0);
   const totalCommission = supplierMemos.reduce((sum, memo) => sum + (memo.commission || 0), 0);
   const totalMamul = supplierMemos.reduce((sum, memo) => sum + (memo.mamool || 0), 0);
-  
+  const totalRTO = supplierMemos.reduce((sum, memo) => sum + (memo.rto || 0), 0);
+
   // Get all advances for this supplier's memos
-  const supplierBankingEntries = bankingEntries.filter(entry => 
+  const supplierBankingEntries = bankingEntries.filter(entry =>
     (entry.category === 'memo_payment' || entry.category === 'memo_advance') &&
     supplierMemos.some(memo => memo.memo_number === entry.reference_id)
   );
-  
+
   const totalPayments = supplierBankingEntries
     .filter(entry => entry.category === 'memo_payment')
     .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
   const totalAdvances = supplierBankingEntries
     .filter(entry => entry.category === 'memo_advance')
     .reduce((sum, entry) => sum + entry.amount, 0);
-  
-  // Correct formula: Balance = Freight - Advance - Commission - Mamul + Extra + Detention
-  const outstandingAmount = totalFreight - totalAdvances - totalCommission - totalMamul + totalExtraWeight + totalDetention;
-  
+
+  // Correct formula: Balance = Freight - Advance - Commission - Mamul + Extra + Detention + RTO
+  const outstandingAmount = totalFreight - totalAdvances - totalCommission - totalMamul + totalExtraWeight + totalDetention + totalRTO;
+
   return {
     supplierName,
     totalMemos: totalFreight,
@@ -107,6 +109,7 @@ export const calculateSupplierBalance = (
     totalAdvances,
     totalCommission,
     totalMamul,
+    totalRTO,
     outstandingAmount
   };
 };
@@ -119,7 +122,7 @@ export const getAllPartyBalances = (
   bankingEntries: BankingEntry[]
 ): OutstandingBalance[] => {
   const parties = Array.from(new Set(bills.map(bill => bill.party)));
-  
+
   return parties.map(party => calculatePartyBalance(party, bills, bankingEntries))
     .sort((a, b) => b.outstandingAmount - a.outstandingAmount);
 };
@@ -140,13 +143,13 @@ export const getAllSupplierBalances = (
       const ls = loadingSlips.find(s => s.id === memo.loading_slip_id);
       const vehicle = vehicles.find(v => v.vehicle_no === ls?.vehicle_no);
       const isOwnVehicle = vehicle?.ownership_type === 'own';
-      
+
       return !isOwnVehicle;
     });
   }
-  
+
   const suppliers = Array.from(new Set(filteredMemos.map(memo => memo.supplier)));
-  
+
   return suppliers.map(supplier => calculateSupplierBalance(supplier, filteredMemos, bankingEntries))
     .sort((a, b) => b.outstandingAmount - a.outstandingAmount);
 };
@@ -173,11 +176,11 @@ export const getPartyLedgerSummary = (
 ) => {
   const balance = calculatePartyBalance(partyName, bills, bankingEntries);
   const partyBills = bills.filter(bill => bill.party === partyName);
-  
+
   return {
     ...balance,
     totalBillCount: partyBills.length,
-    lastBillDate: partyBills.length > 0 ? 
+    lastBillDate: partyBills.length > 0 ?
       Math.max(...partyBills.map(bill => new Date(bill.date).getTime())) : null,
     status: balance.outstandingAmount > 0 ? 'pending' : 'cleared'
   };
@@ -193,11 +196,11 @@ export const getSupplierLedgerSummary = (
 ) => {
   const balance = calculateSupplierBalance(supplierName, memos, bankingEntries);
   const supplierMemos = memos.filter(memo => memo.supplier === supplierName);
-  
+
   return {
     ...balance,
     totalMemoCount: supplierMemos.length,
-    lastMemoDate: supplierMemos.length > 0 ? 
+    lastMemoDate: supplierMemos.length > 0 ?
       Math.max(...supplierMemos.map(memo => new Date(memo.date).getTime())) : null,
     status: balance.outstandingAmount > 0 ? 'pending' : 'cleared'
   };

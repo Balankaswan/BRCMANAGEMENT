@@ -84,7 +84,17 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
       const tripDetails = loadingSlip ? `${loadingSlip.from_location}–${loadingSlip.to_location}/${loadingSlip.vehicle_no}` : '';
 
-      const credit = entry.credit || 0;
+      // Running Balance Formula: FREIGHT-COMMISSION-MAMUL+EXTRA+DETENTION+RTO
+      let credit = entry.credit || 0;
+      if (memo) {
+        credit = (memo.freight || 0) -
+          (memo.commission || 0) -
+          (memo.mamool || 0) +
+          (memo.extra || 0) +
+          (memo.detention || 0) +
+          (memo.rto || 0);
+      }
+
       const debit = entry.debit || 0;
       runningBalance += credit - debit;
 
@@ -103,7 +113,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
         deduction: memo?.deduction || 0,
         netAmount: credit,
         debitPayment: debit,
-        debitAdvance: 0, // Simplified, advance is part of memo net amount
+        debitAdvance: 0,
         runningBalance,
         remarks: entry.description || entry.narration || '',
         showDetails: false,
