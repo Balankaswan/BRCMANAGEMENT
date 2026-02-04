@@ -74,20 +74,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
     const filteredLedger = allLedgerEntries
       .filter(entry => entry.ledger_type === 'supplier' && entry.reference_name === supplierFilter)
-      .sort((a, b) => {
-        // First sort by date
-        const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
-        if (dateDiff !== 0) return dateDiff;
-
-        // If same date, Credit (Memo) entries should come BEFORE Debit (Payment) entries
-        // Check if it's a credit entry (Memo) or debit entry (Payment)
-        const isACredit = (a.credit > 0 || (a.type && ['memo', 'bill'].includes(a.type)));
-        const isBCredit = (b.credit > 0 || (b.type && ['memo', 'bill'].includes(b.type)));
-
-        if (isACredit && !isBCredit) return -1; // A comes first
-        if (!isACredit && isBCredit) return 1;  // B comes first
-        return 0;
-      });
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
     console.log(`📋 Found ${filteredLedger.length} ledger entries for supplier ${supplierFilter}`);
 
@@ -97,17 +84,7 @@ const SupplierLedger: React.FC<SupplierLedgerProps> = ({ selectedSupplier }) => 
 
       const tripDetails = loadingSlip ? `${loadingSlip.from_location}–${loadingSlip.to_location}/${loadingSlip.vehicle_no}` : '';
 
-      // Calculate credit from memo details if available to ensure all fields (RTO, Extra, Detention) are included
-      let credit = entry.credit || 0;
-      if (memo) {
-        credit = (memo.freight || 0) +
-          (memo.detention || 0) +
-          (memo.extra || 0) +
-          (memo.rto || 0) -
-          (memo.commission || 0) -
-          (memo.mamool || 0);
-      }
-
+      const credit = entry.credit || 0;
       const debit = entry.debit || 0;
       runningBalance += credit - debit;
 
