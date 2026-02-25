@@ -545,7 +545,7 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   // Logo (left)
   try {
     const logoPng = await ensurePngDataUrl(COMPANY_LOGO_BASE64);
-    pdf.addImage(logoPng, 'PNG', margin + 4, headerY + 4, 26, 26);
+    pdf.addImage(logoPng, 'PNG', margin + 7, headerY + 4, 26, 26);
   } catch (error) {
     console.warn('Could not add logo to PDF:', error);
   }
@@ -574,35 +574,35 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.setTextColor(40, 40, 40);
   pdf.text('MOB: 9824026576, 9824900776', margin + 5, headerY + 36);
   pdf.text('SUBJECT TO AHMEDABAD JURISDICTION', pageWidth / 2, headerY + 36, { align: 'center' });
+  pdf.text('PAN NO: BNDPK7173D', pageWidth - margin - 5, headerY + 36, { align: 'right' });
 
-  // Right meta box — Bill No / Bill Date / PAN (thin bordered grid)
+  // Right meta box — Bill No / Bill Date (thin bordered grid)
   const metaBoxX = pageWidth - margin - 62;
   const metaBoxW = 60;
   const metaBoxY = headerY + 2;
-  const metaRowH = 9;
+  const metaRowH = 12;
   pdf.setLineWidth(0.3);
   pdf.setDrawColor(180, 180, 180);
-  // Outer rect for 3 rows
-  pdf.rect(metaBoxX, metaBoxY, metaBoxW, metaRowH * 3);
-  // Dividers between rows
+  // Outer rect for 2 rows
+  pdf.rect(metaBoxX, metaBoxY, metaBoxW, metaRowH * 2);
+  // Divider between rows
   pdf.line(metaBoxX, metaBoxY + metaRowH, metaBoxX + metaBoxW, metaBoxY + metaRowH);
-  pdf.line(metaBoxX, metaBoxY + metaRowH * 2, metaBoxX + metaBoxW, metaBoxY + metaRowH * 2);
   // Label / value divider (vertical)
   const metaDivX = metaBoxX + 22;
-  pdf.line(metaDivX, metaBoxY, metaDivX, metaBoxY + metaRowH * 3);
+  pdf.line(metaDivX, metaBoxY, metaDivX, metaBoxY + metaRowH * 2);
 
   const metaRows = [
     ['Bill No', bill.bill_number],
     ['Bill Date', new Date(bill.date).toLocaleDateString('en-GB')],
-    ['PAN', 'BNDPK7173D'],
   ];
   metaRows.forEach(([label, value], i) => {
-    const ry = metaBoxY + i * metaRowH + 6;
-    pdf.setFontSize(7);
+    const ry = metaBoxY + i * metaRowH + 8;
+    pdf.setFontSize(7.5);
     pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(60, 60, 60);
     pdf.text(label, metaBoxX + 2, ry);
-    pdf.setFont('helvetica', 'normal');
+    pdf.setFontSize(8.5);
+    pdf.setFont('helvetica', 'bold');
     pdf.setTextColor(0, 0, 0);
     pdf.text(value, metaBoxX + metaBoxW - 2, ry, { align: 'right' });
   });
