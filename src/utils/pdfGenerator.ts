@@ -169,16 +169,16 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
   pdf.setLineWidth(0.5);
 
   // Calculate total advances from banking and cashbook entries (actual advances paid)
-  const bankingAdvances = bankingEntries 
+  const bankingAdvances = bankingEntries
     ? bankingEntries.filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
-        .reduce((sum, e) => sum + e.amount, 0)
+      .reduce((sum, e) => sum + e.amount, 0)
     : 0;
-  
-  const cashbookAdvances = cashbookEntries 
+
+  const cashbookAdvances = cashbookEntries
     ? cashbookEntries.filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
-        .reduce((sum, e) => sum + e.amount, 0)
+      .reduce((sum, e) => sum + e.amount, 0)
     : 0;
-    
+
   const totalAdvances = bankingAdvances + cashbookAdvances || memo.advance_payments?.reduce((sum, adv) => sum + adv.amount, 0) || 0;
 
   // Financial table - matching image style with proper borders
@@ -222,27 +222,27 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
   pdf.setTextColor(255, 255, 255);
   pdf.text('ADVANCE DETAILS', 15, advanceY);
   pdf.setTextColor(0, 0, 0);
-  
+
   let currentAdvanceY = advanceY;
-  
+
   // Get actual advance payments from both banking and cashbook entries
-  const bankingAdvancePayments = bankingEntries 
-    ? bankingEntries.filter(e => 
-        (e.category === 'memo_advance' || e.category === 'memo_payment') && 
-        e.reference_id === memo.memo_number
-      ).map(e => ({ ...e, source: 'BANK' }))
+  const bankingAdvancePayments = bankingEntries
+    ? bankingEntries.filter(e =>
+      (e.category === 'memo_advance' || e.category === 'memo_payment') &&
+      e.reference_id === memo.memo_number
+    ).map(e => ({ ...e, source: 'BANK' }))
     : [];
-    
-  const cashbookAdvancePayments = cashbookEntries 
-    ? cashbookEntries.filter(e => 
-        (e.category === 'memo_advance' || e.category === 'memo_payment') && 
-        e.reference_id === memo.memo_number
-      ).map(e => ({ ...e, source: 'CASH' }))
+
+  const cashbookAdvancePayments = cashbookEntries
+    ? cashbookEntries.filter(e =>
+      (e.category === 'memo_advance' || e.category === 'memo_payment') &&
+      e.reference_id === memo.memo_number
+    ).map(e => ({ ...e, source: 'CASH' }))
     : [];
-  
+
   const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  
+
   // Display advance payments if any exist
   if (allAdvancePayments.length > 0) {
     pdf.setFontSize(8);
@@ -337,7 +337,7 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   pdf.setDrawColor(0, 0, 0);
   pdf.setTextColor(0, 0, 0);
   pdf.rect(10, 77, pageWidth - 20, 15);
-  
+
   pdf.setFontSize(9);
   pdf.setFont('helvetica', 'normal');
   pdf.text(`Loading Slip No: ${loadingSlip.slip_number}`, 15, 83);
@@ -361,7 +361,7 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   pdf.setLineWidth(0.5);
   pdf.setDrawColor(0, 0, 0);
   pdf.setTextColor(0, 0, 0);
-  
+
   // Draw table borders
   pdf.rect(10, transportY, (pageWidth - 20) / 2, 15);
   pdf.rect(10 + (pageWidth - 20) / 2, transportY, (pageWidth - 20) / 2, 15);
@@ -403,10 +403,10 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   // Financial table - exact layout matching image
   const financeTableY = financialY + 15;
   const rowHeight = 7;
-  
+
   // Calculate balance using correct formula: BALANCE = FREIGHT - ADVANCE + RTO
   const calculatedBalance = (loadingSlip.freight || 0) - (loadingSlip.advance || 0) + (loadingSlip.rto || 0);
-  
+
   const financialData = [
     ['Freight Amount:', formatCurrencyForPDF(loadingSlip.freight)],
     ['Advance Amount:', formatCurrencyForPDF(loadingSlip.advance)],
@@ -416,14 +416,14 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
 
   pdf.setFontSize(9);
   pdf.setTextColor(0, 0, 0);
-  
+
   financialData.forEach((row, index) => {
     const rowY = financeTableY + (index * rowHeight);
-    
+
     // Draw full width row
     pdf.setLineWidth(0.5);
     pdf.rect(10, rowY, pageWidth - 20, rowHeight);
-    
+
     // Add text
     pdf.setFont('helvetica', 'normal');
     pdf.text(row[0], 15, rowY + 5);
@@ -446,22 +446,22 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   pdf.setFontSize(9);
   pdf.setTextColor(0, 0, 0);
   pdf.setFont('helvetica', 'bold');
-  
+
   const bankDetailsY = bankY + 15;
   pdf.text('Beneficiary Name:', 15, bankDetailsY);
   pdf.setFont('helvetica', 'normal');
   pdf.text('BHAVISHYA ROAD CARRIERS', 80, bankDetailsY);
-  
+
   pdf.setFont('helvetica', 'bold');
   pdf.text('Account No:', 15, bankDetailsY + 6);
   pdf.setFont('helvetica', 'normal');
   pdf.text('231005501207', 80, bankDetailsY + 6);
-  
+
   pdf.setFont('helvetica', 'bold');
   pdf.text('IFSC Code:', 15, bankDetailsY + 12);
   pdf.setFont('helvetica', 'normal');
   pdf.text('ICIC0002310', 80, bankDetailsY + 12);
-  
+
   pdf.setFont('helvetica', 'bold');
   pdf.text('Branch:', 15, bankDetailsY + 18);
   pdf.setFont('helvetica', 'normal');
@@ -489,14 +489,14 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   // Signature section - only authorized signatory
   const signatureY = Math.min(termsY + 25, pageHeight - 50); // Ensure enough space from bottom
   pdf.setLineWidth(0.5);
-  
+
   // Single signature line for authorized signatory only
   pdf.line(pageWidth - 85, signatureY, pageWidth - 15, signatureY);
 
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'normal');
   pdf.text('AUTHORISED SIGNATORY', pageWidth - 50, signatureY + 5, { align: 'center' });
-  
+
   pdf.setFont('helvetica', 'bold');
   pdf.text('FOR BHAVISHYA ROAD CARRIERS', pageWidth - 50, signatureY + 10, { align: 'center' });
 
@@ -512,240 +512,332 @@ export const generateLoadingSlipPDF = async (loadingSlip: LoadingSlip): Promise<
   pdf.save(filename);
 };
 
-// Generate Professional Bill PDF - Exact format matching user's requirement
+// Generate Professional Bill PDF - Redesigned for visual clarity and professionalism
 export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bankingEntries?: any[], cashbookEntries?: any[]) => {
   const pdf = new jsPDF('l', 'mm', 'a4'); // Landscape orientation
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 20;
+  const pageWidth = pdf.internal.pageSize.getWidth();   // ~297mm
+  const pageHeight = pdf.internal.pageSize.getHeight(); // ~210mm
+  const margin = 12;
+  const contentWidth = pageWidth - (2 * margin);
 
-  // Header with date and bill number - moved up
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(0, 0, 0);
-  pdf.text(`${new Date(bill.date).toLocaleDateString('en-GB')}, ${new Date(bill.date).toLocaleTimeString('en-GB', { hour12: false })}`, margin, 10); // Moved up from 15 to 10
-  pdf.text(`Bill - ${bill.bill_number}`, pageWidth - margin, 10, { align: 'right' }); // Moved up from 15 to 10
+  // ─────────────────────────────────────────────
+  // HEADER: Three-section layout
+  // ─────────────────────────────────────────────
 
-  // Company header box - moved up
-  pdf.setLineWidth(0.5);
+  // Outer header box
+  pdf.setLineWidth(1.2);
   pdf.setDrawColor(0, 0, 0);
-  pdf.rect(margin, 15, pageWidth - (2 * margin), 45); // Kept at 15 to avoid overlap with header text
+  pdf.rect(margin, margin, contentWidth, 42);
 
-  // Logo
+  // Logo (left panel)
   try {
     const logoPng = await ensurePngDataUrl(COMPANY_LOGO_BASE64);
-    pdf.addImage(logoPng, 'PNG', margin + 5, 20, 20, 20);
+    pdf.addImage(logoPng, 'PNG', margin + 3, margin + 3, 28, 28);
   } catch (error) {
     console.warn('Could not add logo to PDF:', error);
   }
 
-  // Company name and details
-  pdf.setFontSize(16);
+  // Centre panel — Company name + tagline
+  pdf.setFontSize(19);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(0, 102, 204);
-  pdf.text('BHAVISHYA ROAD CARRIERS', pageWidth / 2, 25, { align: 'center' }); // Moved up from 35 to 25
-  
-  pdf.setFontSize(9);
+  pdf.setTextColor(0, 70, 160);
+  pdf.text('BHAVISHYA ROAD CARRIERS', pageWidth / 2, margin + 12, { align: 'center' });
+
+  pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(0, 0, 0);
-  pdf.text('Specialist in Heavy ODC, Hydraulic, Low Bed Trailer, Flat Bed Trailer Transport & Commission Agent', pageWidth / 2, 32, { align: 'center' }); // Moved up from 42 to 32
-  pdf.text('FLEET OWNERS, TRANSPORT CONTRACTORS & COMMISSION AGENTS', pageWidth / 2, 37, { align: 'center' }); // Moved up from 47 to 37
-  pdf.text('404, Parijaat Business Center, Nr. SP Ring Road, Aslali, Ahmedabad - 382405', pageWidth / 2, 42, { align: 'center' }); // Moved up from 52 to 42
-  pdf.text('(SUBJECT TO AHMEDABAD JURISDICTION)', pageWidth / 2, 47, { align: 'center' }); // Moved up from 57 to 47
+  pdf.setTextColor(60, 60, 60);
+  pdf.text('Specialist in Heavy ODC, Hydraulic, Low Bed Trailer, Flat Bed Trailer Transport & Commission Agent', pageWidth / 2, margin + 18, { align: 'center' });
+  pdf.text('FLEET OWNERS, TRANSPORT CONTRACTORS & COMMISSION AGENTS', pageWidth / 2, margin + 23, { align: 'center' });
+  pdf.text('404, Parijaat Business Center, Nr. SP Ring Road, Aslali, Ahmedabad - 382405', pageWidth / 2, margin + 28, { align: 'center' });
 
-  // MOB and PAN section - moved up
-  pdf.setFontSize(10);
-  pdf.setFont('helvetica', 'normal');
-  pdf.text(`MOB:9824026576, 9824900776`, margin, 55); // Moved up from 65 to 55
-  pdf.text(`PAN NO: BNDPK7173D`, pageWidth - margin, 55, { align: 'right' }); // Moved up from 65 to 55
-
-  // Party details - moved up
-  pdf.text(`M/S: ${bill.party.toUpperCase()}`, margin, 65); // Moved up from 75 to 65
-  pdf.text(`BILL NO: ${bill.bill_number}`, pageWidth - margin, 65, { align: 'right' }); // Moved up from 75 to 65
-  
-  // Address section below M/S
-  pdf.text(`ADDRESS:`, margin, 72);
-  pdf.text(`BILL DATE: ${new Date(bill.date).toLocaleDateString('en-GB')}`, pageWidth - margin, 72, { align: 'right' }); // Moved up from 82 to 72
-
-  // Table setup - adjusted for address section
-  const tableY = 85; // Kept same position
-  const rowHeight = 12;
-  const colWidths = [15, 23, 24, 24, 22, 13, 22, 22, 22, 20, 22, 20]; // Total = 257mm
-  let colX = [margin];
-  for (let i = 1; i < colWidths.length; i++) {
-    colX[i] = colX[i-1] + colWidths[i-1];
-  }
-
-  const headers = ['CN NO', 'LOADING DT', 'FROM', 'TO', 'TRAILOR NO', 'WT', 'FREIGHT', 'RTO', 'DETENTION', 'EXTRA','ADVANCE', 'BALANCE'];
-
-  // Draw table header
-  pdf.setFillColor(240, 240, 240);
-  pdf.rect(margin, tableY, pageWidth - (2 * margin), rowHeight, 'F');
+  // Divider line inside header
   pdf.setLineWidth(0.3);
-  pdf.rect(margin, tableY, pageWidth - (2 * margin), rowHeight);
+  pdf.setDrawColor(180, 180, 180);
+  pdf.line(margin + 1, margin + 32, margin + contentWidth - 1, margin + 32);
 
-  // Header text
+  // Bottom row of header — MOB left, tagline centre, PAN right
+  pdf.setFontSize(7.5);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(40, 40, 40);
+  pdf.text('MOB: 9824026576, 9824900776', margin + 5, margin + 38);
+  pdf.text('SUBJECT TO AHMEDABAD JURISDICTION', pageWidth / 2, margin + 38, { align: 'center' });
+  pdf.text('PAN NO: BNDPK7173D', pageWidth - margin - 5, margin + 38, { align: 'right' });
+
+  // Right panel — Bill metadata (inside header, right-aligned block)
+  const metaX = pageWidth - margin - 68;
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
-  headers.forEach((header, index) => {
-    if (index < colX.length) {
-      pdf.text(header, colX[index] + 2, tableY + 8);
-      // Vertical lines
-      if (index > 0) {
-        pdf.line(colX[index], tableY, colX[index], tableY + rowHeight);
-      }
-    }
-  });
+  pdf.setTextColor(0, 0, 0);
+  pdf.text(`BILL NO: ${bill.bill_number}`, pageWidth - margin - 5, margin + 7, { align: 'right' });
+  pdf.text(`BILL DATE: ${new Date(bill.date).toLocaleDateString('en-GB')}`, pageWidth - margin - 5, margin + 14, { align: 'right' });
+  pdf.text('PAN: BNDPK7173D', pageWidth - margin - 5, margin + 21, { align: 'right' });
+  void metaX; // suppress unused warning
 
-  // Table data row
-  const dataY = tableY + rowHeight;
-  pdf.rect(margin, dataY, pageWidth - (2 * margin), rowHeight);
-  
+  // ─────────────────────────────────────────────
+  // BILL TO section
+  // ─────────────────────────────────────────────
+  const billToY = margin + 46;
+  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(margin, billToY, contentWidth, 14);
+
+  pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8);
-  
-  // Data from loading slip and bill
-  // Calculate advances from banking and cashbook entries (same logic as Bills component)
-  const bankingAdvances = bankingEntries 
-    ? bankingEntries.filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
-        .reduce((sum, e) => sum + e.amount, 0)
-    : 0;
-  
-  const cashbookAdvances = cashbookEntries 
-    ? cashbookEntries.filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
-        .reduce((sum, e) => sum + e.amount, 0)
-    : 0;
-    
-  const totalAdvance = bankingAdvances + cashbookAdvances;
-  const detention = bill.detention || 0;
-  const extra = bill.extra || 0;  
-  const rto = bill.rto || 0;
-  // Original freight amount (not including detention, extra, or RTO)
-  const originalFreight = bill.bill_amount || 0;
-  // Total freight for balance calculation
-  const totalFreight = originalFreight + detention + extra + rto;
-  // BALANCE = TOTAL FREIGHT - ADVANCE - MAMOOL - PENALTIES - TDS (excluding party commission cut from display)
-  const balance = totalFreight - totalAdvance - (bill.mamool || 0) - (bill.penalties || 0) - (bill.tds || 0);
-  
-  const rowData = [
-    loadingSlip.slip_number || bill.bill_number,
-    new Date(loadingSlip.date || bill.date).toLocaleDateString('en-GB'),
-    (loadingSlip.from_location || 'N/A').substring(0, 8),
-    (loadingSlip.to_location || 'N/A').substring(0, 8),
-    loadingSlip.vehicle_no || 'N/A',
-    `${loadingSlip.weight || 0}MT`,
-    formatCurrencyForPDF(originalFreight).replace('Rs. ', ''), // Show original freight only
-    formatCurrencyForPDF(rto).replace('Rs. ', ''),
-    formatCurrencyForPDF(detention).replace('Rs. ', ''),
-    formatCurrencyForPDF(extra).replace('Rs. ', ''),
-    formatCurrencyForPDF(totalAdvance).replace('Rs. ', ''),
-    formatCurrencyForPDF(balance).replace('Rs. ', '')
+  pdf.setTextColor(80, 80, 80);
+  pdf.text('BILL TO:', margin + 4, billToY + 5);
+
+  pdf.setFontSize(10);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(0, 0, 0);
+  pdf.text(`M/S ${bill.party.toUpperCase()}`, margin + 22, billToY + 5);
+
+  pdf.setFontSize(7.5);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(80, 80, 80);
+  pdf.text('ADDRESS: AHMEDABAD', margin + 22, billToY + 10);
+
+  // ─────────────────────────────────────────────
+  // MAIN BILL TABLE
+  // ─────────────────────────────────────────────
+  const tableY = billToY + 18;
+  const rowHeight = 11;
+
+  // Column definitions [label, width, align]
+  const columns: Array<{ header: string; width: number; align: 'left' | 'center' | 'right' }> = [
+    { header: 'CN NO', width: 15, align: 'left' },
+    { header: 'LOADING DT', width: 22, align: 'center' },
+    { header: 'FROM', width: 24, align: 'left' },
+    { header: 'TO', width: 24, align: 'left' },
+    { header: 'TRAILOR NO', width: 22, align: 'left' },
+    { header: 'WT', width: 13, align: 'center' },
+    { header: 'FREIGHT', width: 24, align: 'right' },
+    { header: 'RTO', width: 20, align: 'right' },
+    { header: 'DETENTION', width: 22, align: 'right' },
+    { header: 'EXTRA', width: 20, align: 'right' },
+    { header: 'ADVANCE', width: 24, align: 'right' },
+    { header: 'BALANCE', width: 23, align: 'right' },
   ];
 
-  rowData.forEach((data, index) => {
-    if (index < colX.length) {
-      pdf.text(data, colX[index] + 2, dataY + 8);
-      // Vertical lines
-      if (index > 0) {
-        pdf.line(colX[index], dataY, colX[index], dataY + rowHeight);
-      }
-    }
-  });
+  // Build colX array
+  const colX: number[] = [margin];
+  for (let i = 1; i < columns.length; i++) {
+    colX[i] = colX[i - 1] + columns[i - 1].width;
+  }
+  const tableWidth = columns.reduce((s, c) => s + c.width, 0);
 
-  // Total row
-  const totalY = dataY + rowHeight;
-  pdf.rect(margin, totalY, pageWidth - (2 * margin), rowHeight);
+  // Helper: draw a text cell
+  const drawCell = (text: string, x: number, y: number, w: number, align: 'left' | 'center' | 'right', padV: number = 7) => {
+    let tx: number;
+    let opts: { align: 'left' | 'center' | 'right' };
+    if (align === 'right') {
+      tx = x + w - 2;
+      opts = { align: 'right' };
+    } else if (align === 'center') {
+      tx = x + w / 2;
+      opts = { align: 'center' };
+    } else {
+      tx = x + 2;
+      opts = { align: 'left' };
+    }
+    pdf.text(text, tx, y + padV, opts);
+  };
+
+  // Draw vertical grid lines for a row
+  const drawVerticals = (y: number, h: number) => {
+    pdf.setLineWidth(0.2);
+    pdf.setDrawColor(160, 160, 160);
+    columns.forEach((_, i) => {
+      if (i > 0) pdf.line(colX[i], y, colX[i], y + h);
+    });
+  };
+
+  // ── Header row ──
+  pdf.setFillColor(230, 235, 245);
+  pdf.rect(margin, tableY, tableWidth, rowHeight, 'F');
+  // Outer border (thick)
+  pdf.setLineWidth(1.0);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(margin, tableY, tableWidth, rowHeight);
+
+  pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'bold');
-  pdf.text('TOTAL', margin + 5, totalY + 8);
-  pdf.text(formatCurrencyForPDF(originalFreight).replace('Rs. ', ''), colX[6] + 2, totalY + 8); // Show original freight only
-  pdf.text(formatCurrencyForPDF(totalAdvance).replace('Rs. ', ''), colX[10] + 2, totalY + 8);
-  pdf.text(formatCurrencyForPDF(balance).replace('Rs. ', ''), colX[11] + 2, totalY + 8);
+  pdf.setTextColor(20, 20, 80);
+  columns.forEach((col, i) => drawCell(col.header, colX[i], tableY, col.width, col.align));
+  drawVerticals(tableY, rowHeight);
 
-  // Vertical lines for total row
-  colX.forEach((x, index) => {
-    if (index > 0) {
-      pdf.line(x, totalY, x, totalY + rowHeight);
-    }
-  });
+  // ── Calculate financial data ──
+  const bankingAdvances = bankingEntries
+    ? bankingEntries.filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
+      .reduce((sum, e) => sum + e.amount, 0)
+    : 0;
+  const cashbookAdvances = cashbookEntries
+    ? cashbookEntries.filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === bill.bill_number)
+      .reduce((sum, e) => sum + e.amount, 0)
+    : 0;
+  const totalAdvance = bankingAdvances + cashbookAdvances;
+  const detention = bill.detention || 0;
+  const extra = bill.extra || 0;
+  const rto = bill.rto || 0;
+  const originalFreight = bill.bill_amount || 0;
+  const totalFreight = originalFreight + detention + extra + rto;
+  const balance = totalFreight - totalAdvance - (bill.mamool || 0) - (bill.penalties || 0) - (bill.tds || 0);
 
-  // Advance Details Section (if any advances exist)
-  let advanceY = totalY + 20; // Increased spacing between main table and advance details
-  
-  // Get actual advance payments from both banking and cashbook entries
-  const bankingAdvancePayments = bankingEntries 
-    ? bankingEntries.filter(e => 
-        (e.category === 'bill_advance' || e.category === 'bill_payment') && 
-        e.reference_id === bill.bill_number
-      ).map(e => ({ ...e, source: 'BANK' }))
+  const fmt = (v: number) => v === 0 ? '-' : v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const rowValues = [
+    loadingSlip.slip_number || bill.bill_number,
+    new Date(loadingSlip.date || bill.date).toLocaleDateString('en-GB'),
+    (loadingSlip.from_location || 'N/A').substring(0, 9),
+    (loadingSlip.to_location || 'N/A').substring(0, 9),
+    loadingSlip.vehicle_no || 'N/A',
+    `${loadingSlip.weight || 0} MT`,
+    fmt(originalFreight),
+    fmt(rto),
+    fmt(detention),
+    fmt(extra),
+    fmt(totalAdvance),
+    fmt(balance),
+  ];
+
+  // ── Data row ──
+  const dataY = tableY + rowHeight;
+  pdf.setLineWidth(0.4);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(margin, dataY, tableWidth, rowHeight);
+  pdf.setFontSize(8);
+  pdf.setFont('helvetica', 'normal');
+  pdf.setTextColor(0, 0, 0);
+  columns.forEach((col, i) => drawCell(rowValues[i], colX[i], dataY, col.width, col.align));
+  drawVerticals(dataY, rowHeight);
+
+  // ── Total row ──
+  const totalRowY = dataY + rowHeight;
+  pdf.setFillColor(245, 245, 248);
+  pdf.rect(margin, totalRowY, tableWidth, rowHeight, 'F');
+  pdf.setLineWidth(1.0);
+  pdf.setDrawColor(0, 0, 0);
+  // Thick top line for total row
+  pdf.setLineWidth(0.8);
+  pdf.line(margin, totalRowY, margin + tableWidth, totalRowY);
+  pdf.rect(margin, totalRowY, tableWidth, rowHeight);
+  pdf.setFontSize(8.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(0, 0, 0);
+  pdf.text('TOTAL', colX[0] + 2, totalRowY + 7);
+  drawCell(fmt(originalFreight), colX[6], totalRowY, columns[6].width, 'right');
+  drawCell(fmt(totalAdvance), colX[10], totalRowY, columns[10].width, 'right');
+  drawCell(fmt(balance), colX[11], totalRowY, columns[11].width, 'right');
+  drawVerticals(totalRowY, rowHeight);
+
+  // ─────────────────────────────────────────────
+  // ADVANCE DETAILS — lightly bordered box
+  // ─────────────────────────────────────────────
+  const bankingAdvancePayments = bankingEntries
+    ? bankingEntries.filter(e =>
+      (e.category === 'bill_advance' || e.category === 'bill_payment') &&
+      e.reference_id === bill.bill_number
+    ).map(e => ({ ...e, source: 'BANK' }))
     : [];
-    
-  const cashbookAdvancePayments = cashbookEntries 
-    ? cashbookEntries.filter(e => 
-        (e.category === 'bill_advance' || e.category === 'bill_payment') && 
-        e.reference_id === bill.bill_number
-      ).map(e => ({ ...e, source: 'CASH' }))
+  const cashbookAdvancePayments = cashbookEntries
+    ? cashbookEntries.filter(e =>
+      (e.category === 'bill_advance' || e.category === 'bill_payment') &&
+      e.reference_id === bill.bill_number
+    ).map(e => ({ ...e, source: 'CASH' }))
     : [];
-  
   const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments];
-  
+
+  let currentY = totalRowY + rowHeight + 5;
+
   if (allAdvancePayments.length > 0) {
+    const advBoxHeight = 7 + allAdvancePayments.length * 5 + 4;
+    pdf.setLineWidth(0.4);
+    pdf.setDrawColor(160, 160, 160);
+    pdf.setFillColor(252, 252, 252);
+    pdf.rect(margin, currentY, tableWidth, advBoxHeight, 'FD');
+
+    pdf.setFontSize(7.5);
     pdf.setFont('helvetica', 'bold');
-    pdf.setFontSize(8); // Reduced from 9 to 8
-    pdf.text('ADVANCE DETAILS:', margin, advanceY);
-    
+    pdf.setTextColor(40, 40, 40);
+    pdf.text('ADVANCE DETAILS:', margin + 3, currentY + 5);
+
     pdf.setFont('helvetica', 'normal');
-    pdf.setFontSize(7); // Reduced from 8 to 7
+    pdf.setFontSize(7);
+    pdf.setTextColor(50, 50, 50);
     allAdvancePayments.forEach((payment, index) => {
-      advanceY += 5; // Reduced from 6 to 5
+      const py = currentY + 5 + (index + 1) * 5;
       const paymentDate = new Date(payment.date).toLocaleDateString('en-GB');
       const paymentAmount = formatCurrencyForPDF(payment.amount);
       const paymentMode = payment.source || 'CASH';
-      pdf.text(`${index + 1}. Date: ${paymentDate} - Amount: ${paymentAmount} - Mode: ${paymentMode}`, margin, advanceY);
+      pdf.text(`• ${index + 1}. Date: ${paymentDate}   Amount: ${paymentAmount}   Mode: ${paymentMode}`, margin + 5, py);
     });
-    advanceY += 3; // Reduced from 5 to 3
+
+    currentY += advBoxHeight + 5;
   }
 
-  // Combined Bank Details and Signature section (full width)
-  let bankY = advanceY > 0 ? advanceY + 8 : totalY + 20; // Back to original spacing since bank details were perfect
-  const boxHeight = 35;
-  
-  pdf.rect(margin, bankY, pageWidth - (2 * margin), boxHeight);
-  
-  // No divider line - remove the vertical separator
+  // ─────────────────────────────────────────────
+  // BANK DETAILS & SIGNATURE — two-column layout
+  // ─────────────────────────────────────────────
+  const boxHeight = 36;
+  const halfContent = tableWidth / 2;
 
-  // Left side - Bank Details
+  pdf.setLineWidth(0.5);
+  pdf.setDrawColor(0, 0, 0);
+  pdf.rect(margin, currentY, tableWidth, boxHeight);
+
+  // Vertical divider between columns
+  pdf.setLineWidth(0.3);
+  pdf.setDrawColor(160, 160, 160);
+  pdf.line(margin + halfContent, currentY, margin + halfContent, currentY + boxHeight);
+
+  // Left — Bank Details
+  pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(9);
-  pdf.text('BANK DETAILS', margin + 5, bankY + 6);
-  
-  pdf.setFont('helvetica', 'normal');
-  pdf.setFontSize(8);
-  pdf.text('BENEFICIARY NAME: BHAVISHYA ROAD CARRIERS', margin + 5, bankY + 12);
-  pdf.text('ACCOUNT NO: 231005501207', margin + 5, bankY + 18);
-  pdf.text('IFSC CODE: ICIC0002310', margin + 5, bankY + 24);
-  pdf.text('BRANCH NAME: GHODASAR, AHMEDABAD', margin + 5, bankY + 30);
+  pdf.setTextColor(0, 40, 120);
+  pdf.text('BANK DETAILS', margin + 5, currentY + 7);
 
-  // Right side - Signature
-  const sigX = pageWidth - 80;
-  
-  // Add signature image (only if signature base64 is provided)
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(7.5);
+  pdf.setTextColor(30, 30, 30);
+  pdf.text('Beneficiary Name : BHAVISHYA ROAD CARRIERS', margin + 5, currentY + 14);
+  pdf.text('Account No       : 231005501207', margin + 5, currentY + 20);
+  pdf.text('IFSC Code        : ICIC0002310', margin + 5, currentY + 26);
+  pdf.text('Branch           : GHODASAR, AHMEDABAD', margin + 5, currentY + 32);
+
+  // Right — Signature
+  const sigLeft = margin + halfContent + 5;
+  const sigRight = margin + tableWidth - 5;
+
   if (SIGNATURE_BASE64 && SIGNATURE_BASE64.trim() !== '') {
     try {
       const signaturePng = await ensurePngDataUrl(SIGNATURE_BASE64);
-      pdf.addImage(signaturePng, 'PNG', sigX - 10, bankY + 8, 40, 15); // Signature image above text
+      pdf.addImage(signaturePng, 'PNG', sigLeft, currentY + 5, 40, 14);
     } catch (error) {
       console.warn('Could not add signature to PDF:', error);
     }
   }
-  
-  pdf.setFont('helvetica', 'bold');
-  pdf.setFontSize(9);
-  pdf.text('FOR, BHAVISHYA ROAD CARRIERS', sigX, bankY + 15);
-  pdf.text('AUTHORISED SIGNATORY', sigX, bankY + 25);
 
+  pdf.setFontSize(8.5);
+  pdf.setFont('helvetica', 'bold');
+  pdf.setTextColor(0, 0, 0);
+  pdf.text('FOR, BHAVISHYA ROAD CARRIERS', sigRight, currentY + 20, { align: 'right' });
+
+  // Signature line
+  pdf.setLineWidth(0.4);
+  pdf.setDrawColor(80, 80, 80);
+  pdf.line(sigLeft, currentY + 28, sigRight, currentY + 28);
+
+  pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'normal');
-  pdf.setTextColor(128, 128, 128);
-  pdf.text('GENERATED BY BHAVISHYA ROAD CARRIERS SYSTEM', pageWidth / 2, pageHeight - 10, { align: 'center' });
+  pdf.setTextColor(60, 60, 60);
+  pdf.text('Authorised Signatory', (sigLeft + sigRight) / 2, currentY + 33, { align: 'center' });
+
+  // ─────────────────────────────────────────────
+  // FOOTER — minimal, light grey
+  // ─────────────────────────────────────────────
+  pdf.setFontSize(6.5);
+  pdf.setFont('helvetica', 'italic');
+  pdf.setTextColor(160, 160, 160);
+  pdf.text('This is a system-generated document. No signature required if digitally authorised.', pageWidth / 2, pageHeight - 6, { align: 'center' });
 
   // Save the PDF
   const filename = `Bill_${bill.bill_number}_${bill.party.replace(/[^a-zA-Z0-9]/g, '_')}.pdf`;
@@ -758,33 +850,33 @@ export const generatePDFFromHTML = async (elementId: string, filename: string): 
   if (!element) {
     throw new Error(`Element with id "${elementId}" not found`);
   }
-  
+
   const html2canvas = (await import('html2canvas')).default;
   const canvas = await html2canvas(element, {
     scale: 2,
     useCORS: true,
     allowTaint: true
   });
-  
+
   const imgData = canvas.toDataURL('image/png');
   const pdf = new jsPDF('p', 'mm', 'a4');
   const imgWidth = 210;
   const pageHeight = 295;
   const imgHeight = (canvas.height * imgWidth) / canvas.width;
   let heightLeft = imgHeight;
-  
+
   let position = 0;
-  
+
   pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
   heightLeft -= pageHeight;
-  
+
   while (heightLeft >= 0) {
     position = heightLeft - imgHeight;
     pdf.addPage();
     pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
     heightLeft -= pageHeight;
   }
-  
+
   pdf.save(filename);
 };
 
@@ -850,7 +942,7 @@ export const generatePartyCommissionLedgerPDF = async (entries: any[], summary: 
   pdf.setFontSize(10);
   pdf.setFont('helvetica', 'bold');
   pdf.text('SUMMARY', 15, currentY + 6);
-  
+
   pdf.setFont('helvetica', 'normal');
   pdf.setFontSize(8);
   pdf.text(`Total Credits: ${formatCurrencyForPDF(summary.totalCredits)}`, 15, currentY + 12);
@@ -864,7 +956,7 @@ export const generatePartyCommissionLedgerPDF = async (entries: any[], summary: 
   const colWidths = [25, 30, 70, 25, 25, 25];
   let colX = [15];
   for (let i = 1; i < colWidths.length; i++) {
-    colX[i] = colX[i-1] + colWidths[i-1];
+    colX[i] = colX[i - 1] + colWidths[i - 1];
   }
 
   pdf.setFillColor(52, 144, 220);
@@ -872,7 +964,7 @@ export const generatePartyCommissionLedgerPDF = async (entries: any[], summary: 
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(255, 255, 255);
-  
+
   tableHeaders.forEach((header, index) => {
     const align = index >= 3 ? 'right' : 'left';
     const x = align === 'right' ? colX[index] + colWidths[index] - 2 : colX[index] + 2;
