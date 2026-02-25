@@ -538,8 +538,8 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   // ─────────────────────────────────────────────
   const headerY = 12;
   const headerH = 40;
-  pdf.setLineWidth(0.5);
-  pdf.setDrawColor(0, 0, 0);
+  pdf.setLineWidth(0.3);
+  pdf.setDrawColor(180, 180, 180);
   pdf.rect(margin, headerY, contentWidth, headerH);
 
   // Logo (left)
@@ -580,8 +580,8 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   const metaBoxW = 60;
   const metaBoxY = headerY + 2;
   const metaRowH = 9;
-  pdf.setLineWidth(0.4);
-  pdf.setDrawColor(0, 0, 0);
+  pdf.setLineWidth(0.3);
+  pdf.setDrawColor(180, 180, 180);
   // Outer rect for 3 rows
   pdf.rect(metaBoxX, metaBoxY, metaBoxW, metaRowH * 3);
   // Dividers between rows
@@ -669,25 +669,25 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
 
   // Helper — vertical grid lines (thin grey)
   const drawVerticals = (y: number, h: number) => {
-    pdf.setLineWidth(0.3);
-    pdf.setDrawColor(160, 160, 160);
+    pdf.setLineWidth(0.2);
+    pdf.setDrawColor(180, 180, 180);
     columns.forEach((_, i) => { if (i > 0) pdf.line(colX[i], y, colX[i], y + h); });
   };
 
-  // Helper — draw full-width row border (thin)
+  // Helper — draw full-width row border (thin light grey)
   const drawRowRect = (y: number, h: number) => {
-    pdf.setLineWidth(0.5);
-    pdf.setDrawColor(0, 0, 0);
+    pdf.setLineWidth(0.3);
+    pdf.setDrawColor(180, 180, 180);
     pdf.rect(margin, y, tableWidth, h);
   };
 
-  // ── Header row ──
-  pdf.setFillColor(235, 238, 248);
+  // ── Header row — subtle grey fill ──
+  pdf.setFillColor(240, 240, 240);
   pdf.rect(margin, tableY, tableWidth, rowHeight, 'F');
   drawRowRect(tableY, rowHeight);
   pdf.setFontSize(7.5);
   pdf.setFont('helvetica', 'bold');
-  pdf.setTextColor(20, 20, 60);
+  pdf.setTextColor(0, 0, 0);
   columns.forEach((col, i) => drawCell(col.header, colX[i], tableY, col.width, col.align));
   drawVerticals(tableY, rowHeight);
 
@@ -734,10 +734,8 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   columns.forEach((col, i) => drawCell(rowValues[i], colX[i], dataY, col.width, col.align));
   drawVerticals(dataY, rowHeight);
 
-  // ── Total row ──
+  // ── Total row — no fill, just bold text ──
   const totalRowY = dataY + rowHeight;
-  pdf.setFillColor(245, 245, 245);
-  pdf.rect(margin, totalRowY, tableWidth, rowHeight, 'F');
   drawRowRect(totalRowY, rowHeight);
   pdf.setFontSize(8);
   pdf.setFont('helvetica', 'bold');
@@ -770,10 +768,10 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   const advBoxW = tableWidth - summaryBoxW - 4;  // left advance panel width
   const midSectionH = Math.max(24, 10 + allAdvancePayments.length * 5 + 4);
 
-  // Left — Advance details box
-  pdf.setLineWidth(0.4);
-  pdf.setDrawColor(160, 160, 160);
-  pdf.setFillColor(252, 252, 252);
+  // Left — Advance details box (light grey border)
+  pdf.setLineWidth(0.3);
+  pdf.setDrawColor(180, 180, 180);
+  pdf.setFillColor(255, 255, 255);
   pdf.rect(margin, midSectionY, advBoxW, midSectionH, 'FD');
 
   pdf.setFontSize(7.5);
@@ -794,11 +792,11 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
     });
   }
 
-  // Right — Financial summary box (TOTAL FREIGHT / TOTAL ADVANCE / BALANCE PAYABLE)
+  // Right — Financial summary box (each row filled with light grey)
   const summaryX = margin + advBoxW + 4;
   const sumRowH = midSectionH / 3;
-  pdf.setLineWidth(0.4);
-  pdf.setDrawColor(0, 0, 0);
+  pdf.setLineWidth(0.3);
+  pdf.setDrawColor(180, 180, 180);
   pdf.rect(summaryX, midSectionY, summaryBoxW, midSectionH);
   pdf.line(summaryX, midSectionY + sumRowH, summaryX + summaryBoxW, midSectionY + sumRowH);
   pdf.line(summaryX, midSectionY + sumRowH * 2, summaryX + summaryBoxW, midSectionY + sumRowH * 2);
@@ -809,6 +807,9 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
     ['BALANCE PAYABLE', formatCurrencyForPDF(balance)],
   ];
   summaryRows.forEach(([label, value], i) => {
+    // Fill each summary row with same subtle grey
+    pdf.setFillColor(240, 240, 240);
+    pdf.rect(summaryX, midSectionY + i * sumRowH, summaryBoxW, sumRowH, 'F');
     const ry = midSectionY + i * sumRowH + sumRowH / 2 + 2;
     pdf.setFontSize(7);
     pdf.setFont('helvetica', 'bold');
@@ -818,6 +819,12 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
     pdf.setTextColor(0, 0, 0);
     pdf.text(value, summaryX + summaryBoxW - 3, ry, { align: 'right' });
   });
+  // Re-draw outer border and dividers on top of fills
+  pdf.setLineWidth(0.3);
+  pdf.setDrawColor(180, 180, 180);
+  pdf.rect(summaryX, midSectionY, summaryBoxW, midSectionH);
+  pdf.line(summaryX, midSectionY + sumRowH, summaryX + summaryBoxW, midSectionY + sumRowH);
+  pdf.line(summaryX, midSectionY + sumRowH * 2, summaryX + summaryBoxW, midSectionY + sumRowH * 2);
 
   // ─────────────────────────────────────────────
   // BANK DETAILS & SIGNATURE — two-column, thin border
@@ -826,13 +833,13 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   const bankBoxH = 34;
   const halfW = tableWidth / 2;
 
-  pdf.setLineWidth(0.5);
-  pdf.setDrawColor(0, 0, 0);
+  pdf.setLineWidth(0.3);
+  pdf.setDrawColor(180, 180, 180);
   pdf.rect(margin, bankY, tableWidth, bankBoxH);
 
   // Thin vertical divider
-  pdf.setLineWidth(0.3);
-  pdf.setDrawColor(160, 160, 160);
+  pdf.setLineWidth(0.2);
+  pdf.setDrawColor(180, 180, 180);
   pdf.line(margin + halfW, bankY, margin + halfW, bankY + bankBoxH);
 
   // Left — Bank details
