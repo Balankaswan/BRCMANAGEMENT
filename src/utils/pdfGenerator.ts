@@ -874,7 +874,7 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.setFontSize(8.5);
   pdf.setFont('helvetica', 'bold');
   pdf.setTextColor(0, 0, 0);
-  pdf.text('FOR,  BHAVISHYA ROAD CARRIERS', rightEdge, bankY + 10, { align: 'right' });
+  pdf.text('FOR,  BHAVISHYA ROAD CARRIERS', rightCentre, bankY + 10, { align: 'center' });
 
   // Signature line — only spans the RIGHT column (not full width)
   const sigLineLeft = rightColX + 10;
