@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Truck, FileText, Calendar, DollarSign, CreditCard } from 'lucide-react';
+import { ArrowLeft, Truck, FileText, Calendar, DollarSign, CreditCard, MapPin } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
 
@@ -16,6 +16,9 @@ interface PendingMemo {
   paidAmount: number;
   pendingAmount: number;
   vehicleNo: string;
+  fromLocation: string;
+  toLocation: string;
+  slipNumber: string;
   status: 'pending' | 'partial' | 'paid';
 }
 
@@ -62,13 +65,14 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
         return;
       }
 
-      // Check for payments made to this memo from both banking and cashbook
+      // ── Banking debit entries for this memo ──────────────────────────────────
       const bankingPayments = bankingEntries
         .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
         .reduce((total, entry) => total + entry.amount, 0);
 
+      // ── Cashbook debit entries for this memo (ALL debit types, not just memo_payment) ──
       const cashbookPayments = cashbookEntries
-        .filter(entry => entry.reference_id === memo.memo_number && entry.category === 'memo_payment')
+        .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
         .reduce((total, entry) => total + entry.amount, 0);
 
       const memoPayments = bankingPayments + cashbookPayments;
@@ -83,7 +87,10 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
           paidAmount: memoPayments,
           pendingAmount,
           vehicleNo: ls?.vehicle_no || 'N/A',
-          status: memoPayments > 0 ? 'partial' : 'pending'
+          fromLocation: ls?.from_location || '',
+          toLocation: ls?.to_location || '',
+          slipNumber: ls?.slip_number || '',
+          status: memoPayments > 0 ? 'partial' : 'pending',
         });
       }
     });
@@ -97,16 +104,22 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
   const activeTripCount = pendingMemos.length;
 
   const handlePayNow = (memoNo: string) => {
-    // Navigate to banking entry with pre-filled data
     if (onNavigate) {
       onNavigate('banking', {
         prefill: {
           type: 'debit',
           reference_id: memoNo,
           supplier: supplierName,
-          category: 'Memo Payment'
-        }
+          category: 'Memo Payment',
+        },
       });
+    }
+  };
+
+  // Navigate to Memos page and highlight the selected memo
+  const handleMemoClick = (memoNo: string) => {
+    if (onNavigate) {
+      onNavigate('memo', { highlight: memoNo });
     }
   };
 
@@ -148,7 +161,9 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Supplier Balance</p>
-              <p className="text-2xl font-bold text-orange-600 mt-2">{formatCurrency(totalPendingAmount)}</p>
+              <p className="text-2xl font-bold text-orange-600 mt-2">
+                {formatCurrency(totalPendingAmount)}
+              </p>
             </div>
             <div className="w-12 h-12 rounded-lg bg-orange-100 flex items-center justify-center">
               <DollarSign className="w-6 h-6 text-orange-600" />
@@ -172,7 +187,9 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Contact Person</p>
-              <p className="text-lg font-semibold text-gray-900 mt-2">{supplierInfo?.contact_person || 'N/A'}</p>
+              <p className="text-lg font-semibold text-gray-900 mt-2">
+                {supplierInfo?.contact_person || 'N/A'}
+              </p>
               <p className="text-sm text-gray-500">{supplierInfo?.phone || 'N/A'}</p>
             </div>
             <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
@@ -186,7 +203,9 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold text-gray-900">Pending Memos (Market Vehicles Only)</h3>
+            <h3 className="text-lg font-semibold text-gray-900">
+              Pending Memos (Market Vehicles Only)
+            </h3>
             <span className="bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-sm font-medium">
               {pendingMemos.length} Pending
             </span>
@@ -201,10 +220,13 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
                   Memo No
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Memo Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Vehicle No
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Memo Date
+                  Trip Details
                 </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Total Amount (₹)
@@ -223,18 +245,21 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
             <tbody className="bg-white divide-y divide-gray-200">
               {pendingMemos.map((memo, index) => (
                 <tr key={`${memo.memoNo}-${index}`} className="hover:bg-gray-50">
+                  {/* Memo No — clickable → navigates to Memos page */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <FileText className="w-4 h-4 text-gray-400 mr-2" />
-                      <span className="text-sm font-medium text-gray-900">{memo.memoNo}</span>
-                    </div>
+                    <button
+                      onClick={() => handleMemoClick(memo.memoNo)}
+                      className="flex items-center group"
+                      title="Click to view memo details"
+                    >
+                      <FileText className="w-4 h-4 text-gray-400 mr-2 group-hover:text-orange-500 transition-colors" />
+                      <span className="text-sm font-medium text-orange-600 hover:text-orange-800 hover:underline transition-colors cursor-pointer">
+                        {memo.memoNo}
+                      </span>
+                    </button>
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <Truck className="w-4 h-4 text-gray-400 mr-2" />
-                      <span className="text-sm text-gray-900">{memo.vehicleNo}</span>
-                    </div>
-                  </td>
+
+                  {/* Memo Date */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <Calendar className="w-4 h-4 text-gray-400 mr-2" />
@@ -243,21 +268,55 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
                       </span>
                     </div>
                   </td>
+
+                  {/* Vehicle No */}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <Truck className="w-4 h-4 text-gray-400 mr-2" />
+                      <span className="text-sm font-medium text-gray-900">{memo.vehicleNo}</span>
+                    </div>
+                  </td>
+
+                  {/* Trip Details (Route) */}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {memo.fromLocation && memo.toLocation ? (
+                      <div className="flex items-center">
+                        <MapPin className="w-4 h-4 text-gray-400 mr-1 flex-shrink-0" />
+                        <span className="text-sm text-gray-700">
+                          {memo.fromLocation}
+                          <span className="text-gray-400 mx-1">→</span>
+                          {memo.toLocation}
+                        </span>
+                      </div>
+                    ) : memo.slipNumber ? (
+                      <span className="text-sm text-gray-500">Slip: {memo.slipNumber}</span>
+                    ) : (
+                      <span className="text-sm text-gray-400">—</span>
+                    )}
+                  </td>
+
+                  {/* Total Amount */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <span className="text-sm font-medium text-gray-900">
                       {formatCurrency(memo.totalAmount)}
                     </span>
                   </td>
+
+                  {/* Paid Amount */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <span className="text-sm text-gray-900">
                       {formatCurrency(memo.paidAmount)}
                     </span>
                   </td>
+
+                  {/* Pending Amount */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <span className="text-sm font-bold text-orange-600">
                       {formatCurrency(memo.pendingAmount)}
                     </span>
                   </td>
+
+                  {/* Action */}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <button
                       onClick={() => handlePayNow(memo.memoNo)}
@@ -276,7 +335,9 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
           <div className="text-center py-12">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">No pending memos</h3>
-            <p className="text-gray-500">All memos for this supplier have been paid or no market vehicle trips found</p>
+            <p className="text-gray-500">
+              All memos for this supplier have been paid or no market vehicle trips found
+            </p>
           </div>
         )}
       </div>

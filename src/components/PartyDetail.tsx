@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FileText, Calendar, DollarSign, CreditCard } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Calendar, DollarSign, CreditCard, Truck } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
 
@@ -16,10 +16,14 @@ interface PendingBill {
   paidAmount: number;
   pendingAmount: number;
   status: 'pending' | 'partial' | 'paid';
+  vehicleNo: string;
+  fromLocation: string;
+  toLocation: string;
+  slipNumber: string;
 }
 
 const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigate }) => {
-  const { parties, bills, bankingEntries } = useDataStore();
+  const { parties, bills, bankingEntries, cashbookEntries, loadingSlips } = useDataStore();
   const [pendingBills, setPendingBills] = useState<PendingBill[]>([]);
   const [partyInfo, setPartyInfo] = useState<any>(null);
 
@@ -30,51 +34,91 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
     const party = parties.find(p => p.name === partyName || p.id === partyId);
     setPartyInfo(party);
 
-    // Calculate pending bills for this party
+    // Calculate pending bills for this party — include BOTH banking AND cashbook entries
     const partyBills = bills.filter(bill => bill.party === partyName);
-    
+
     const pendingBillsData: PendingBill[] = [];
 
     partyBills.forEach(bill => {
-      const billPayments = bankingEntries
+      // ── Banking credit entries for this bill ──────────────────────────────────
+      const bankingPayments = bankingEntries
         .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
         .reduce((total, entry) => total + entry.amount, 0);
-      
+
+      // ── Cashbook credit entries for this bill ────────────────────────────────
+      const cashbookPayments = cashbookEntries
+        .filter(entry => entry.reference_id === bill.bill_number && entry.type === 'credit')
+        .reduce((total, entry) => total + entry.amount, 0);
+
+      const totalPaid = bankingPayments + cashbookPayments;
+
       // Calculate what party owes: freight - mamool - commission + detention + rto + extra - tds - penalties
-      const totalAmount = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
-      const pendingAmount = totalAmount - billPayments;
-      
+      const totalAmount =
+        bill.bill_amount -
+        (bill.mamool || 0) -
+        (bill.commission || 0) +
+        (bill.detention || 0) +
+        (bill.rto || 0) +
+        (bill.extra || 0) -
+        (bill.tds || 0) -
+        (bill.penalties || 0);
+
+      const pendingAmount = totalAmount - totalPaid;
+
+      // Only show bills with a positive pending balance
       if (pendingAmount > 0) {
+        // Resolve the related loading slip for vehicle / trip info
+        let relatedSlip: any = null;
+        if (typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null) {
+          relatedSlip = bill.loading_slip_id;
+        } else if (bill.loading_slip_id) {
+          relatedSlip = loadingSlips.find(
+            ls => ls.id === bill.loading_slip_id || (ls as any)._id === bill.loading_slip_id
+          );
+        }
+
         pendingBillsData.push({
           billNo: bill.bill_number,
           billDate: bill.date,
           totalAmount,
-          paidAmount: billPayments,
+          paidAmount: totalPaid,
           pendingAmount,
-          status: billPayments > 0 ? 'partial' : 'pending'
+          status: totalPaid > 0 ? 'partial' : 'pending',
+          vehicleNo: relatedSlip?.vehicle_no || '—',
+          fromLocation: relatedSlip?.from_location || '',
+          toLocation: relatedSlip?.to_location || '',
+          slipNumber: relatedSlip?.slip_number || '',
         });
       }
     });
 
     // Sort by date (newest first)
-    pendingBillsData.sort((a, b) => new Date(b.billDate).getTime() - new Date(a.billDate).getTime());
+    pendingBillsData.sort(
+      (a, b) => new Date(b.billDate).getTime() - new Date(a.billDate).getTime()
+    );
     setPendingBills(pendingBillsData);
-  }, [partyName, partyId, parties, bills, bankingEntries]);
+  }, [partyName, partyId, parties, bills, bankingEntries, cashbookEntries, loadingSlips]);
 
   const totalPendingAmount = pendingBills.reduce((sum, bill) => sum + bill.pendingAmount, 0);
   const activeTripCount = pendingBills.length;
 
   const handlePayNow = (billNo: string) => {
-    // Navigate to banking entry with pre-filled data
     if (onNavigate) {
-      onNavigate('banking', { 
+      onNavigate('banking', {
         prefill: {
           type: 'credit',
           reference_id: billNo,
           party: partyName,
-          category: 'Bill Payment'
-        }
+          category: 'Bill Payment',
+        },
       });
+    }
+  };
+
+  // Navigate to Bills page and highlight the selected bill
+  const handleBillClick = (billNo: string) => {
+    if (onNavigate) {
+      onNavigate('bills', { highlight: billNo });
     }
   };
 
@@ -116,7 +160,9 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Total Party Balance</p>
-              <p className="text-2xl font-bold text-red-600 mt-2">{formatCurrency(totalPendingAmount)}</p>
+              <p className="text-2xl font-bold text-red-600 mt-2">
+                {formatCurrency(totalPendingAmount)}
+              </p>
             </div>
             <div className="w-12 h-12 rounded-lg bg-red-100 flex items-center justify-center">
               <DollarSign className="w-6 h-6 text-red-600" />
@@ -140,7 +186,9 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm font-medium text-gray-600">Contact Person</p>
-              <p className="text-lg font-semibold text-gray-900 mt-2">{partyInfo?.contact_person || 'N/A'}</p>
+              <p className="text-lg font-semibold text-gray-900 mt-2">
+                {partyInfo?.contact_person || 'N/A'}
+              </p>
               <p className="text-sm text-gray-500">{partyInfo?.phone || 'N/A'}</p>
             </div>
             <div className="w-12 h-12 rounded-lg bg-green-100 flex items-center justify-center">
@@ -171,6 +219,12 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Bill Date
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Vehicle No
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Trip Details
+                </th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Total Amount (₹)
                 </th>
@@ -188,12 +242,21 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
             <tbody className="bg-white divide-y divide-gray-200">
               {pendingBills.map((bill, index) => (
                 <tr key={`${bill.billNo}-${index}`} className="hover:bg-gray-50">
+                  {/* Bill No — clickable → navigates to Bills page */}
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center">
-                      <FileText className="w-4 h-4 text-gray-400 mr-2" />
-                      <span className="text-sm font-medium text-gray-900">{bill.billNo}</span>
-                    </div>
+                    <button
+                      onClick={() => handleBillClick(bill.billNo)}
+                      className="flex items-center group"
+                      title="Click to view bill details"
+                    >
+                      <FileText className="w-4 h-4 text-gray-400 mr-2 group-hover:text-blue-500 transition-colors" />
+                      <span className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors cursor-pointer">
+                        {bill.billNo}
+                      </span>
+                    </button>
                   </td>
+
+                  {/* Bill Date */}
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
                       <Calendar className="w-4 h-4 text-gray-400 mr-2" />
@@ -202,21 +265,52 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
                       </span>
                     </div>
                   </td>
+
+                  {/* Vehicle No */}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="flex items-center">
+                      <Truck className="w-4 h-4 text-gray-400 mr-2" />
+                      <span className="text-sm font-medium text-gray-900">{bill.vehicleNo}</span>
+                    </div>
+                  </td>
+
+                  {/* Trip Details (Route) */}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {bill.fromLocation && bill.toLocation ? (
+                      <span className="text-sm text-gray-700">
+                        {bill.fromLocation}
+                        <span className="text-gray-400 mx-1">→</span>
+                        {bill.toLocation}
+                      </span>
+                    ) : bill.slipNumber ? (
+                      <span className="text-sm text-gray-500">Slip: {bill.slipNumber}</span>
+                    ) : (
+                      <span className="text-sm text-gray-400">—</span>
+                    )}
+                  </td>
+
+                  {/* Total Amount */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <span className="text-sm font-medium text-gray-900">
                       {formatCurrency(bill.totalAmount)}
                     </span>
                   </td>
+
+                  {/* Paid Amount */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <span className="text-sm text-gray-900">
                       {formatCurrency(bill.paidAmount)}
                     </span>
                   </td>
+
+                  {/* Pending Amount */}
                   <td className="px-6 py-4 whitespace-nowrap text-right">
                     <span className="text-sm font-bold text-red-600">
                       {formatCurrency(bill.pendingAmount)}
                     </span>
                   </td>
+
+                  {/* Action */}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <button
                       onClick={() => handlePayNow(bill.billNo)}
