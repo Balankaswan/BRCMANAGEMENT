@@ -802,7 +802,7 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.line(summaryX, midSectionY + sumRowH * 2, summaryX + summaryBoxW, midSectionY + sumRowH * 2);
 
   const summaryRows = [
-    ['TOTAL FREIGHT', formatCurrencyForPDF(originalFreight)],
+    ['TOTAL FREIGHT', formatCurrencyForPDF(totalFreight)],
     ['TOTAL ADVANCE', formatCurrencyForPDF(totalAdvance)],
     ['BALANCE PAYABLE', formatCurrencyForPDF(balance)],
   ];
