@@ -4,7 +4,7 @@ import { formatCurrency } from '../utils/numberGenerator';
 
 interface LedgerDetailProps {
   ledgerName: string;
-  ledgerType: 'party' | 'supplier' | 'general';
+  ledgerType: 'party' | 'supplier' | 'general' | 'tds';
   onClose: () => void;
 }
 

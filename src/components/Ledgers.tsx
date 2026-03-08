@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { Users, Truck, Building, Download, Eye } from 'lucide-react';
+import { Users, Truck, Building, Download, Eye, Receipt } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { getAllPartyBalances, getAllSupplierBalances } from '../utils/ledgerUtils';
 import { formatCurrency } from '../utils/numberGenerator';
@@ -7,14 +7,15 @@ import { apiService } from '../lib/api';
 import PartyLedger from './PartyLedger';
 import SupplierLedger from './SupplierLedger';
 import GeneralLedger from './GeneralLedger';
+import TDSLedger from './TDSLedger';
 
 interface LedgersProps {
-  onViewLedger?: (name: string, type: 'party' | 'supplier' | 'general') => void;
+  onViewLedger?: (name: string, type: 'party' | 'supplier' | 'general' | 'tds') => void;
 }
 
 const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
-  const [activeTab, setActiveTab] = useState<'party' | 'supplier' | 'general'>('party');
-  const [selectedLedger, setSelectedLedger] = useState<{ name: string; type: 'party' | 'supplier' | 'general' } | null>(null);
+  const [activeTab, setActiveTab] = useState<'party' | 'supplier' | 'general' | 'tds'>('party');
+  const [selectedLedger, setSelectedLedger] = useState<{ name: string; type: 'party' | 'supplier' | 'general' | 'tds' } | null>(null);
   const { ledgerEntries, bills, memos, bankingEntries, setLedgerEntries } = useDataStore();
 
   // Force refresh ledger data on component mount to ensure data persistence
@@ -31,7 +32,7 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
         console.error('❌ Failed to refresh ledger data:', error);
       }
     };
-    
+
     refreshLedgerData();
   }, [setLedgerEntries]);
 
@@ -41,7 +42,6 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
 
   const grouped = useMemo(() => {
     if (activeTab === 'general') {
-      // Group general ledger entries by reference_name
       const generalEntries = ledgerEntries.filter(entry => entry.ledger_type === 'general');
       const groupedGeneral = generalEntries.reduce((acc, entry) => {
         const name = entry.reference_name || 'Unknown';
@@ -62,45 +62,64 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
       }, {} as Record<string, any>);
       return Object.values(groupedGeneral);
     }
+
     if (activeTab === 'party') {
       return partyBalances.map(balance => ({
         name: balance.partyName,
-        entries: [], // We'll use the new ledger components for detailed view
+        entries: [],
         totalDebit: balance.totalBills,
         totalCredit: balance.totalPayments + balance.totalAdvances,
         outstandingAmount: balance.outstandingAmount
       }));
     }
+
     if (activeTab === 'supplier') {
       return supplierBalances.map(balance => ({
         name: balance.supplierName,
-        entries: [], // We'll use the new ledger components for detailed view
+        entries: [],
         totalDebit: balance.totalMemos + balance.totalDetention + balance.totalExtraWeight,
         totalCredit: balance.totalPayments + balance.totalAdvances - balance.totalCommission - balance.totalMamul,
         outstandingAmount: balance.outstandingAmount
       }));
     }
+
+    if (activeTab === 'tds') {
+      return bills
+        .filter(bill => (bill.tds || 0) > 0)
+        .map(bill => ({
+          name: bill.bill_number,
+          partyName: bill.party,
+          date: bill.date,
+          totalDebit: bill.bill_amount,
+          totalCredit: (bill.bill_amount || 0) + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0) - (bill.tds || 0),
+          outstandingAmount: bill.tds || 0
+        }));
+    }
+
     return [];
-  }, [activeTab, partyBalances, supplierBalances, ledgerEntries]);
+  }, [activeTab, partyBalances, supplierBalances, ledgerEntries, bills]);
 
   const counts = useMemo(() => {
     const generalEntries = ledgerEntries.filter(entry => entry.ledger_type === 'general');
     const uniqueGeneralNames = new Set(generalEntries.map(entry => entry.reference_name)).size;
-    return { 
-      party: partyBalances.length, 
-      supplier: supplierBalances.length, 
-      general: uniqueGeneralNames 
+    const tdsCount = bills.filter(bill => (bill.tds || 0) > 0).length;
+    return {
+      party: partyBalances.length,
+      supplier: supplierBalances.length,
+      general: uniqueGeneralNames,
+      tds: tdsCount
     };
-  }, [partyBalances, supplierBalances, ledgerEntries]);
+  }, [partyBalances, supplierBalances, ledgerEntries, bills]);
 
   const tabs = [
     { id: 'party', label: 'Party Ledgers', count: counts.party, icon: Users },
     { id: 'supplier', label: 'Supplier Ledgers', count: counts.supplier, icon: Truck },
     { id: 'general', label: 'General Ledgers', count: counts.general, icon: Building },
+    { id: 'tds', label: 'TDS Ledger', count: counts.tds, icon: Receipt },
   ];
 
   // Handle viewing detailed ledger
-  const handleViewLedger = (name: string, type: 'party' | 'supplier' | 'general') => {
+  const handleViewLedger = (name: string, type: 'party' | 'supplier' | 'general' | 'tds') => {
     setSelectedLedger({ name, type });
     if (onViewLedger) {
       onViewLedger(name, type);
@@ -121,6 +140,8 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
           <PartyLedger selectedParty={selectedLedger.name} />
         ) : selectedLedger.type === 'supplier' ? (
           <SupplierLedger selectedSupplier={selectedLedger.name} />
+        ) : selectedLedger.type === 'tds' ? (
+          <TDSLedger />
         ) : (
           <GeneralLedger selectedPerson={selectedLedger.name} />
         )}
@@ -148,11 +169,10 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                className={`flex items-center space-x-2 py-2 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  }`}
               >
                 <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>
@@ -181,7 +201,7 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
               </div>
             </div>
           </div>
-          
+
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <div className="flex items-center justify-between">
               <div>
@@ -267,20 +287,19 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {activeTab === 'party' ? 
+                    {activeTab === 'party' ?
                       partyBalances.find(p => p.partyName === g.name)?.totalBills || 0 :
                       activeTab === 'supplier' ?
-                      supplierBalances.find(s => s.supplierName === g.name)?.totalMemos || 0 :
-                      formatCurrency(g.totalDebit)
+                        supplierBalances.find(s => s.supplierName === g.name)?.totalMemos || 0 :
+                        formatCurrency(g.totalDebit)
                     }
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     {activeTab === 'party' ? 'Bills' : activeTab === 'supplier' ? 'Memos' : g.entries.length + ' Entries'}
                   </td>
-                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${
-                    g.outstandingAmount > 0 ? 'text-red-600' : 
+                  <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${g.outstandingAmount > 0 ? 'text-red-600' :
                     g.outstandingAmount < 0 ? 'text-green-600' : 'text-gray-600'
-                  }`}>
+                    }`}>
                     {formatCurrency(Math.abs(g.outstandingAmount))}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">

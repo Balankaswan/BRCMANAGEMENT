@@ -45,6 +45,8 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
   const handleCreateLoadingSlip = async (slipData: Omit<LoadingSlip, 'id' | 'created_at' | 'updated_at'>) => {
     console.log('📝 Creating loading slip:', slipData.slip_number);
     try {
+      // Mark loading slip creation timestamp to prevent immediate sync overwrite
+      localStorage.setItem('lastLoadingSlipCreation', Date.now().toString());
       const response = await apiService.createLoadingSlip(slipData);
       addLoadingSlip(response.loadingSlip);
       console.log('✅ Loading slip created successfully:', response.loadingSlip.slip_number);
@@ -251,8 +253,8 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                           const vehicle = vehicles.find(v => v.vehicle_no === slip.vehicle_no);
                           return vehicle ? (
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${vehicle.ownership_type === 'own'
-                                ? 'bg-green-100 text-green-800'
-                                : 'bg-blue-100 text-blue-800'
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-blue-100 text-blue-800'
                               }`}>
                               {vehicle.ownership_type === 'own' ? 'Own' : 'Market'}
                             </span>
@@ -384,8 +386,8 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                   const vehicle = vehicles.find(v => v.vehicle_no === viewSlip.vehicle_no);
                   return vehicle ? (
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${vehicle.ownership_type === 'own'
-                        ? 'bg-green-100 text-green-800'
-                        : 'bg-blue-100 text-blue-800'
+                      ? 'bg-green-100 text-green-800'
+                      : 'bg-blue-100 text-blue-800'
                       }`}>
                       {vehicle.ownership_type === 'own' ? 'Own Vehicle' : 'Market Vehicle'}
                     </span>

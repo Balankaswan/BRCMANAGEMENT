@@ -19,6 +19,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
     { id: 'party-ledger', label: 'Party Ledgers', icon: FileText },
     { id: 'supplier-ledger', label: 'Supplier Ledgers', icon: FileText },
     { id: 'general-ledger', label: 'General Ledgers', icon: FileText },
+    { id: 'tds-ledger', label: 'TDS Ledger', icon: Receipt },
     { id: 'party-commission-ledger', label: 'Party Commission', icon: CreditCard },
     { id: 'fuel-management', label: 'Fuel Management', icon: Fuel },
     { id: 'vehicle-ledger', label: 'Vehicle Ledger', icon: Truck },
@@ -33,9 +34,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
         <div className="p-6 border-b">
           <div className="flex items-center space-x-3">
             <div className="w-12 h-12 rounded-lg flex items-center justify-center overflow-hidden">
-              <img 
-                src={COMPANY_LOGO_BASE64} 
-                alt="BRC Logo" 
+              <img
+                src={COMPANY_LOGO_BASE64}
+                alt="BRC Logo"
                 className="w-full h-full object-contain"
                 onError={(e) => {
                   // Fallback to truck icon if logo fails to load
@@ -54,7 +55,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
             </div>
           </div>
         </div>
-        
+
         <nav className="p-4">
           <ul className="space-y-2">
             {menuItems.map((item) => {
@@ -63,11 +64,10 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
                 <li key={item.id}>
                   <button
                     onClick={() => onNavigate(item.id)}
-                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${
-                      currentPage === item.id
+                    className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg text-left transition-colors ${currentPage === item.id
                         ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-700'
                         : 'text-gray-700 hover:bg-gray-50'
-                    }`}
+                      }`}
                   >
                     <Icon className="w-5 h-5" />
                     <span className="font-medium">{item.label}</span>
@@ -92,7 +92,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
             </div>
           </div>
         </header>
-        
+
         <main className="flex-1 p-6">
           {children}
         </main>

@@ -24,6 +24,7 @@ import SupplierDetail from './components/SupplierDetail';
 import FuelManagement from './components/FuelManagement';
 import VehicleLedger from './components/VehicleLedger';
 import VehicleOwnershipManager from './components/VehicleOwnershipManager';
+import TDSLedger from './components/TDSLedger';
 import { SyncErrorHandler } from './components/SyncErrorHandler';
 
 const AppContent: React.FC = () => {
@@ -32,14 +33,14 @@ const AppContent: React.FC = () => {
   const [navigationParams, setNavigationParams] = useState<any>(null);
   const [showLedgerDetail, setShowLedgerDetail] = useState<{
     name: string;
-    type: 'party' | 'supplier' | 'general';
+    type: 'party' | 'supplier' | 'general' | 'tds';
   } | null>(null);
 
   const handleNavigation = (page: string, params?: any) => {
     setCurrentPage(page);
     setNavigationParams(params);
   };
-  
+
   // Initialize API sync when user is authenticated
   useApiSync();
 
@@ -71,18 +72,18 @@ const AppContent: React.FC = () => {
       case 'parties':
         return <Parties onNavigate={handleNavigation} />;
       case 'party-detail':
-        return <PartyDetail 
-          partyId={navigationParams?.partyId} 
-          partyName={navigationParams?.partyName} 
-          onNavigate={handleNavigation} 
+        return <PartyDetail
+          partyId={navigationParams?.partyId}
+          partyName={navigationParams?.partyName}
+          onNavigate={handleNavigation}
         />;
       case 'suppliers':
         return <Suppliers onNavigate={handleNavigation} />;
       case 'supplier-detail':
-        return <SupplierDetail 
-          supplierId={navigationParams?.supplierId} 
-          supplierName={navigationParams?.supplierName} 
-          onNavigate={handleNavigation} 
+        return <SupplierDetail
+          supplierId={navigationParams?.supplierId}
+          supplierName={navigationParams?.supplierName}
+          onNavigate={handleNavigation}
         />;
       case 'party-ledger':
         return <PartyLedger onNavigate={handleNavigation} />;
@@ -102,6 +103,8 @@ const AppContent: React.FC = () => {
         return <VehicleLedger />;
       case 'vehicle-ownership':
         return <VehicleOwnershipManager />;
+      case 'tds-ledger':
+        return <TDSLedger onNavigate={handleNavigation} />;
       case 'ledgers':
         return <Ledgers onViewLedger={(name, type) => setShowLedgerDetail({ name, type })} key={Date.now()} />;
       case 'pod':
@@ -116,7 +119,7 @@ const AppContent: React.FC = () => {
       <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
         {renderCurrentPage()}
       </Layout>
-      
+
       {showLedgerDetail && (
         <LedgerDetail
           ledgerName={showLedgerDetail.name}
@@ -124,7 +127,7 @@ const AppContent: React.FC = () => {
           onClose={() => setShowLedgerDetail(null)}
         />
       )}
-      
+
       <SyncErrorHandler />
     </div>
   );
