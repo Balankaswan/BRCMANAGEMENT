@@ -1,30 +1,26 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Fuel, Truck, UserPlus, Wallet, BarChart3 } from 'lucide-react';
 import { useDataStore } from '../lib/store';
-import { apiService } from '../lib/api';
 import FuelAllocationLedger from './FuelAllocationLedger';
 import { formatCurrency } from '../utils/numberGenerator';
 import type { BankingEntry, Vehicle } from '../types';
 
 const FuelManagement: React.FC = () => {
-  const {
-    fuelWallets,
-    vehicleFuelExpenses,
-    vehicles,
+  const { 
+    fuelWallets, 
+    vehicleFuelExpenses, 
+    vehicles, 
     suppliers,
-    memos,
-    updateMemo,
-    addBankingEntry,
+    addBankingEntry, 
     allocateFuelToVehicle,
     getVehicleFuelExpenses,
-    addVehicle
+    addVehicle 
   } = useDataStore();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'allocate' | 'wallets' | 'vehicles' | 'add-vehicle' | 'ledger'>('dashboard');
   const [selectedWallet, setSelectedWallet] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('');
-  const [selectedMemo, setSelectedMemo] = useState('');
   const [allocationForm, setAllocationForm] = useState({
     amount: '',
     fuelQuantity: '',
@@ -111,13 +107,13 @@ const FuelManagement: React.FC = () => {
       return;
     }
 
-    if (!selectedVehicle && !selectedSupplier && !selectedMemo) {
-      alert('Please select either a Vehicle, a Supplier, or a Memo');
+    if (!selectedVehicle && !selectedSupplier) {
+      alert('Please select either a Vehicle or a Supplier');
       return;
     }
 
-    if (selectedVehicle && (selectedSupplier || selectedMemo)) {
-      alert('You cannot select an Own Vehicle if a Supplier or Memo is selected.');
+    if (selectedVehicle && selectedSupplier) {
+      alert('Please select either a Vehicle OR a Supplier, not both');
       return;
     }
 
@@ -166,7 +162,7 @@ const FuelManagement: React.FC = () => {
       });
 
       // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) =>
+      const timeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('Request timeout')), 30000)
       );
 
@@ -186,44 +182,6 @@ const FuelManagement: React.FC = () => {
 
       await Promise.race([allocationPromise, timeoutPromise]);
 
-      if (selectedMemo) {
-        const memo = memos.find(m => m.id === selectedMemo || (m as any)._id === selectedMemo);
-        if (memo) {
-          const newAdvance = {
-            id: Date.now().toString(),
-            date: allocationForm.date || new Date().toISOString().split('T')[0],
-            amount: amount,
-            mode: 'other' as const,
-            reference: selectedWallet,
-            description: 'Fuel'
-          };
-
-          try {
-            // Update memo locally and backend
-            const updatedMemo = {
-              ...memo,
-              advance_payments: [...(memo.advance_payments || []), newAdvance]
-            };
-
-            await apiService.updateMemo(memo.id, updatedMemo);
-            updateMemo(updatedMemo);
-
-            // Generate ledger entry for supplier deduction
-            await apiService.createLedgerEntry({
-              date: allocationForm.date || new Date().toISOString().split('T')[0],
-              ledger_type: 'supplier',
-              reference_name: memo.supplier,
-              memo_number: memo.memo_number,
-              description: `Fuel Advance - ${selectedWallet}`,
-              debit: amount,
-              credit: 0
-            });
-          } catch (error) {
-            console.error('Failed to update memo advance details:', error);
-          }
-        }
-      }
-
       // Reset form on success
       setAllocationForm({
         amount: '',
@@ -236,13 +194,9 @@ const FuelManagement: React.FC = () => {
       setSelectedVehicle('');
       setSelectedWallet('');
       setSelectedSupplier('');
-      setSelectedMemo('');
-
+      
       console.log('✅ Fuel allocation completed, wallet balances should be updated immediately');
       alert('✅ Fuel allocated successfully!');
-
-      // Force sync
-      window.dispatchEvent(new CustomEvent('data-sync-required'));
     } catch (error) {
       console.error('❌ Fuel allocation failed:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
@@ -269,17 +223,17 @@ const FuelManagement: React.FC = () => {
           // Safely get expenses with fallback
           const expenses = getVehicleFuelExpenses ? getVehicleFuelExpenses() : [];
           const safeExpenses = Array.isArray(expenses) ? expenses : [];
-
+          
           const totalExpense = safeExpenses.reduce((sum, exp) => {
             const amount = exp && typeof exp.amount === 'number' ? exp.amount : 0;
             return sum + amount;
           }, 0);
-
+          
           const totalQuantity = safeExpenses.reduce((sum, exp) => {
             const quantity = exp && typeof exp.fuel_quantity === 'number' ? exp.fuel_quantity : 0;
             return sum + quantity;
           }, 0);
-
+          
           return {
             vehicleNo: vehicle.vehicle_no || 'Unknown',
             vehicle,
@@ -314,56 +268,62 @@ const FuelManagement: React.FC = () => {
         <div className="flex space-x-2">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'dashboard'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'dashboard'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
           >
             Dashboard
           </button>
           <button
             onClick={() => setActiveTab('allocate')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'allocate'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'allocate'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
           >
             Allocate Fuel
           </button>
           <button
             onClick={() => setActiveTab('wallets')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'wallets'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'wallets'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
           >
             Fuel Wallets
           </button>
           <button
             onClick={() => setActiveTab('vehicles')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'vehicles'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'vehicles'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
           >
             Vehicles
           </button>
           <button
             onClick={() => setActiveTab('add-vehicle')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'add-vehicle'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'add-vehicle'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
           >
             <UserPlus className="w-4 h-4 inline-block mr-2" />
             Add Vehicle
           </button>
           <button
             onClick={() => setActiveTab('ledger')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'ledger'
-              ? 'bg-blue-600 text-white'
-              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+              activeTab === 'ledger'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
           >
             <BarChart3 className="w-4 h-4 inline-block mr-2" />
             Allocation Ledger
@@ -387,7 +347,7 @@ const FuelManagement: React.FC = () => {
                 </div>
               </div>
             </div>
-
+            
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -399,7 +359,7 @@ const FuelManagement: React.FC = () => {
                 </div>
               </div>
             </div>
-
+            
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -421,7 +381,7 @@ const FuelManagement: React.FC = () => {
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {fuelWallets.map((wallet) => (
-                  <div key={wallet.id || `wallet-${wallet.name}`} className="bg-gray-50 rounded-lg p-4">
+                <div key={wallet.id || `wallet-${wallet.name}`} className="bg-gray-50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-semibold text-gray-900">{wallet.name}</h4>
                       <Fuel className="w-5 h-5 text-gray-400" />
@@ -445,7 +405,7 @@ const FuelManagement: React.FC = () => {
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Allocate Fuel</h3>
-
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle (Own Vehicles)</label>
@@ -494,30 +454,6 @@ const FuelManagement: React.FC = () => {
                   {suppliers.map((supplier, index) => (
                     <option key={supplier._id || supplier.id || `supplier-${index}`} value={supplier.name}>
                       {supplier.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Memo (Optional)</label>
-                <select
-                  value={selectedMemo}
-                  onChange={(e) => {
-                    const memoId = e.target.value;
-                    setSelectedMemo(memoId);
-                    if (memoId) {
-                      setSelectedVehicle(''); // Clear vehicle when memo is selected
-                      const memo = memos.find(m => m.id === memoId || (m as any)._id === memoId);
-                      if (memo && memo.supplier) setSelectedSupplier(memo.supplier);
-                    }
-                  }}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Select Memo (Optional)</option>
-                  {memos.filter(m => m.status !== 'paid').map((memo, index) => (
-                    <option key={memo.id || (memo as any)._id || `memo-${index}`} value={memo.id || (memo as any)._id}>
-                      {memo.memo_number} - {memo.supplier}
                     </option>
                   ))}
                 </select>
@@ -592,7 +528,7 @@ const FuelManagement: React.FC = () => {
             <div className="mt-6">
               <button
                 onClick={handleFuelAllocation}
-                disabled={(!selectedVehicle && !selectedSupplier && !selectedMemo) || !selectedWallet || !allocationForm.amount}
+                disabled={(!selectedVehicle && !selectedSupplier) || !selectedWallet || !allocationForm.amount}
                 data-fuel-submit
                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
               >
@@ -610,7 +546,7 @@ const FuelManagement: React.FC = () => {
           {/* Add Credit to Wallet */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Add Credit to Fuel Wallet</h3>
-
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Fuel Wallet</label>
@@ -748,7 +684,7 @@ const FuelManagement: React.FC = () => {
                     const totalExpense = typeof summary?.totalExpense === 'number' ? summary.totalExpense : 0;
                     const totalQuantity = typeof summary?.totalQuantity === 'number' ? summary.totalQuantity : 0;
                     const expenseCount = typeof summary?.expenseCount === 'number' ? summary.expenseCount : 0;
-
+                    
                     return (
                       <tr key={`${vehicleNo}-${index}`} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -789,7 +725,7 @@ const FuelManagement: React.FC = () => {
       {activeTab === 'add-vehicle' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">Register New Vehicle</h2>
-
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle Number *</label>
