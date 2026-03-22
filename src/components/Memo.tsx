@@ -245,7 +245,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
           .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === m.memo_number)
           .reduce((sum, e) => sum + e.amount, 0);
 
-        const paid = bankingPayments + cashbookPayments;
+        const internalAdvances = m.advance_payments?.reduce((sum, a) => sum + a.amount, 0) || 0;
+        const paid = bankingPayments + cashbookPayments + internalAdvances;
         // Balance = Net Amount - all payments (advance + memo payments)
         const calculatedBalance = (m.net_amount || 0) - paid;
         return calculatedBalance <= 0;
@@ -281,8 +282,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               <button
                 onClick={() => setViewMode('pending')}
                 className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'pending'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
                   }`}
               >
                 Pending ({memos.filter(m => m.status !== 'paid').length})
@@ -290,8 +291,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               <button
                 onClick={() => setViewMode('paid')}
                 className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'paid'
-                    ? 'bg-white text-gray-900 shadow-sm'
-                    : 'text-gray-600 hover:text-gray-900'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
                   }`}
               >
                 Paid ({memos.filter(m => m.status === 'paid').length})
@@ -366,7 +367,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
               .reduce((sum, e) => sum + e.amount, 0);
 
-            const paid = bankingPayments + cashbookPayments;
+            const internalAdvances = memo.advance_payments?.reduce((sum, a) => sum + a.amount, 0) || 0;
+            const paid = bankingPayments + cashbookPayments + internalAdvances;
             // Balance = Net Amount - all payments (advance + memo payments)
             const rawBalance = (memo.net_amount || 0) - paid;
             const isFullyPaid = rawBalance <= 0;
@@ -378,8 +380,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                 key={memo.id || `memo-${index}-${memo.memo_number}`}
                 id={`memo-${memo.memo_number}`}
                 className={`bg-white rounded-xl shadow-sm border transition-shadow ${isHighlighted
-                    ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg'
-                    : 'border-gray-200 hover:shadow-md'
+                  ? 'border-blue-500 ring-2 ring-blue-200 shadow-lg'
+                  : 'border-gray-200 hover:shadow-md'
                   }`}>
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">

@@ -179,7 +179,7 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
       .reduce((sum, e) => sum + e.amount, 0)
     : 0;
 
-  const totalAdvances = bankingAdvances + cashbookAdvances || memo.advance_payments?.reduce((sum, adv) => sum + adv.amount, 0) || 0;
+  const totalAdvances = bankingAdvances + cashbookAdvances + (memo.advance_payments?.reduce((sum, adv) => sum + adv.amount, 0) || 0);
 
   // Financial table - matching image style with proper borders
   const financialRows = [
@@ -240,7 +240,12 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
     ).map(e => ({ ...e, source: 'CASH' }))
     : [];
 
-  const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments]
+  const memoAdvancePayments = memo.advance_payments?.map(a => ({
+    ...a,
+    source: a.description || 'FUEL'
+  })) || [];
+
+  const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments, ...memoAdvancePayments]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   // Display advance payments if any exist
