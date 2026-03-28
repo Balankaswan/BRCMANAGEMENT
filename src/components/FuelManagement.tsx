@@ -160,6 +160,7 @@ const FuelManagement: React.FC = () => {
         selectedVehicle,
         selectedWallet,
         selectedSupplier,
+        selectedMemo,
         amount,
         date: allocationForm.date,
         narration: allocationForm.narration
@@ -170,46 +171,71 @@ const FuelManagement: React.FC = () => {
         setTimeout(() => reject(new Error('Request timeout')), 30000)
       );
 
-      const allocationPromise = allocateFuelToVehicle(
-        selectedVehicle || 'N/A',
-        selectedWallet,
-        amount,
-        allocationForm.date,
-        allocationForm.narration || 'Fuel allocation',
-        fuelQuantity,
-        ratePerLiter,
-        odometerReading,
-        'Diesel',
-        'System',
-        selectedSupplier || undefined
-      );
-
-      await Promise.race([allocationPromise, timeoutPromise]);
-
-      // If a memo is selected, add fuel as advance_payment on the memo (tagged with fuel- prefix)
       if (selectedMemo) {
+        // ===== MEMO FLOW: Fuel allocated against a memo =====
         const memo = memos.find(m => (m.id || (m as any)._id) === selectedMemo);
-        if (memo) {
-          try {
-            const fuelAdvance = {
-              id: `fuel-${Date.now()}`,
-              date: allocationForm.date || new Date().toISOString().split('T')[0],
-              amount: amount,
-              mode: 'other' as const,
-              reference: selectedWallet,
-              description: `Fuel - ${selectedWallet}`
-            };
-            const updatedMemo = {
-              ...memo,
-              advance_payments: [...(memo.advance_payments || []), fuelAdvance]
-            };
-            await apiService.updateMemo(memo.id, updatedMemo);
-            updateMemo(updatedMemo);
-            console.log('✅ Fuel advance recorded on memo:', memo.memo_number);
-          } catch (memoError) {
-            console.error('❌ Failed to update memo advance:', memoError);
-          }
+        if (!memo) {
+          alert('Error: Selected memo not found.');
+          return;
         }
+
+        const memoId = memo.id || (memo as any)._id;
+
+        // Step 1: Deduct from fuel wallet via the allocateFuel API
+        const walletDeductPromise = allocateFuelToVehicle(
+          `MEMO-${memo.memo_number}`,
+          selectedWallet,
+          amount,
+          allocationForm.date,
+          `Fuel advance for Memo ${memo.memo_number} - ${memo.supplier}`,
+          fuelQuantity,
+          ratePerLiter,
+          odometerReading,
+          'Diesel',
+          'System',
+          memo.supplier
+        );
+        await Promise.race([walletDeductPromise, timeoutPromise]);
+
+        // Step 2: Add fuel as advance_payment on the memo (tagged with fuel- prefix)
+        const fuelAdvance = {
+          id: `fuel-${Date.now()}`,
+          date: allocationForm.date || new Date().toISOString().split('T')[0],
+          amount: amount,
+          mode: 'other' as const,
+          reference: selectedWallet,
+          description: `Fuel - ${selectedWallet}`
+        };
+
+        const updatedMemo = {
+          ...memo,
+          advance_payments: [...(memo.advance_payments || []), fuelAdvance]
+        };
+
+        await apiService.updateMemo(memoId, updatedMemo);
+        updateMemo(updatedMemo);
+        console.log('✅ Fuel advance recorded on memo:', memo.memo_number, 'Amount:', amount);
+
+        // Trigger data sync so other components refresh
+        window.dispatchEvent(new CustomEvent('data-sync-required'));
+
+      } else {
+        // ===== VEHICLE/SUPPLIER FLOW: Original logic =====
+        const allocationPromise = allocateFuelToVehicle(
+          selectedVehicle || 'N/A',
+          selectedWallet,
+          amount,
+          allocationForm.date,
+          allocationForm.narration || 'Fuel allocation',
+          fuelQuantity,
+          ratePerLiter,
+          odometerReading,
+          'Diesel',
+          'System',
+          selectedSupplier || undefined
+        );
+
+        await Promise.race([allocationPromise, timeoutPromise]);
       }
 
       // Reset form on success
@@ -300,8 +326,8 @@ const FuelManagement: React.FC = () => {
           <button
             onClick={() => setActiveTab('dashboard')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'dashboard'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             Dashboard
@@ -309,8 +335,8 @@ const FuelManagement: React.FC = () => {
           <button
             onClick={() => setActiveTab('allocate')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'allocate'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             Allocate Fuel
@@ -318,8 +344,8 @@ const FuelManagement: React.FC = () => {
           <button
             onClick={() => setActiveTab('wallets')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'wallets'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             Fuel Wallets
@@ -327,8 +353,8 @@ const FuelManagement: React.FC = () => {
           <button
             onClick={() => setActiveTab('vehicles')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'vehicles'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             Vehicles
@@ -336,8 +362,8 @@ const FuelManagement: React.FC = () => {
           <button
             onClick={() => setActiveTab('add-vehicle')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'add-vehicle'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             <UserPlus className="w-4 h-4 inline-block mr-2" />
@@ -346,8 +372,8 @@ const FuelManagement: React.FC = () => {
           <button
             onClick={() => setActiveTab('ledger')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'ledger'
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
               }`}
           >
             <BarChart3 className="w-4 h-4 inline-block mr-2" />
