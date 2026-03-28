@@ -22,7 +22,7 @@ const LedgersComponent: React.FC<LedgersProps> = ({ onViewLedger }) => {
   useEffect(() => {
     const refreshLedgerData = async () => {
       try {
-        console.log('🔄 Refreshing ledger data on Ledgers component mount...');
+        console.log('Refreshing ledger data on Ledgers component mount...');
         const response = await apiService.getLedgerEntries();
         if (response.ledgerEntries) {
           setLedgerEntries(response.ledgerEntries);

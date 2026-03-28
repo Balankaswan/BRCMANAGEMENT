@@ -1,26 +1,30 @@
 import React, { useState, useMemo } from 'react';
 import { Plus, Fuel, Truck, UserPlus, Wallet, BarChart3 } from 'lucide-react';
 import { useDataStore } from '../lib/store';
+import { apiService } from '../lib/api';
 import FuelAllocationLedger from './FuelAllocationLedger';
 import { formatCurrency } from '../utils/numberGenerator';
 import type { BankingEntry, Vehicle } from '../types';
 
 const FuelManagement: React.FC = () => {
-  const { 
-    fuelWallets, 
-    vehicleFuelExpenses, 
-    vehicles, 
+  const {
+    fuelWallets,
+    vehicleFuelExpenses,
+    vehicles,
     suppliers,
-    addBankingEntry, 
+    memos,
+    updateMemo,
+    addBankingEntry,
     allocateFuelToVehicle,
     getVehicleFuelExpenses,
-    addVehicle 
+    addVehicle
   } = useDataStore();
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'allocate' | 'wallets' | 'vehicles' | 'add-vehicle' | 'ledger'>('dashboard');
   const [selectedWallet, setSelectedWallet] = useState('');
   const [selectedVehicle, setSelectedVehicle] = useState('');
   const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [selectedMemo, setSelectedMemo] = useState('');
   const [allocationForm, setAllocationForm] = useState({
     amount: '',
     fuelQuantity: '',
@@ -107,13 +111,13 @@ const FuelManagement: React.FC = () => {
       return;
     }
 
-    if (!selectedVehicle && !selectedSupplier) {
-      alert('Please select either a Vehicle or a Supplier');
+    if (!selectedVehicle && !selectedSupplier && !selectedMemo) {
+      alert('Please select either a Vehicle, a Supplier, or a Memo');
       return;
     }
 
-    if (selectedVehicle && selectedSupplier) {
-      alert('Please select either a Vehicle OR a Supplier, not both');
+    if ((selectedVehicle && selectedSupplier) || (selectedVehicle && selectedMemo) || (selectedSupplier && selectedMemo)) {
+      alert('Please select only ONE of: Vehicle, Supplier, or Memo');
       return;
     }
 
@@ -162,7 +166,7 @@ const FuelManagement: React.FC = () => {
       });
 
       // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) => 
+      const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('Request timeout')), 30000)
       );
 
@@ -182,6 +186,32 @@ const FuelManagement: React.FC = () => {
 
       await Promise.race([allocationPromise, timeoutPromise]);
 
+      // If a memo is selected, add fuel as advance_payment on the memo (tagged with fuel- prefix)
+      if (selectedMemo) {
+        const memo = memos.find(m => (m.id || (m as any)._id) === selectedMemo);
+        if (memo) {
+          try {
+            const fuelAdvance = {
+              id: `fuel-${Date.now()}`,
+              date: allocationForm.date || new Date().toISOString().split('T')[0],
+              amount: amount,
+              mode: 'other' as const,
+              reference: selectedWallet,
+              description: `Fuel - ${selectedWallet}`
+            };
+            const updatedMemo = {
+              ...memo,
+              advance_payments: [...(memo.advance_payments || []), fuelAdvance]
+            };
+            await apiService.updateMemo(memo.id, updatedMemo);
+            updateMemo(updatedMemo);
+            console.log('✅ Fuel advance recorded on memo:', memo.memo_number);
+          } catch (memoError) {
+            console.error('❌ Failed to update memo advance:', memoError);
+          }
+        }
+      }
+
       // Reset form on success
       setAllocationForm({
         amount: '',
@@ -194,7 +224,8 @@ const FuelManagement: React.FC = () => {
       setSelectedVehicle('');
       setSelectedWallet('');
       setSelectedSupplier('');
-      
+      setSelectedMemo('');
+
       console.log('✅ Fuel allocation completed, wallet balances should be updated immediately');
       alert('✅ Fuel allocated successfully!');
     } catch (error) {
@@ -223,17 +254,17 @@ const FuelManagement: React.FC = () => {
           // Safely get expenses with fallback
           const expenses = getVehicleFuelExpenses ? getVehicleFuelExpenses() : [];
           const safeExpenses = Array.isArray(expenses) ? expenses : [];
-          
+
           const totalExpense = safeExpenses.reduce((sum, exp) => {
             const amount = exp && typeof exp.amount === 'number' ? exp.amount : 0;
             return sum + amount;
           }, 0);
-          
+
           const totalQuantity = safeExpenses.reduce((sum, exp) => {
             const quantity = exp && typeof exp.fuel_quantity === 'number' ? exp.fuel_quantity : 0;
             return sum + quantity;
           }, 0);
-          
+
           return {
             vehicleNo: vehicle.vehicle_no || 'Unknown',
             vehicle,
@@ -268,62 +299,56 @@ const FuelManagement: React.FC = () => {
         <div className="flex space-x-2">
           <button
             onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'dashboard'
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'dashboard'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             Dashboard
           </button>
           <button
             onClick={() => setActiveTab('allocate')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'allocate'
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'allocate'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             Allocate Fuel
           </button>
           <button
             onClick={() => setActiveTab('wallets')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'wallets'
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'wallets'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             Fuel Wallets
           </button>
           <button
             onClick={() => setActiveTab('vehicles')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'vehicles'
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'vehicles'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             Vehicles
           </button>
           <button
             onClick={() => setActiveTab('add-vehicle')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'add-vehicle'
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'add-vehicle'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             <UserPlus className="w-4 h-4 inline-block mr-2" />
             Add Vehicle
           </button>
           <button
             onClick={() => setActiveTab('ledger')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'ledger'
+            className={`px-4 py-2 rounded-lg font-medium transition-colors ${activeTab === 'ledger'
                 ? 'bg-blue-600 text-white'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             <BarChart3 className="w-4 h-4 inline-block mr-2" />
             Allocation Ledger
@@ -347,7 +372,7 @@ const FuelManagement: React.FC = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -359,7 +384,7 @@ const FuelManagement: React.FC = () => {
                 </div>
               </div>
             </div>
-            
+
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -381,7 +406,7 @@ const FuelManagement: React.FC = () => {
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {fuelWallets.map((wallet) => (
-                <div key={wallet.id || `wallet-${wallet.name}`} className="bg-gray-50 rounded-lg p-4">
+                  <div key={wallet.id || `wallet-${wallet.name}`} className="bg-gray-50 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
                       <h4 className="font-semibold text-gray-900">{wallet.name}</h4>
                       <Fuel className="w-5 h-5 text-gray-400" />
@@ -405,7 +430,7 @@ const FuelManagement: React.FC = () => {
         <div className="space-y-6">
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Allocate Fuel</h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle (Own Vehicles)</label>
@@ -446,7 +471,7 @@ const FuelManagement: React.FC = () => {
                   value={selectedSupplier}
                   onChange={(e) => {
                     setSelectedSupplier(e.target.value);
-                    if (e.target.value) setSelectedVehicle(''); // Clear vehicle when supplier is selected
+                    if (e.target.value) { setSelectedVehicle(''); setSelectedMemo(''); }
                   }}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
@@ -457,6 +482,36 @@ const FuelManagement: React.FC = () => {
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Memo No (Optional)</label>
+                <select
+                  value={selectedMemo}
+                  onChange={(e) => {
+                    setSelectedMemo(e.target.value);
+                    if (e.target.value) { setSelectedVehicle(''); setSelectedSupplier(''); }
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Select Memo (Optional)</option>
+                  {memos
+                    .filter(m => m.status !== 'paid')
+                    .sort((a, b) => (b.memo_number || '').localeCompare(a.memo_number || ''))
+                    .map((memo, index) => (
+                      <option key={memo.id || (memo as any)._id || `memo-${index}`} value={memo.id || (memo as any)._id}>
+                        {memo.memo_number} — {memo.supplier}
+                      </option>
+                    ))}
+                </select>
+                {selectedMemo && (() => {
+                  const m = memos.find(x => (x.id || (x as any)._id) === selectedMemo);
+                  return m ? (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Supplier: <span className="font-medium">{m.supplier}</span> | Net: <span className="font-medium">{formatCurrency(m.net_amount || 0)}</span>
+                    </p>
+                  ) : null;
+                })()}
               </div>
 
               <div>
@@ -528,7 +583,7 @@ const FuelManagement: React.FC = () => {
             <div className="mt-6">
               <button
                 onClick={handleFuelAllocation}
-                disabled={(!selectedVehicle && !selectedSupplier) || !selectedWallet || !allocationForm.amount}
+                disabled={(!selectedVehicle && !selectedSupplier && !selectedMemo) || !selectedWallet || !allocationForm.amount}
                 data-fuel-submit
                 className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center space-x-2"
               >
@@ -546,7 +601,7 @@ const FuelManagement: React.FC = () => {
           {/* Add Credit to Wallet */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-6">Add Credit to Fuel Wallet</h3>
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Fuel Wallet</label>
@@ -684,7 +739,7 @@ const FuelManagement: React.FC = () => {
                     const totalExpense = typeof summary?.totalExpense === 'number' ? summary.totalExpense : 0;
                     const totalQuantity = typeof summary?.totalQuantity === 'number' ? summary.totalQuantity : 0;
                     const expenseCount = typeof summary?.expenseCount === 'number' ? summary.expenseCount : 0;
-                    
+
                     return (
                       <tr key={`${vehicleNo}-${index}`} className="hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -725,7 +780,7 @@ const FuelManagement: React.FC = () => {
       {activeTab === 'add-vehicle' && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-6">Register New Vehicle</h2>
-          
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Vehicle Number *</label>

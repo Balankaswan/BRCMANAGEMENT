@@ -179,7 +179,9 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
       .reduce((sum, e) => sum + e.amount, 0)
     : 0;
 
-  const totalAdvances = bankingAdvances + cashbookAdvances || memo.advance_payments?.reduce((sum, adv) => sum + adv.amount, 0) || 0;
+  // Count fuel-tagged advance_payments (id starts with 'fuel-') separately from banking/cashbook
+  const fuelAdvances = (memo.advance_payments || []).filter(a => a.id?.startsWith('fuel-')).reduce((sum, a) => sum + (a.amount || 0), 0);
+  const totalAdvances = bankingAdvances + cashbookAdvances + fuelAdvances;
 
   // Financial table - matching image style with proper borders
   const financialRows = [
@@ -240,7 +242,12 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
     ).map(e => ({ ...e, source: 'CASH' }))
     : [];
 
-  const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments]
+  // Include fuel-tagged advance_payments from the memo
+  const memoFuelPayments = (memo.advance_payments || [])
+    .filter(a => a.id?.startsWith('fuel-'))
+    .map(a => ({ ...a, date: a.date, amount: a.amount, source: 'FUEL' }));
+
+  const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments, ...memoFuelPayments]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
   // Display advance payments if any exist
