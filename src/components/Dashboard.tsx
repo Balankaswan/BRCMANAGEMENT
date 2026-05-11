@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt } from 'lucide-react';
+import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt, FileDown, Table, Download } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
+import type { PartyLedgerSummary, DashboardExportOptions } from '../utils/dashboardPartyLedgerExport';
 
 interface DashboardProps {
   onNavigate?: (page: string, params?: any) => void;
@@ -286,6 +287,194 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     return finalSupplierBalance;
   }, [memos, loadingSlips, vehicles, bankingEntries, cashbookEntries]);
 
+  // ─── Compute full per-party ledger summaries for PDF/Excel export ─────
+  const allPartyLedgerSummaries = useMemo((): PartyLedgerSummary[] => {
+    // Unique party names from bills
+    const partyNames = Array.from(new Set(bills.map(b => b.party))).sort();
+
+    return partyNames.map(partyName => {
+      const partyBills = bills
+        .filter(b => b.party === partyName)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      const partyBankingEntries = bankingEntries.filter(entry => {
+        if (
+          (entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
+          partyBills.some(bill => bill.bill_number === entry.reference_id)
+        ) return true;
+        if (entry.category === 'party_on_account' && entry.reference_name === partyName) return true;
+        if (entry.category === 'party_debit_note' && entry.reference_name === partyName) return true;
+        return false;
+      });
+
+      const partyCashbookEntries = (cashbookEntries || []).filter(entry => {
+        if (
+          (entry.category === 'bill_payment' || entry.category === 'bill_advance') &&
+          partyBills.some(bill => bill.bill_number === entry.reference_id)
+        ) return true;
+        if (entry.category === 'party_on_account' && entry.reference_name === partyName) return true;
+        if (entry.category === 'party_commission' && entry.reference_name === partyName) return true;
+        return false;
+      });
+
+      // Build combined timeline
+      const allEntries: Array<{
+        type: 'bill' | 'payment' | 'advance' | 'on_account' | 'debit_note';
+        date: string;
+        data: any;
+        source?: 'bank' | 'cash';
+      }> = [];
+
+      partyBills.forEach(bill => allEntries.push({ type: 'bill', date: bill.date, data: bill }));
+      partyBankingEntries.forEach(entry => {
+        if (entry.category === 'bill_payment') allEntries.push({ type: 'payment', date: entry.date, data: entry, source: 'bank' });
+        else if (entry.category === 'bill_advance') allEntries.push({ type: 'advance', date: entry.date, data: entry, source: 'bank' });
+        else if (entry.category === 'party_on_account') allEntries.push({ type: 'on_account', date: entry.date, data: entry, source: 'bank' });
+        else if (entry.category === 'party_debit_note') allEntries.push({ type: 'debit_note', date: entry.date, data: entry, source: 'bank' });
+      });
+      partyCashbookEntries.forEach(entry => {
+        if (entry.category === 'bill_payment') allEntries.push({ type: 'payment', date: entry.date, data: entry, source: 'cash' });
+        else if (entry.category === 'bill_advance') allEntries.push({ type: 'advance', date: entry.date, data: entry, source: 'cash' });
+        else if (entry.category === 'party_on_account') allEntries.push({ type: 'on_account', date: entry.date, data: entry, source: 'cash' });
+        else if (entry.category === 'party_commission') allEntries.push({ type: 'on_account', date: entry.date, data: entry, source: 'cash' });
+      });
+
+      allEntries.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+      // Build ledger rows
+      let runningBalance = 0;
+      let totalNetBills = 0;
+      let totalPayments = 0;
+      const rows: PartyLedgerSummary['entries'] = [];
+
+      allEntries.forEach(entry => {
+        const bill = entry.type === 'bill'
+          ? entry.data
+          : partyBills.find(b => b.bill_number === entry.data.reference_id);
+        const ls = bill ? loadingSlips.find(s => s.id === bill.loading_slip_id) : null;
+        const tripDetails = ls
+          ? `${ls.from_location} – ${ls.to_location} / ${ls.vehicle_no}`
+          : '';
+
+        let credit = 0;
+        let debitPayment = 0;
+        let remarks = '';
+        let billAmount = 0, detention = 0, extra = 0, rto = 0, tds = 0, mamool = 0, commission = 0, penalties = 0;
+
+        if (entry.type === 'bill') {
+          billAmount = entry.data.bill_amount || 0;
+          detention = entry.data.detention || 0;
+          extra = entry.data.extra || 0;
+          rto = entry.data.rto || 0;
+          tds = entry.data.tds || 0;
+          mamool = entry.data.mamool || 0;
+          commission = entry.data.commission || 0;
+          penalties = entry.data.penalties || 0;
+          credit = billAmount + detention + extra + rto - mamool - commission - tds - penalties;
+
+          const billAdvances = partyBankingEntries.filter(
+            be => be.category === 'bill_advance' && be.reference_id === entry.data.bill_number
+          );
+          const totalAdv = billAdvances.reduce((s, a) => s + a.amount, 0);
+          runningBalance += credit - totalAdv;
+          totalNetBills += credit;
+          remarks = totalAdv > 0
+            ? `Bill Created (Adv ₹${totalAdv.toLocaleString('en-IN')})`
+            : 'Bill Created';
+        } else if (entry.type === 'payment') {
+          debitPayment = entry.data.amount;
+          runningBalance -= debitPayment;
+          totalPayments += debitPayment;
+          remarks = `Payment (${entry.source?.toUpperCase() || ''})`;
+        } else if (entry.type === 'advance') {
+          return; // already accounted
+        } else if (entry.type === 'on_account') {
+          debitPayment = entry.data.amount;
+          runningBalance -= debitPayment;
+          totalPayments += debitPayment;
+          remarks = `On Account (${entry.source?.toUpperCase() || ''})`;
+        } else if (entry.type === 'debit_note') {
+          debitPayment = entry.data.amount;
+          runningBalance -= debitPayment;
+          totalPayments += debitPayment;
+          remarks = `Debit Note - ${entry.data.narration || 'Adj'}`;
+        }
+
+        rows.push({
+          date: entry.date,
+          billNo: bill?.bill_number || '',
+          tripDetails,
+          billAmount,
+          detention,
+          extra,
+          rto,
+          tds,
+          mamool,
+          commission,
+          penalties,
+          netBill: credit,
+          debitPayment,
+          runningBalance,
+          remarks,
+        });
+      });
+
+      return {
+        partyName: partyName,
+        totalBills: partyBills.length,
+        totalNetBillAmount: totalNetBills,
+        totalPayments: totalPayments,
+        outstandingBalance: runningBalance,
+        entries: rows,
+      };
+    });
+  }, [bills, bankingEntries, cashbookEntries, loadingSlips]);
+
+  // ─── Export handlers ──────────────────────────────────────────────────
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const { generateDashboardPartyLedgerPDF } = await import(
+        '../utils/dashboardPartyLedgerExport'
+      );
+      await generateDashboardPartyLedgerPDF({
+        parties: allPartyLedgerSummaries,
+        grandTotalOutstanding: allPartyLedgerSummaries
+          .filter(p => p.outstandingBalance > 0)
+          .reduce((s, p) => s + p.outstandingBalance, 0),
+        exportDate: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error('PDF export failed:', err);
+      alert(`PDF export failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const { generateDashboardPartyLedgerExcel } = await import(
+        '../utils/dashboardPartyLedgerExport'
+      );
+      await generateDashboardPartyLedgerExcel({
+        parties: allPartyLedgerSummaries,
+        grandTotalOutstanding: allPartyLedgerSummaries
+          .filter(p => p.outstandingBalance > 0)
+          .reduce((s, p) => s + p.outstandingBalance, 0),
+        exportDate: new Date().toISOString(),
+      });
+    } catch (err: any) {
+      console.error('Excel export failed:', err);
+      alert(`Excel export failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   // Calculate monthly revenue (total bill amounts)
   const monthlyRevenue = useMemo(() => {
     return filteredBills.reduce((sum, bill) => sum + bill.bill_amount, 0);
@@ -410,6 +599,62 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
           );
         })}
+      </div>
+
+      {/* Party Ledger Export Section */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+              <FileText className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Party Ledger Report</h3>
+              <p className="text-sm text-gray-500">
+                Export all parties' ledger with bills, payments &amp; outstanding balances
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-3">
+            <button
+              onClick={handleExportPDF}
+              disabled={isExporting || bills.length === 0}
+              className="inline-flex items-center px-4 py-2.5 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors space-x-2 shadow-sm"
+            >
+              <FileDown className="w-4 h-4" />
+              <span>{isExporting ? 'Generating...' : 'Download PDF'}</span>
+            </button>
+            <button
+              onClick={handleExportExcel}
+              disabled={isExporting || bills.length === 0}
+              className="inline-flex items-center px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors space-x-2 shadow-sm"
+            >
+              <Table className="w-4 h-4" />
+              <span>{isExporting ? 'Generating...' : 'Download Excel'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick party-wise outstanding preview */}
+        {allPartyLedgerSummaries.filter(p => p.outstandingBalance > 0).length > 0 && (
+          <div className="mt-4 border-t border-gray-100 pt-4">
+            <div className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-2">Top Outstanding Parties</div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {allPartyLedgerSummaries
+                .filter(p => p.outstandingBalance > 0)
+                .sort((a, b) => b.outstandingBalance - a.outstandingBalance)
+                .slice(0, 4)
+                .map((party, idx) => (
+                  <div key={`top-party-${idx}`} className="bg-red-50 rounded-lg p-3 border border-red-100">
+                    <div className="text-sm font-medium text-gray-800 truncate">{party.partyName}</div>
+                    <div className="text-lg font-bold text-red-700 mt-1">{formatCurrency(party.outstandingBalance)}</div>
+                    <div className="text-xs text-gray-500">{party.totalBills} bills</div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Recent Activity */}
