@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FileText, Calendar, DollarSign, CreditCard, Truck } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Calendar, DollarSign, CreditCard, Truck, FileDown, Table } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
 
@@ -122,6 +122,69 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
     }
   };
 
+  // ─── PDF / Excel Export ──────────────────────────────────────────────
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportPDF = async () => {
+    setIsExporting(true);
+    try {
+      const { generatePartyDetailPDF } = await import('../utils/partyDetailExport');
+      await generatePartyDetailPDF({
+        partyName: partyName || '',
+        contactPerson: partyInfo?.contact_person || 'N/A',
+        phone: partyInfo?.phone || 'N/A',
+        address: partyInfo?.address || 'N/A',
+        totalPartyBalance: totalPendingAmount,
+        activeTrips: activeTripCount,
+        pendingBills: pendingBills.map(b => ({
+          billNo: b.billNo,
+          billDate: b.billDate,
+          vehicleNo: b.vehicleNo,
+          fromLocation: b.fromLocation,
+          toLocation: b.toLocation,
+          totalAmount: b.totalAmount,
+          paidAmount: b.paidAmount,
+          pendingAmount: b.pendingAmount,
+        })),
+      });
+    } catch (err: any) {
+      console.error('PDF export failed:', err);
+      alert(`PDF export failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setIsExporting(true);
+    try {
+      const { generatePartyDetailExcel } = await import('../utils/partyDetailExport');
+      await generatePartyDetailExcel({
+        partyName: partyName || '',
+        contactPerson: partyInfo?.contact_person || 'N/A',
+        phone: partyInfo?.phone || 'N/A',
+        address: partyInfo?.address || 'N/A',
+        totalPartyBalance: totalPendingAmount,
+        activeTrips: activeTripCount,
+        pendingBills: pendingBills.map(b => ({
+          billNo: b.billNo,
+          billDate: b.billDate,
+          vehicleNo: b.vehicleNo,
+          fromLocation: b.fromLocation,
+          toLocation: b.toLocation,
+          totalAmount: b.totalAmount,
+          paidAmount: b.paidAmount,
+          pendingAmount: b.pendingAmount,
+        })),
+      });
+    } catch (err: any) {
+      console.error('Excel export failed:', err);
+      alert(`Excel export failed: ${err?.message || 'Unknown error'}`);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   if (!partyName) {
     return (
       <div className="text-center py-12">
@@ -147,6 +210,22 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
         </div>
         <h1 className="text-2xl font-bold text-gray-900">{partyName}</h1>
         <div className="flex space-x-2">
+          <button
+            onClick={handleExportPDF}
+            disabled={isExporting || pendingBills.length === 0}
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+          >
+            <FileDown className="w-4 h-4" />
+            <span>{isExporting ? 'Generating...' : 'PDF'}</span>
+          </button>
+          <button
+            onClick={handleExportExcel}
+            disabled={isExporting || pendingBills.length === 0}
+            className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center space-x-2 transition-colors"
+          >
+            <Table className="w-4 h-4" />
+            <span>{isExporting ? 'Generating...' : 'Excel'}</span>
+          </button>
           <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-2">
             <CreditCard className="w-4 h-4" />
             <span>Record Payment</span>
