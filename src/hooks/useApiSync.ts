@@ -214,6 +214,14 @@ export const useApiSync = () => {
           console.log('📊 MongoDB Loading Slips Available:', fetchedSlips.length);
           console.log('🏪 Current Store Loading Slips:', currentSlips.length);
           
+          // Check if a loading slip was recently created (within last 5 seconds)
+          const recentSlipCreation = localStorage.getItem('lastLoadingSlipCreation');
+          const isRecentSlipCreation = recentSlipCreation && (Date.now() - parseInt(recentSlipCreation)) < 5000;
+          
+          if (isRecentSlipCreation && currentSlips.length > 0) {
+            console.log('⏳ Skipping loading slip sync - recent creation detected');
+          } else {
+          
           if (fetchedSlips.length === 0) {
             console.error('❌ NO LOADING SLIPS FETCHED FROM MONGODB! Check API response.');
             console.log('API Response:', loadingSlipsResponse.value);
@@ -261,6 +269,7 @@ export const useApiSync = () => {
           } else {
             console.log('⚠️ No loading slips fetched from MongoDB');
           }
+          } // end of else (not recent loading slip creation)
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
@@ -553,6 +562,8 @@ export const useApiSync = () => {
           window.dispatchEvent(new CustomEvent('data-sync-required'));
           break;
         case 'loadingSlip':
+          // Mark loading slip creation timestamp to prevent immediate sync overwrite
+          localStorage.setItem('lastLoadingSlipCreation', Date.now().toString());
           const slipResponse = await apiService.createLoadingSlip(data);
           store.addLoadingSlip(slipResponse.loadingSlip);
           window.dispatchEvent(new CustomEvent('data-sync-required'));

@@ -75,7 +75,10 @@ router.post('/', async (req, res) => {
     const memoData = req.body;
 
     if (memoData.loading_slip_id && !mongoose.Types.ObjectId.isValid(memoData.loading_slip_id)) {
-      return res.status(400).json({ message: 'Invalid Loading Slip ID. Please refresh to ensure you are using a valid Loading Slip.' });
+      console.error('❌ Invalid Loading Slip ID received:', memoData.loading_slip_id, '(type:', typeof memoData.loading_slip_id, ')');
+      return res.status(400).json({ 
+        message: `Invalid Loading Slip ID: "${memoData.loading_slip_id}". This loading slip was not saved to the server properly. Please refresh the page and try again. If the problem persists, delete the loading slip and re-create it.` 
+      });
     }
 
     // Check if memo already exists for this loading slip

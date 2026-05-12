@@ -13,6 +13,11 @@ interface LoadingSlipComponentProps {
   onNavigate?: (page: string, params?: any) => void;
 }
 
+// Helper to check if a string is a valid MongoDB ObjectId (24-char hex)
+const isValidMongoId = (id: string): boolean => {
+  return /^[a-f\d]{24}$/i.test(id);
+};
+
 const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate }) => {
   const { loadingSlips, memos, bills, vehicles, addLoadingSlip, updateLoadingSlip, deleteLoadingSlip, addMemo, addBill } = useDataStore();
   const [showForm, setShowForm] = useState(false);
@@ -51,15 +56,22 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
       addLoadingSlip(response.loadingSlip);
       console.log('✅ Loading slip created successfully:', response.loadingSlip.slip_number);
     } catch (error) {
-      console.error('❌ Failed to create loading slip:', error);
-      const newSlip: LoadingSlip = {
-        ...slipData,
-        id: getNextSequenceNumber(loadingSlips, 'slip_number', 'LS'),
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      addLoadingSlip(newSlip);
-      console.log('⚠️ Created loading slip locally:', newSlip.slip_number);
+      console.error('❌ Failed to create loading slip (attempt 1):', error);
+      
+      // Retry once after a short delay
+      try {
+        console.log('🔄 Retrying loading slip creation...');
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        localStorage.setItem('lastLoadingSlipCreation', Date.now().toString());
+        const retryResponse = await apiService.createLoadingSlip(slipData);
+        addLoadingSlip(retryResponse.loadingSlip);
+        console.log('✅ Loading slip created successfully on retry:', retryResponse.loadingSlip.slip_number);
+      } catch (retryError) {
+        console.error('❌ Failed to create loading slip (attempt 2):', retryError);
+        // Show clear error to user - do NOT create local-only slip with invalid ID
+        // because it would break memo/bill creation later
+        alert(`Failed to save loading slip ${slipData.slip_number} to the server. Please check your internet connection and try again.\n\nError: ${retryError instanceof Error ? retryError.message : 'Unknown error'}`);
+      }
     }
     console.log('🔄 Resetting form state');
     setShowForm(false);
@@ -293,6 +305,11 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                           onClick={() => {
                             console.log('Setting selectedSlipForMemo:', slip);
                             console.log('Slip ID:', slip.id);
+                            // Validate that slip has a valid MongoDB ObjectId before creating memo
+                            if (!slip.id || !isValidMongoId(slip.id)) {
+                              alert(`Cannot create memo: Loading Slip #${slip.slip_number} was not saved to the server properly. Please delete it and create it again with a working internet connection.`);
+                              return;
+                            }
                             setSelectedSlipForMemo(slip);
                             setShowMemoForm(true);
                           }}
@@ -317,6 +334,11 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                       ) : (
                         <button
                           onClick={() => {
+                            // Validate that slip has a valid MongoDB ObjectId before creating bill
+                            if (!slip.id || !isValidMongoId(slip.id)) {
+                              alert(`Cannot create bill: Loading Slip #${slip.slip_number} was not saved to the server properly. Please delete it and create it again with a working internet connection.`);
+                              return;
+                            }
                             setSelectedSlipForBill(slip);
                             setShowBillForm(true);
                           }}
