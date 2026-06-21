@@ -104,6 +104,59 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
     };
   };
 
+  // Function to calculate pending amount owed to supplier for a memo
+  const calculateMemoBalance = (memo: any) => {
+    // Net amount the company owes the supplier
+    const supplierOwed = memo.net_amount || 0;
+
+    // Payments already made via banking debit entries
+    const bankingPayments = bankingEntries
+      .filter(e =>
+        (e.category === 'memo_advance' || e.category === 'memo_payment') &&
+        e.reference_id === memo.memo_number
+      )
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Payments already made via cashbook debit entries
+    const cashbookPayments = cashbookEntries
+      .filter(e =>
+        (e.category === 'memo_advance' || e.category === 'memo_payment') &&
+        e.reference_id === memo.memo_number
+      )
+      .reduce((sum, e) => sum + e.amount, 0);
+
+    // Fuel advances already tagged to this memo
+    const fuelAdvances = (memo.advance_payments || [])
+      .filter((a: any) => a.id?.startsWith('fuel-'))
+      .reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
+
+    const totalPaid = bankingPayments + cashbookPayments + fuelAdvances;
+    const pendingBalance = Math.max(0, supplierOwed - totalPaid);
+
+    return { supplierOwed, totalPaid, pendingBalance };
+  };
+
+  // All pending memos — enriched with loading slip data, sorted newest-first
+  const pendingMemosEnriched = useMemo(() => {
+    return memos
+      .map(memo => {
+        const { pendingBalance } = calculateMemoBalance(memo);
+        // Resolve loading slip (may be populated object or string ID)
+        const slip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null
+          ? memo.loading_slip_id as any
+          : loadingSlips.find(ls => ls.id === memo.loading_slip_id || (ls as any)._id === memo.loading_slip_id);
+        return { memo, pendingBalance, slip };
+      })
+      .filter(({ pendingBalance }) => pendingBalance > 0)
+      // Newest memo first (highest memo number / latest created_at)
+      .sort((a, b) => {
+        const dateA = new Date(a.memo.created_at || a.memo.date || 0).getTime();
+        const dateB = new Date(b.memo.created_at || b.memo.date || 0).getTime();
+        return dateB - dateA;
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [memos, loadingSlips, bankingEntries, cashbookEntries]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -500,12 +553,60 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
               )}
 
 
-              {/* Reference fields for other categories (excluding party_on_account, party_commission, and supplier_on_account) */}
-              {formData.category !== 'bill_advance' && formData.category !== 'bill_payment' && formData.category !== 'party_on_account' && formData.category !== 'party_commission' && String(formData.category) !== 'supplier_on_account' && (
+              {/* Memo selection — rich dropdown for memo_advance / memo_payment */}
+              {(formData.category === 'memo_advance' || formData.category === 'memo_payment') && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Memo
+                    <span className="ml-2 text-xs text-gray-400 font-normal">(pending memos, newest first)</span>
+                  </label>
+                  <select
+                    name="reference_id"
+                    value={formData.reference_id}
+                    onChange={(e) => {
+                      const selected = pendingMemosEnriched.find(({ memo }) => memo.memo_number === e.target.value);
+                      setFormData(prev => ({
+                        ...prev,
+                        reference_id: e.target.value,
+                        reference_name: selected?.memo.supplier || prev.reference_name,
+                      }));
+                    }}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    required
+                  >
+                    <option value="">Select Memo</option>
+                    {pendingMemosEnriched.map(({ memo, pendingBalance, slip }) => {
+                      const vehicleNo = slip?.vehicle_no || memo.supplier || 'N/A';
+                      const from = slip?.from_location ? slip.from_location.substring(0, 10) : '—';
+                      const to   = slip?.to_location   ? slip.to_location.substring(0, 10)   : '—';
+                      const pending = pendingBalance.toLocaleString('en-IN');
+                      return (
+                        <option key={memo.id || memo.memo_number} value={memo.memo_number}>
+                          {memo.memo_number} | {vehicleNo} | {from}→{to} | ₹{pending} Pending
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {pendingMemosEnriched.length === 0 && (
+                    <p className="text-sm text-gray-500 mt-1">No pending memos found</p>
+                  )}
+                  {formData.reference_id && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Supplier: <span className="font-medium text-gray-700">{formData.reference_name}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Reference fields for other non-memo, non-bill, non-party categories */}
+              {formData.category !== 'bill_advance' && formData.category !== 'bill_payment' &&
+               formData.category !== 'memo_advance' && formData.category !== 'memo_payment' &&
+               formData.category !== 'party_on_account' && formData.category !== 'party_commission' &&
+               String(formData.category) !== 'supplier_on_account' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="relative">
                     <label className="block text-sm font-medium text-gray-700 mb-2">
-                      {formData.category.includes('bill') ? 'Bill Number' : 'Memo Number'}
+                      {formData.category.includes('bill') ? 'Bill Number' : 'Reference Number'}
                     </label>
                     <div className="relative">
                       <input
@@ -515,10 +616,10 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                         onChange={handleInputChange}
                         onFocus={() => setShowReferenceDropdown(true)}
                         className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        placeholder={formData.category.includes('bill') ? 'Select Bill Number' : 'Select Memo Number'}
+                        placeholder={formData.category.includes('bill') ? 'Select Bill Number' : 'Enter Reference'}
                         required
                       />
-                      <ChevronDown 
+                      <ChevronDown
                         className="absolute right-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 cursor-pointer"
                         onClick={() => setShowReferenceDropdown(!showReferenceDropdown)}
                       />
@@ -527,19 +628,19 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
                           {getReferenceOptions()
                             .filter(option => option && option.toLowerCase().includes((formData.reference_id || '').toLowerCase()))
                             .map((option, index) => (
-                            <div
-                              key={`reference-${index}-${option}`}
-                              className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
-                              onClick={() => handleReferenceSelect(option)}
-                            >
-                              {option}
-                            </div>
-                          ))}
+                              <div
+                                key={`reference-${index}-${option}`}
+                                className="px-4 py-2 hover:bg-blue-50 cursor-pointer"
+                                onClick={() => handleReferenceSelect(option)}
+                              >
+                                {option}
+                              </div>
+                            ))}
                           {getReferenceOptions()
                             .filter(option => option && option.toLowerCase().includes((formData.reference_id || '').toLowerCase()))
                             .length === 0 && formData.reference_id && (
                             <div className="px-4 py-2 text-gray-500 text-sm">
-                              No {formData.category.includes('bill') ? 'bills' : 'memos'} found matching "{formData.reference_id}"
+                              No matches for "{formData.reference_id}"
                             </div>
                           )}
                         </div>
