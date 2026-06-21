@@ -264,8 +264,38 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
     pdf.text('No advance payments recorded', 15, advanceY + 5);
   }
 
+  // Notes / Narration section (if present)
+  let notesEndY = advanceY + 22;
+  if (memo.narration && memo.narration.trim()) {
+    const notesBoxY = advanceY + 18;
+    pdf.setFillColor(255, 243, 205); // Light yellow background
+    pdf.rect(10, notesBoxY, pageWidth - 20, 8, 'F');
+    pdf.setLineWidth(0.5);
+    pdf.setDrawColor(0, 0, 0);
+    pdf.rect(10, notesBoxY, pageWidth - 20, 8);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(0, 0, 0);
+    pdf.text('NOTES:', 15, notesBoxY + 5);
+
+    const notesTextY = notesBoxY + 8;
+    const wrappedNotes = pdf.splitTextToSize(memo.narration, pageWidth - 30);
+    const notesContentH = wrappedNotes.length * 5 + 4;
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(10, notesTextY, pageWidth - 20, notesContentH);
+    pdf.setLineWidth(0.3);
+    pdf.rect(10, notesTextY, pageWidth - 20, notesContentH);
+    pdf.setFontSize(8.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(30, 30, 30);
+    wrappedNotes.forEach((line: string, i: number) => {
+      pdf.text(line, 15, notesTextY + 4 + i * 5);
+    });
+    notesEndY = notesTextY + notesContentH + 6;
+  }
+
   // Signature section - portrait layout
-  const signatureY = advanceY + 25;
+  const signatureY = notesEndY;
   pdf.setTextColor(0, 0, 0);
   pdf.setLineWidth(0.5);
   pdf.line(20, signatureY, 90, signatureY);
@@ -834,9 +864,44 @@ export const generateBillPDF = async (bill: Bill, loadingSlip: LoadingSlip, bank
   pdf.line(summaryX, midSectionY + sumRowH * 2, summaryX + summaryBoxW, midSectionY + sumRowH * 2);
 
   // ─────────────────────────────────────────────
+  // NOTES / NARRATION (if present)
+  // ─────────────────────────────────────────────
+  let notesBottomY = midSectionY + midSectionH + 4;
+  if (bill.narration && bill.narration.trim()) {
+    const notesLabelH = 7;
+    const wrappedBillNotes = pdf.splitTextToSize(bill.narration, tableWidth - 10);
+    const notesTotalH = notesLabelH + wrappedBillNotes.length * 4.5 + 4;
+
+    // Yellow header bar
+    pdf.setFillColor(255, 243, 205);
+    pdf.rect(margin, notesBottomY, tableWidth, notesLabelH, 'F');
+    pdf.setLineWidth(0.3);
+    pdf.setDrawColor(180, 180, 180);
+    pdf.rect(margin, notesBottomY, tableWidth, notesLabelH);
+    pdf.setFontSize(7.5);
+    pdf.setFont('helvetica', 'bold');
+    pdf.setTextColor(30, 30, 30);
+    pdf.text('NOTES', margin + 3, notesBottomY + 5);
+
+    // Notes content area
+    const notesContentY = notesBottomY + notesLabelH;
+    const notesContentH = wrappedBillNotes.length * 4.5 + 4;
+    pdf.setFillColor(255, 255, 255);
+    pdf.rect(margin, notesContentY, tableWidth, notesContentH, 'FD');
+    pdf.setFontSize(7.5);
+    pdf.setFont('helvetica', 'normal');
+    pdf.setTextColor(40, 40, 40);
+    wrappedBillNotes.forEach((line: string, i: number) => {
+      pdf.text(line, margin + 3, notesContentY + 4 + i * 4.5);
+    });
+
+    notesBottomY = notesContentY + notesContentH + 4;
+  }
+
+  // ─────────────────────────────────────────────
   // BANK DETAILS & SIGNATURE — two-column, thin border
   // ─────────────────────────────────────────────
-  const bankY = midSectionY + midSectionH + 4;
+  const bankY = notesBottomY;
   const bankBoxH = 34;
   const halfW = tableWidth / 2;
 
