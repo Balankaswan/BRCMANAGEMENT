@@ -148,13 +148,13 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
 
   const handleDownloadPDF = async (memo: Memo) => {
     try {
-      const { generateMemoPDFNew } = await import('../utils/memoPdfGenerator');
+      const { generateMemoPDF } = await import('../utils/pdfGenerator');
       // Handle both cases: loading_slip_id as string or populated object
       const relatedLoadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null
         ? memo.loading_slip_id
         : loadingSlips.find(slip => slip.id === memo.loading_slip_id);
       if (relatedLoadingSlip) {
-        await generateMemoPDFNew(memo, relatedLoadingSlip, bankingEntries, cashbookEntries);
+        await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries, cashbookEntries);
       } else {
         console.error('Related loading slip not found for memo:', memo.id);
         alert('Related loading slip not found. Cannot generate PDF.');
