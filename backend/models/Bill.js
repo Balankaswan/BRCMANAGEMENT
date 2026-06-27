@@ -115,6 +115,10 @@ const billSchema = new mongoose.Schema({
   narration: {
     type: String,
     trim: true
+  },
+  is_downloaded: {
+    type: Boolean,
+    default: false
   }
 }, {
   timestamps: true

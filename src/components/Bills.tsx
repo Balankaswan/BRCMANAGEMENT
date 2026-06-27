@@ -135,6 +135,17 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
       
       if (relatedLoadingSlip) {
         await generateBillPDF(enhancedBill, relatedLoadingSlip, bankingEntries, cashbookEntries);
+        
+        // Update is_downloaded status
+        if (!bill.is_downloaded) {
+          const updatedBillData = { ...bill, is_downloaded: true };
+          try {
+            await apiService.updateBill(bill.id, updatedBillData);
+            updateBill(updatedBillData);
+          } catch (e) {
+            console.error('Failed to update download status', e);
+          }
+        }
       } else {
         console.error('Related loading slip not found for bill:', bill.id, 'loading_slip_id:', bill.loading_slip_id);
         alert('Related loading slip not found. Cannot generate PDF.');
@@ -362,6 +373,11 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
                         <h3 className="text-lg font-semibold text-blue-600">
                           Bill #{bill.bill_number}
                         </h3>
+                        {bill.is_downloaded && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                            Downloaded
+                          </span>
+                        )}
                         <div className="flex items-center space-x-3 text-sm text-gray-600">
                           <span>Trips: {trips}</span>
                           <span className={`font-medium ${

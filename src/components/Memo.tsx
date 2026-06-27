@@ -155,6 +155,17 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         : loadingSlips.find(slip => slip.id === memo.loading_slip_id);
       if (relatedLoadingSlip) {
         await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries, cashbookEntries);
+        
+        // Update is_downloaded status
+        if (!memo.is_downloaded) {
+          const updatedMemoData = { ...memo, is_downloaded: true };
+          try {
+            await apiService.updateMemo(memo.id, updatedMemoData);
+            updateMemo(updatedMemoData);
+          } catch (e) {
+            console.error('Failed to update download status', e);
+          }
+        }
       } else {
         console.error('Related loading slip not found for memo:', memo.id);
         alert('Related loading slip not found. Cannot generate PDF.');
@@ -388,9 +399,16 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                 <div className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div>
-                      <h3 className="text-lg font-semibold text-blue-600 mb-1">
-                        Memo #{memo.memo_number}
-                      </h3>
+                      <div className="flex items-center space-x-2 mb-1">
+                        <h3 className="text-lg font-semibold text-blue-600">
+                          Memo #{memo.memo_number}
+                        </h3>
+                        {memo.is_downloaded && (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                            Downloaded
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-gray-500">
                         {new Date(memo.date).toLocaleDateString('en-IN')} • {loadingSlip ? `${loadingSlip.from_location} → ${loadingSlip.to_location}` : 'N/A'}
                       </p>

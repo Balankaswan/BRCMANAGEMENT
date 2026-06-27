@@ -41,6 +41,7 @@ export interface Memo {
   paid_date?: string;
   paid_amount?: number;
   narration?: string;
+  is_downloaded?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -71,6 +72,7 @@ export interface Bill {
   // pod_image removed to optimize storage
   advance_payments?: AdvancePayment[];
   narration?: string;
+  is_downloaded?: boolean;
   created_at: string;
   updated_at: string;
 }
