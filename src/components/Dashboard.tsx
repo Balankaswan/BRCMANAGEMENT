@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import MonthFilterDropdown from './MonthFilterDropdown';
 import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt, FileDown, Table, Download } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
@@ -11,26 +12,26 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const { memos, bills, bankingEntries, cashbookEntries, loadingSlips, vehicles } = useDataStore();
   
-  // Month filter state
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  // Multi-month filter state — default to current month
+  const [selectedMonths, setSelectedMonths] = useState<string[]>(() => {
     const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    return [`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`];
   });
 
-  // Helper function to filter data by selected month
+  // Helper: filter items by selected months array
+  // If selectedMonths is empty → show everything (Overall mode)
   const filterByMonth = (items: any[], dateField: string = 'date') => {
-    if (!selectedMonth || selectedMonth === 'overall') return items;
-    
+    if (!selectedMonths || selectedMonths.length === 0) return items;
     return items.filter(item => {
       const itemDate = new Date(item[dateField]);
       const itemMonth = `${itemDate.getFullYear()}-${String(itemDate.getMonth() + 1).padStart(2, '0')}`;
-      return itemMonth === selectedMonth;
+      return selectedMonths.includes(itemMonth);
     });
   };
 
   // Filter data by selected month (only for profit and revenue calculations)
-  const filteredBills = useMemo(() => filterByMonth(bills), [bills, selectedMonth]);
-  const filteredMemos = useMemo(() => filterByMonth(memos), [memos, selectedMonth]);
+  const filteredBills = useMemo(() => filterByMonth(bills), [bills, selectedMonths]);
+  const filteredMemos = useMemo(() => filterByMonth(memos), [memos, selectedMonths]);
   
 
   // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
@@ -503,7 +504,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       iconBg: 'bg-orange-100',
     },
     {
-      title: selectedMonth === 'overall' ? 'Total Revenue' : 'Monthly Revenue',
+      title: selectedMonths.length === 0 ? 'Total Revenue' : selectedMonths.length === 1 ? 'Monthly Revenue' : 'Multi-Month Revenue',
       value: formatCurrency(monthlyRevenue),
       icon: DollarSign,
       color: 'bg-purple-50 text-purple-700',
@@ -535,26 +536,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
         <div className="flex items-center space-x-4">
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          >
-            <option value="overall">Overall</option>
-            {/* Generate current month and last 12 months */}
-            {Array.from({ length: 13 }, (_, i) => {
-              const date = new Date();
-              date.setMonth(date.getMonth() - i);
-              const value = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-              const label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
-              const isCurrent = i === 0;
-              return (
-                <option key={value} value={value}>
-                  {isCurrent ? `${label} (Current)` : label}
-                </option>
-              );
-            })}
-          </select>
+          <MonthFilterDropdown
+            selectedMonths={selectedMonths}
+            onChange={setSelectedMonths}
+          />
         </div>
       </div>
 

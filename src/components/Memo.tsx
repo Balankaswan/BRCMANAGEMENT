@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit, Trash2, FileText, Eye, Download, CheckCircle } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, Eye, Download, CheckCircle, FileSearch } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
 import { formatCurrency } from '../utils/numberGenerator';
 import MemoForm from './forms/MemoForm';
+import PDFPreviewModal from './PDFPreviewModal';
 import type { Memo } from '../types';
 
 interface MemoListProps {
@@ -17,6 +18,9 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   const [showForm, setShowForm] = useState(false);
   const [editingMemo, setEditingMemo] = useState<Memo | null>(null);
   const [viewMemo, setViewMemo] = useState<Memo | null>(null);
+  const [previewMemo, setPreviewMemo] = useState<Memo | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [showPaidModal, setShowPaidModal] = useState<Memo | null>(null);
   const [paidDate, setPaidDate] = useState('');
   const [search, setSearch] = useState('');
@@ -173,6 +177,30 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
     } catch (error) {
       console.error('Failed to generate PDF:', error);
       alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
+  const handlePreviewPDF = async (memo: Memo) => {
+    setPreviewLoading(true);
+    setPreviewMemo(memo);
+    try {
+      const { generateMemoPDF } = await import('../utils/pdfGenerator');
+      const relatedLoadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null
+        ? memo.loading_slip_id
+        : loadingSlips.find(slip => slip.id === memo.loading_slip_id);
+      if (relatedLoadingSlip) {
+        const blobUrl = await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries, cashbookEntries, { preview: true });
+        if (blobUrl) setPreviewBlobUrl(blobUrl as string);
+      } else {
+        alert('Related loading slip not found. Cannot generate preview.');
+        setPreviewMemo(null);
+      }
+    } catch (error) {
+      console.error('Error generating PDF preview:', error);
+      alert('Error generating PDF preview. Please try again.');
+      setPreviewMemo(null);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -492,6 +520,14 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                     </div>
                     <div className="flex items-center space-x-2">
                       <button
+                        onClick={() => handlePreviewPDF(memo)}
+                        className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        title="Preview PDF"
+                        disabled={previewLoading}
+                      >
+                        <FileSearch className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => setViewMemo(memo)}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                         title="View Details"
@@ -614,6 +650,18 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
             </div>
           </div>
         </div>
+      )}
+      {/* PDF Preview Modal */}
+      {previewMemo && previewBlobUrl && (
+        <PDFPreviewModal
+          blobUrl={previewBlobUrl}
+          title={`Memo #${previewMemo.memo_number} — ${previewMemo.supplier}`}
+          onDownload={() => handleDownloadPDF(previewMemo)}
+          onClose={() => {
+            setPreviewMemo(null);
+            setPreviewBlobUrl(null);
+          }}
+        />
       )}
     </div>
   );

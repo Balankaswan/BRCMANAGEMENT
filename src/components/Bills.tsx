@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, FileText, Edit, Download, Eye, Trash2 } from 'lucide-react';
+import { Plus, FileText, Edit, Download, Eye, Trash2, FileSearch } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
 import BillForm from './forms/BillForm';
+import PDFPreviewModal from './PDFPreviewModal';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 import type { Bill } from '../types';
@@ -17,6 +18,9 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   const [showForm, setShowForm] = useState(false);
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [viewBill, setViewBill] = useState<Bill | null>(null);
+  const [previewBill, setPreviewBill] = useState<Bill | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [showReceivedModal, setShowReceivedModal] = useState<Bill | null>(null);
   const [receivedDate, setReceivedDate] = useState('');
   const [search, setSearch] = useState('');
@@ -155,6 +159,44 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
       alert('Error generating PDF. Please try again.');
     }
   };
+  const handlePreviewPDF = async (bill: Bill) => {
+    setPreviewLoading(true);
+    setPreviewBill(bill);
+    try {
+      const advancePayments = bankingEntries
+        .filter(e => e.category === 'bill_advance' && e.reference_id === bill.bill_number)
+        .map(e => ({
+          id: e.id || e._id || `advance-${Date.now()}-${Math.random()}`,
+          bill_id: bill.id,
+          date: e.date,
+          amount: e.amount,
+          mode: (e.payment_mode as 'cash' | 'bank' | 'other') || 'bank',
+          reference: e.narration || e.reference_id
+        }));
+      const enhancedBill = { ...bill, advance_payments: advancePayments };
+      const { generateBillPDF } = await import('../utils/pdfGenerator');
+      let relatedLoadingSlip: any;
+      if (typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null) {
+        relatedLoadingSlip = bill.loading_slip_id;
+      } else {
+        relatedLoadingSlip = loadingSlips.find(ls => ls.id === bill.loading_slip_id || (ls as any)._id === bill.loading_slip_id);
+      }
+      if (relatedLoadingSlip) {
+        const blobUrl = await generateBillPDF(enhancedBill, relatedLoadingSlip, bankingEntries, cashbookEntries, { preview: true });
+        if (blobUrl) setPreviewBlobUrl(blobUrl as string);
+      } else {
+        alert('Related loading slip not found. Cannot generate preview.');
+        setPreviewBill(null);
+      }
+    } catch (error) {
+      console.error('Error generating PDF preview:', error);
+      alert('Error generating PDF preview. Please try again.');
+      setPreviewBill(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
 
   const handleMarkAsReceived = (bill: Bill) => {
     setShowReceivedModal(bill);
@@ -403,6 +445,14 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
                     
                     <div className="flex items-center space-x-2">
                       <button
+                        onClick={() => handlePreviewPDF(bill)}
+                        className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        title="Preview PDF"
+                        disabled={previewLoading}
+                      >
+                        <FileSearch className="w-4 h-4" />
+                      </button>
+                      <button
                         onClick={() => setViewBill(bill)}
                         className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                         title="View Details"
@@ -564,6 +614,18 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
             </div>
           </div>
         </div>
+      )}
+      {/* PDF Preview Modal */}
+      {previewBill && previewBlobUrl && (
+        <PDFPreviewModal
+          blobUrl={previewBlobUrl}
+          title={`Bill #${previewBill.bill_number} — ${previewBill.party}`}
+          onDownload={() => handleDownloadPDF(previewBill)}
+          onClose={() => {
+            setPreviewBill(null);
+            setPreviewBlobUrl(null);
+          }}
+        />
       )}
     </div>
   );

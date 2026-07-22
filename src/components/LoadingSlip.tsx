@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Edit, Trash2, FileText, Eye, Download } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, Eye, Download, FileSearch } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
@@ -7,6 +7,7 @@ import { formatCurrency } from '../utils/numberGenerator';
 import LoadingSlipForm from './forms/LoadingSlipForm';
 import MemoForm from './forms/MemoForm';
 import BillForm from './forms/BillForm';
+import PDFPreviewModal from './PDFPreviewModal';
 import type { LoadingSlip } from '../types';
 
 interface LoadingSlipComponentProps {
@@ -23,6 +24,9 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
   const [showForm, setShowForm] = useState(false);
   const [editingSlip, setEditingSlip] = useState<LoadingSlip | null>(null);
   const [viewSlip, setViewSlip] = useState<LoadingSlip | null>(null);
+  const [previewSlip, setPreviewSlip] = useState<LoadingSlip | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [showMemoForm, setShowMemoForm] = useState(false);
   const [showBillForm, setShowBillForm] = useState(false);
@@ -105,6 +109,22 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
     } catch (error) {
       console.error('Failed to generate PDF:', error);
       alert('Failed to generate PDF. Please try again.');
+    }
+  };
+
+  const handlePreviewPDF = async (slip: LoadingSlip) => {
+    setPreviewLoading(true);
+    setPreviewSlip(slip);
+    try {
+      const { generateLoadingSlipPDF } = await import('../utils/pdfGenerator');
+      const blobUrl = await generateLoadingSlipPDF(slip, { preview: true });
+      if (blobUrl) setPreviewBlobUrl(blobUrl as string);
+    } catch (error) {
+      console.error('Error generating PDF preview:', error);
+      alert('Error generating PDF preview. Please try again.');
+      setPreviewSlip(null);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -238,6 +258,14 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
                         title="Edit"
                       >
                         <Edit className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => handlePreviewPDF(slip)}
+                        className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors"
+                        title="Preview PDF"
+                        disabled={previewLoading}
+                      >
+                        <FileSearch className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => handleDownloadPDF(slip)}
@@ -577,6 +605,19 @@ const LoadingSlipComponent: React.FC<LoadingSlipComponentProps> = ({ onNavigate 
           onCancel={() => {
             setShowBillForm(false);
             setSelectedSlipForBill(null);
+          }}
+        />
+      )}
+
+      {/* PDF Preview Modal */}
+      {previewSlip && previewBlobUrl && (
+        <PDFPreviewModal
+          blobUrl={previewBlobUrl}
+          title={`Loading Slip #${previewSlip.slip_number} — ${previewSlip.party}`}
+          onDownload={() => handleDownloadPDF(previewSlip)}
+          onClose={() => {
+            setPreviewSlip(null);
+            setPreviewBlobUrl(null);
           }}
         />
       )}
