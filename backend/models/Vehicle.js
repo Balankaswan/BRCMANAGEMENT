@@ -41,6 +41,21 @@ const vehicleSchema = new mongoose.Schema({
   },
   year: {
     type: Number
+  },
+  fitness_expiry: {
+    type: Date
+  },
+  insurance_expiry: {
+    type: Date
+  },
+  permit_expiry: {
+    type: Date
+  },
+  puc_expiry: {
+    type: Date
+  },
+  tax_expiry: {
+    type: Date
   }
 }, {
   timestamps: true

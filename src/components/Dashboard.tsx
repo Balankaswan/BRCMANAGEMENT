@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import MonthFilterDropdown from './MonthFilterDropdown';
-import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt, FileDown, Table, Download } from 'lucide-react';
+import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt, FileDown, Table, Download, ShieldAlert, AlertTriangle, CheckCircle, Calendar } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
+import { getExpiryStatus } from './VehicleDocumentModal';
 import type { PartyLedgerSummary, DashboardExportOptions } from '../utils/dashboardPartyLedgerExport';
 
 interface DashboardProps {
@@ -32,6 +33,45 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   // Filter data by selected month (only for profit and revenue calculations)
   const filteredBills = useMemo(() => filterByMonth(bills), [bills, selectedMonths]);
   const filteredMemos = useMemo(() => filterByMonth(memos), [memos, selectedMonths]);
+
+  // Calculate vehicle document compliance alerts
+  const vehicleExpiryAlerts = useMemo(() => {
+    const alerts: Array<{
+      vehicle_no: string;
+      doc_name: string;
+      date: string;
+      status: 'expired' | 'expiring';
+      label: string;
+      days: number;
+    }> = [];
+
+    vehicles.forEach(vehicle => {
+      const docs = [
+        { doc_name: 'Insurance', date: vehicle.insurance_expiry },
+        { doc_name: 'Fitness Certificate', date: vehicle.fitness_expiry },
+        { doc_name: 'National/State Permit', date: vehicle.permit_expiry },
+        { doc_name: 'PUC Certificate', date: vehicle.puc_expiry },
+        { doc_name: 'Road Tax', date: vehicle.tax_expiry }
+      ];
+
+      docs.forEach(({ doc_name, date }) => {
+        if (!date) return;
+        const info = getExpiryStatus(date);
+        if (info.status === 'expired' || info.status === 'expiring') {
+          alerts.push({
+            vehicle_no: vehicle.vehicle_no,
+            doc_name,
+            date,
+            status: info.status as 'expired' | 'expiring',
+            label: info.label,
+            days: info.days || 0
+          });
+        }
+      });
+    });
+
+    return alerts.sort((a, b) => a.days - b.days);
+  }, [vehicles]);
   
 
   // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
@@ -584,6 +624,77 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
             </div>
           );
         })}
+      </div>
+
+      {/* ── Vehicle Document & Compliance Expiry Alerts Widget ── */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center space-x-3">
+            <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${vehicleExpiryAlerts.length > 0 ? 'bg-amber-100 text-amber-700' : 'bg-green-100 text-green-700'}`}>
+              {vehicleExpiryAlerts.length > 0 ? <ShieldAlert className="w-5 h-5" /> : <CheckCircle className="w-5 h-5" />}
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                Vehicle Compliance & Expiry Tracker
+                {vehicleExpiryAlerts.length > 0 && (
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white">
+                    {vehicleExpiryAlerts.length} Action Needed
+                  </span>
+                )}
+              </h3>
+              <p className="text-sm text-gray-500">
+                Track Insurance, Fitness, Permit, PUC & Tax renewal dates for your fleet
+              </p>
+            </div>
+          </div>
+          {onNavigate && (
+            <button
+              onClick={() => onNavigate('vehicle-ownership')}
+              className="px-4 py-2 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold transition-colors flex items-center space-x-1"
+            >
+              <Truck className="w-4 h-4" />
+              <span>Manage Vehicle Expiries →</span>
+            </button>
+          )}
+        </div>
+
+        {vehicleExpiryAlerts.length === 0 ? (
+          <div className="flex items-center space-x-3 p-4 bg-emerald-50 rounded-lg border border-emerald-100 text-emerald-800">
+            <CheckCircle className="w-5 h-5 text-emerald-600 flex-shrink-0" />
+            <span className="text-sm font-medium">All vehicle documents (Insurance, Fitness, Permits, PUC, Tax) are up to date!</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {vehicleExpiryAlerts.slice(0, 6).map((alert, idx) => (
+              <div
+                key={`exp-alert-${alert.vehicle_no}-${alert.doc_name}-${idx}`}
+                className={`p-3.5 rounded-xl border flex items-center justify-between ${
+                  alert.status === 'expired' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'
+                }`}
+              >
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-gray-900 text-sm">{alert.vehicle_no}</span>
+                    <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
+                      alert.status === 'expired' ? 'bg-red-600 text-white' : 'bg-amber-600 text-white'
+                    }`}>
+                      {alert.status}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium mt-0.5">{alert.doc_name}</p>
+                </div>
+                <div className="text-right">
+                  <span className={`text-xs font-bold block ${alert.status === 'expired' ? 'text-red-700' : 'text-amber-800'}`}>
+                    {alert.label}
+                  </span>
+                  <span className="text-[11px] text-gray-500">
+                    {new Date(alert.date).toLocaleDateString('en-IN')}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Party Ledger Export Section */}

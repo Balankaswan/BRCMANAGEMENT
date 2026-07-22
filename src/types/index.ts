@@ -232,6 +232,11 @@ export interface Vehicle {
   owner_name?: string;
   driver_name?: string;
   driver_phone?: string;
+  fitness_expiry?: string;
+  insurance_expiry?: string;
+  permit_expiry?: string;
+  puc_expiry?: string;
+  tax_expiry?: string;
   created_at: string;
   updated_at: string;
 }
