@@ -1,14 +1,12 @@
 import React, { useState } from 'react';
-import { Truck, Edit2, Save, X, Calendar, ShieldAlert, AlertTriangle, CheckCircle, FileText } from 'lucide-react';
+import { Truck, Edit2, Save, X } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
-import VehicleDocumentModal, { getExpiryStatus } from './VehicleDocumentModal';
 
 const VehicleOwnershipManager: React.FC = () => {
   const { vehicles, updateVehicle, cleanupSupplierLedgerForOwnVehicles } = useDataStore();
   const [editingVehicle, setEditingVehicle] = useState<string | null>(null);
   const [tempOwnership, setTempOwnership] = useState<'own' | 'market'>('market');
-  const [selectedVehicleForDocs, setSelectedVehicleForDocs] = useState<any | null>(null);
 
   const handleEditOwnership = (vehicleId: string, currentOwnership: 'own' | 'market') => {
     setEditingVehicle(vehicleId);
@@ -69,39 +67,13 @@ const VehicleOwnershipManager: React.FC = () => {
                 <div className="flex items-center space-x-4">
                   <Truck className="w-6 h-6 text-blue-600" />
                   <div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="font-bold text-gray-900 text-base">{vehicle.vehicle_no}</span>
-                      <span className={`px-2 py-0.5 rounded text-xs font-semibold uppercase ${vehicle.ownership_type === 'own' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}`}>
-                        {vehicle.ownership_type === 'own' ? 'Own' : 'Market'}
-                      </span>
-                    </div>
-                    <div className="text-sm text-gray-500 mt-0.5">
-                      Owner: {vehicle.owner_name || 'Not specified'} • Driver: {vehicle.driver_name || 'N/A'} {vehicle.driver_phone ? `(${vehicle.driver_phone})` : ''}
-                    </div>
-
-                    {/* Expiry Pill Badges Summary */}
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {[
-                        { label: 'Ins', date: vehicle.insurance_expiry },
-                        { label: 'Fit', date: vehicle.fitness_expiry },
-                        { label: 'Permit', date: vehicle.permit_expiry },
-                        { label: 'PUC', date: vehicle.puc_expiry },
-                        { label: 'Tax', date: vehicle.tax_expiry }
-                      ].map(({ label, date }) => {
-                        const info = getExpiryStatus(date);
-                        return (
-                          <span key={label} className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs border ${info.color}`}>
-                            <span className="font-semibold mr-1">{label}:</span> {date ? info.label : 'Not set'}
-                          </span>
-                        );
-                      })}
-                    </div>
+                    <div className="font-medium text-gray-900">{vehicle.vehicle_no}</div>
+                    <div className="text-sm text-gray-500">Owner: {vehicle.owner_name || 'Not specified'}</div>
                   </div>
                 </div>
                 
                 <div className="flex items-center space-x-4">
-                  {editingVehicle === vehicle.id ? (
+                  {editingVehicle === (vehicle.id || vehicle._id) ? (
                     <div className="flex items-center space-x-2">
                       <select
                         value={tempOwnership}
@@ -136,18 +108,9 @@ const VehicleOwnershipManager: React.FC = () => {
                         {vehicle.ownership_type === 'own' ? 'Own Vehicle' : 'Market Vehicle'}
                       </span>
                       <button
-                        onClick={() => setSelectedVehicleForDocs(vehicle)}
-                        className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-medium transition-colors flex items-center space-x-1"
-                        title="Manage Documents & Expiries"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        <span>Manage Expiries</span>
-                      </button>
-
-                      <button
                         onClick={() => handleEditOwnership(vehicle.id || vehicle._id, vehicle.ownership_type || 'market')}
                         className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-white rounded-md transition-colors"
-                        title="Edit Ownership"
+                        title="Edit ownership"
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
@@ -166,14 +129,6 @@ const VehicleOwnershipManager: React.FC = () => {
           )}
         </div>
       </div>
-
-      {/* Vehicle Document Expiry Modal */}
-      {selectedVehicleForDocs && (
-        <VehicleDocumentModal
-          vehicle={selectedVehicleForDocs}
-          onClose={() => setSelectedVehicleForDocs(null)}
-        />
-      )}
     </div>
   );
 };
