@@ -245,7 +245,7 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
   // Include fuel-tagged advance_payments from the memo
   const memoFuelPayments = (memo.advance_payments || [])
     .filter(a => a.id?.startsWith('fuel-'))
-    .map(a => ({ ...a, date: a.date, amount: a.amount, source: 'FUEL' }));
+    .map(a => ({ ...a, date: a.date, amount: a.amount, source: a.reference || 'BPCL' }));
 
   const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments, ...memoFuelPayments]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());

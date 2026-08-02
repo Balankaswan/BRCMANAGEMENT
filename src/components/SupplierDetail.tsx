@@ -76,7 +76,12 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
         .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
         .reduce((total, entry) => total + entry.amount, 0);
 
-      const memoPayments = bankingPayments + cashbookPayments;
+      // ── Fuel advances (BPCL/wallet) logged via Fuel Management ──────────────
+      const fuelAdvances = (memo.advance_payments || [])
+        .filter(a => a.id?.startsWith('fuel-'))
+        .reduce((sum, a) => sum + (a.amount || 0), 0);
+
+      const memoPayments = bankingPayments + cashbookPayments + fuelAdvances;
       const totalAmount = memo.net_amount;
       const pendingAmount = totalAmount - memoPayments;
 
