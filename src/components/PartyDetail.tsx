@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Users, FileText, Calendar, DollarSign, CreditCard, Truck, FileDown, Table } from 'lucide-react';
+import { ArrowLeft, Users, FileText, Calendar, DollarSign, CreditCard, Truck, FileDown, Table, FileSearch } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
+import PDFPreviewModal from './PDFPreviewModal';
 
 interface PartyDetailProps {
   partyId?: string;
@@ -119,6 +120,57 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
   const handleBillClick = (billNo: string) => {
     if (onNavigate) {
       onNavigate('bills', { highlight: billNo });
+    }
+  };
+
+  // ─── PDF Preview for individual bills ─────────────────────────────────
+  const [previewBillNo, setPreviewBillNo] = useState<string | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const handlePreviewBillPDF = async (billNo: string) => {
+    setPreviewLoading(true);
+    setPreviewBillNo(billNo);
+    try {
+      const bill = bills.find(b => b.bill_number === billNo);
+      if (!bill) { alert('Bill not found.'); setPreviewBillNo(null); return; }
+
+      const advancePayments = bankingEntries
+        .filter(e => e.category === 'bill_advance' && e.reference_id === bill.bill_number)
+        .map(e => ({
+          id: e.id || e._id || `advance-${Date.now()}-${Math.random()}`,
+          bill_id: bill.id,
+          date: e.date,
+          amount: e.amount,
+          mode: (e.payment_mode as 'cash' | 'bank' | 'other') || 'bank',
+          reference: e.narration || e.reference_id
+        }));
+      const enhancedBill = { ...bill, advance_payments: advancePayments };
+
+      const { generateBillPDF } = await import('../utils/pdfGenerator');
+      let relatedLoadingSlip: any;
+      if (typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null) {
+        relatedLoadingSlip = bill.loading_slip_id;
+      } else {
+        relatedLoadingSlip = loadingSlips.find(
+          ls => ls.id === bill.loading_slip_id || (ls as any)._id === bill.loading_slip_id
+        );
+      }
+
+      if (relatedLoadingSlip) {
+        const blobUrl = await generateBillPDF(enhancedBill, relatedLoadingSlip, bankingEntries, cashbookEntries, { preview: true });
+        if (blobUrl) setPreviewBlobUrl(blobUrl as string);
+        else { setPreviewBillNo(null); }
+      } else {
+        alert('Related loading slip not found. Cannot generate preview.');
+        setPreviewBillNo(null);
+      }
+    } catch (error) {
+      console.error('Error generating PDF preview:', error);
+      alert('Error generating PDF preview. Please try again.');
+      setPreviewBillNo(null);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -314,8 +366,11 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
                   Pending Amount (₹)
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Action
-                </th>
+                   PDF
+                 </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                   Action
+                 </th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
@@ -389,15 +444,27 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
                     </span>
                   </td>
 
-                  {/* Action */}
-                  <td className="px-6 py-4 whitespace-nowrap text-center">
-                    <button
-                      onClick={() => handlePayNow(bill.billNo)}
-                      className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
-                    >
-                      Pay Now
-                    </button>
-                  </td>
+                   {/* PDF Preview */}
+                   <td className="px-6 py-4 whitespace-nowrap text-center">
+                     <button
+                       onClick={() => handlePreviewBillPDF(bill.billNo)}
+                       disabled={previewLoading}
+                       className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50"
+                       title="Preview Bill PDF"
+                     >
+                       <FileSearch className="w-4 h-4" />
+                     </button>
+                   </td>
+
+                   {/* Action */}
+                   <td className="px-6 py-4 whitespace-nowrap text-center">
+                     <button
+                       onClick={() => handlePayNow(bill.billNo)}
+                       className="bg-green-600 text-white px-3 py-1 rounded-md hover:bg-green-700 text-sm font-medium transition-colors"
+                     >
+                       Pay Now
+                     </button>
+                   </td>
                 </tr>
               ))}
             </tbody>
@@ -436,6 +503,40 @@ const PartyDetail: React.FC<PartyDetailProps> = ({ partyId, partyName, onNavigat
             </div>
           </div>
         </div>
+      )}
+
+      {/* PDF Preview Modal */}
+      {previewBillNo && previewBlobUrl && (
+        <PDFPreviewModal
+          blobUrl={previewBlobUrl}
+          title={`Bill #${previewBillNo} — ${partyName}`}
+          onDownload={async () => {
+            const bill = bills.find(b => b.bill_number === previewBillNo);
+            if (!bill) return;
+            const advancePayments = bankingEntries
+              .filter(e => e.category === 'bill_advance' && e.reference_id === bill.bill_number)
+              .map(e => ({
+                id: e.id || e._id || `advance-${Date.now()}-${Math.random()}`,
+                bill_id: bill.id,
+                date: e.date,
+                amount: e.amount,
+                mode: (e.payment_mode as 'cash' | 'bank' | 'other') || 'bank',
+                reference: e.narration || e.reference_id
+              }));
+            const enhancedBill = { ...bill, advance_payments: advancePayments };
+            const { generateBillPDF } = await import('../utils/pdfGenerator');
+            let relatedLoadingSlip: any;
+            if (typeof bill.loading_slip_id === 'object' && bill.loading_slip_id !== null) {
+              relatedLoadingSlip = bill.loading_slip_id;
+            } else {
+              relatedLoadingSlip = loadingSlips.find(
+                ls => ls.id === bill.loading_slip_id || (ls as any)._id === bill.loading_slip_id
+              );
+            }
+            if (relatedLoadingSlip) await generateBillPDF(enhancedBill, relatedLoadingSlip, bankingEntries, cashbookEntries);
+          }}
+          onClose={() => { setPreviewBillNo(null); setPreviewBlobUrl(null); }}
+        />
       )}
     </div>
   );

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowLeft, Truck, FileText, Calendar, DollarSign, CreditCard, MapPin } from 'lucide-react';
+import { ArrowLeft, Truck, FileText, Calendar, DollarSign, CreditCard, MapPin, FileSearch } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
+import PDFPreviewModal from './PDFPreviewModal';
 
 interface SupplierDetailProps {
   supplierId?: string;
@@ -123,6 +124,42 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
     }
   };
 
+  // ─── PDF Preview for individual memos ───────────────────────────────
+  const [previewMemoNo, setPreviewMemoNo] = useState<string | null>(null);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  const handlePreviewMemoPDF = async (memoNo: string) => {
+    setPreviewLoading(true);
+    setPreviewMemoNo(memoNo);
+    try {
+      const memo = memos.find(m => m.memo_number === memoNo);
+      if (!memo) { alert('Memo not found.'); setPreviewMemoNo(null); return; }
+
+      const { generateMemoPDF } = await import('../utils/pdfGenerator');
+      const relatedLoadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null
+        ? memo.loading_slip_id
+        : loadingSlips.find(
+            ls => ls.id === memo.loading_slip_id || (ls as any)._id === memo.loading_slip_id
+          );
+
+      if (relatedLoadingSlip) {
+        const blobUrl = await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries, cashbookEntries, { preview: true });
+        if (blobUrl) setPreviewBlobUrl(blobUrl as string);
+        else { setPreviewMemoNo(null); }
+      } else {
+        alert('Related loading slip not found. Cannot generate preview.');
+        setPreviewMemoNo(null);
+      }
+    } catch (error) {
+      console.error('Error generating PDF preview:', error);
+      alert('Error generating PDF preview. Please try again.');
+      setPreviewMemoNo(null);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   if (!supplierName) {
     return (
       <div className="text-center py-12">
@@ -238,6 +275,9 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
                   Pending Amount (₹)
                 </th>
                 <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  PDF
+                </th>
+                <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Action
                 </th>
               </tr>
@@ -316,6 +356,18 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
                     </span>
                   </td>
 
+                  {/* PDF Preview */}
+                  <td className="px-6 py-4 whitespace-nowrap text-center">
+                    <button
+                      onClick={() => handlePreviewMemoPDF(memo.memoNo)}
+                      disabled={previewLoading}
+                      className="p-2 text-purple-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-colors disabled:opacity-50"
+                      title="Preview Memo PDF"
+                    >
+                      <FileSearch className="w-4 h-4" />
+                    </button>
+                  </td>
+
                   {/* Action */}
                   <td className="px-6 py-4 whitespace-nowrap text-center">
                     <button
@@ -365,6 +417,26 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
             </div>
           </div>
         </div>
+      )}
+
+      {/* PDF Preview Modal */}
+      {previewMemoNo && previewBlobUrl && (
+        <PDFPreviewModal
+          blobUrl={previewBlobUrl}
+          title={`Memo #${previewMemoNo} — ${supplierName}`}
+          onDownload={async () => {
+            const memo = memos.find(m => m.memo_number === previewMemoNo);
+            if (!memo) return;
+            const { generateMemoPDF } = await import('../utils/pdfGenerator');
+            const relatedLoadingSlip = typeof memo.loading_slip_id === 'object' && memo.loading_slip_id !== null
+              ? memo.loading_slip_id
+              : loadingSlips.find(
+                  ls => ls.id === memo.loading_slip_id || (ls as any)._id === memo.loading_slip_id
+                );
+            if (relatedLoadingSlip) await generateMemoPDF(memo, relatedLoadingSlip, bankingEntries, cashbookEntries);
+          }}
+          onClose={() => { setPreviewMemoNo(null); setPreviewBlobUrl(null); }}
+        />
       )}
     </div>
   );

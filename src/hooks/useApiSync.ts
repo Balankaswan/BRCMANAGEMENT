@@ -16,28 +16,24 @@ export const useApiSync = () => {
         const token = localStorage.getItem('auth_token');
         if (!token) return;
 
-        console.log('Starting comprehensive API sync...');
-        
         // Define handleSyncEvent here so we can reference it
         const handleSyncEvent = () => {
-          console.log('Sync event received, scheduling refresh...');
           if (syncTimeoutRef.current) {
             clearTimeout(syncTimeoutRef.current);
           }
           syncTimeoutRef.current = setTimeout(() => {
-            console.log('Executing delayed sync...');
             if (syncDataRef.current) {
               syncDataRef.current();
             }
-          }, 1000); // Increased delay and added debouncing
+          }, 1000);
         };
-        
+
         // Store reference to current handleSyncEvent so we can remove it later
         (window as any).__cashbookSyncHandler = handleSyncEvent;
-        
+
         // Add listener for sync events from other components
         window.addEventListener('data-sync-required', handleSyncEvent);
-        
+
         // Fetch ALL data from API with high limits to ensure complete import
         const [
           billsResponse,
@@ -52,60 +48,42 @@ export const useApiSync = () => {
           fuelWalletsResponse,
           fuelTransactionsResponse
         ] = await Promise.allSettled([
-          apiService.getBills({ limit: 10000 }), // Get ALL bills with high limit
-          apiService.getParties({ limit: 10000 }), // Get ALL parties with high limit
-          apiService.getSuppliers({ limit: 10000 }), // Get ALL suppliers with high limit
-          apiService.getVehicles({ limit: 10000 }), // Get ALL vehicles with high limit
-          apiService.getMemos({ limit: 10000 }), // Get ALL memos with high limit
-          apiService.getLoadingSlips({ limit: 10000 }), // Get ALL loading slips with high limit
-          apiService.getBankingEntries({ limit: 1000000 }), // Increased 10x to prevent truncation
-          apiService.getCashbookEntries({ limit: 1000000 }), // Increased 10x to prevent truncation
-          apiService.getLedgerEntries(), // Get ALL ledger entries
+          apiService.getBills({ limit: 10000 }),
+          apiService.getParties({ limit: 10000 }),
+          apiService.getSuppliers({ limit: 10000 }),
+          apiService.getVehicles({ limit: 10000 }),
+          apiService.getMemos({ limit: 10000 }),
+          apiService.getLoadingSlips({ limit: 10000 }),
+          apiService.getBankingEntries({ limit: 1000000 }),
+          apiService.getCashbookEntries({ limit: 1000000 }),
+          apiService.getLedgerEntries(),
           apiService.getFuelWallets(),
-          apiService.getFuelTransactions() // Get ALL fuel transactions
+          apiService.getFuelTransactions()
         ]);
 
         // BULLETPROOF BILLS IMPORT AND SYNC
         if (billsResponse.status === 'fulfilled') {
           const fetchedBills = billsResponse.value.bills || [];
           const currentBills = store.bills;
-          
-          console.log('💾 BILLS SYNC START');
-          console.log('📊 MongoDB Bills Available:', fetchedBills.length);
-          console.log('🏪 Current Store Bills:', currentBills.length);
-          
+
           // Check if a bill was recently created (within last 5 seconds)
           const recentBillCreation = localStorage.getItem('lastBillCreation');
           const isRecentCreation = recentBillCreation && (Date.now() - parseInt(recentBillCreation)) < 5000;
-          
-          if (isRecentCreation) {
-            console.log('⏳ Skipping bill sync - recent creation detected');
-            return;
-          }
-          
-          if (fetchedBills.length === 0) {
-            console.error('❌ NO BILLS FETCHED FROM MONGODB! Check API response.');
-            console.log('API Response:', billsResponse.value);
-          }
-          
+
+          if (isRecentCreation) return;
+
           // ALWAYS ENSURE COMPLETE MONGODB DATA IS IMPORTED
           if (fetchedBills.length > 0) {
-            // Create comprehensive ID mapping for both current and fetched bills
             const allBillsMap = new Map();
-            
-            // First, add all current bills to preserve them
+
             currentBills.forEach(bill => {
               const billId = bill.id || (bill as any)._id || bill.bill_number;
-              if (billId) {
-                allBillsMap.set(billId, bill);
-              }
+              if (billId) allBillsMap.set(billId, bill);
             });
-            
-            // Then, add/update with MongoDB bills (this ensures MongoDB data is authoritative)
+
             fetchedBills.forEach(fetchedBill => {
               const billId = fetchedBill.id || (fetchedBill as any)._id || fetchedBill.bill_number;
               if (billId) {
-                // Ensure bill has proper ID field for frontend compatibility
                 const billWithId = {
                   ...fetchedBill,
                   id: fetchedBill.id || (fetchedBill as any)._id
@@ -113,22 +91,14 @@ export const useApiSync = () => {
                 allBillsMap.set(billId, billWithId);
               }
             });
-            
-            // Convert map back to array, sorted by creation date (newest first)
+
             const completeBills = Array.from(allBillsMap.values()).sort((a, b) => {
               const dateA = new Date(a.created_at || a.date || 0).getTime();
               const dateB = new Date(b.created_at || b.date || 0).getTime();
               return dateB - dateA;
             });
-            
-            // Update store with complete dataset
+
             store.setBills(completeBills);
-            
-            console.log('✅ BILLS FULLY SYNCED');
-            console.log('📈 Total Bills in Store:', completeBills.length);
-            console.log('🔄 MongoDB Import Complete');
-          } else {
-            console.log('⚠️ No bills fetched from MongoDB');
           }
         }
 
@@ -136,43 +106,24 @@ export const useApiSync = () => {
         if (memosResponse.status === 'fulfilled') {
           const fetchedMemos = memosResponse.value.memos || [];
           const currentMemos = store.memos;
-          
-          console.log('💾 MEMOS SYNC START');
-          console.log('📊 MongoDB Memos Available:', fetchedMemos.length);
-          console.log('🏪 Current Store Memos:', currentMemos.length);
-          
+
           // Check if a memo was recently created (within last 5 seconds)
           const recentMemoCreation = localStorage.getItem('lastMemoCreation');
           const isRecentCreation = recentMemoCreation && (Date.now() - parseInt(recentMemoCreation)) < 5000;
-          
-          if (isRecentCreation) {
-            console.log('⏳ Skipping memo sync - recent creation detected');
-            return;
-          }
-          
-          if (fetchedMemos.length === 0) {
-            console.error('❌ NO MEMOS FETCHED FROM MONGODB! Check API response.');
-            console.log('API Response:', memosResponse.value);
-          }
-          
-          // ALWAYS ENSURE COMPLETE MONGODB DATA IS IMPORTED
+
+          if (isRecentCreation) return;
+
           if (fetchedMemos.length > 0) {
-            // Create comprehensive ID mapping for both current and fetched memos
             const allMemosMap = new Map();
-            
-            // First, add all current memos to preserve them
+
             currentMemos.forEach(memo => {
               const memoId = memo.id || (memo as any)._id || memo.memo_number;
-              if (memoId) {
-                allMemosMap.set(memoId, memo);
-              }
+              if (memoId) allMemosMap.set(memoId, memo);
             });
-            
-            // Then, add/update with MongoDB memos (this ensures MongoDB data is authoritative)
+
             fetchedMemos.forEach(fetchedMemo => {
               const memoId = fetchedMemo.id || (fetchedMemo as any)._id || fetchedMemo.memo_number;
               if (memoId) {
-                // Ensure memo has proper ID field for frontend compatibility
                 const memoWithId = {
                   ...fetchedMemo,
                   id: fetchedMemo.id || (fetchedMemo as any)._id
@@ -180,28 +131,14 @@ export const useApiSync = () => {
                 allMemosMap.set(memoId, memoWithId);
               }
             });
-            
-            // Convert map back to array, sorted by creation date (newest first)
+
             const completeMemos = Array.from(allMemosMap.values()).sort((a, b) => {
               const dateA = new Date(a.created_at || a.date || 0).getTime();
               const dateB = new Date(b.created_at || b.date || 0).getTime();
               return dateB - dateA;
             });
-            
-            // Update store with complete dataset
+
             store.setMemos(completeMemos);
-            
-            console.log('✅ MEMOS FULLY SYNCED');
-            console.log('📈 Total Memos in Store:', completeMemos.length);
-            console.log('🔄 MongoDB Import Complete');
-            console.log('📋 Sample memo:', completeMemos[0] ? {
-              memo_number: completeMemos[0].memo_number,
-              loading_slip_id: completeMemos[0].loading_slip_id,
-              freight: completeMemos[0].freight,
-              supplier: completeMemos[0].supplier
-            } : 'No memos');
-          } else {
-            console.log('⚠️ No memos fetched from MongoDB');
           }
         }
 
@@ -209,256 +146,170 @@ export const useApiSync = () => {
         if (loadingSlipsResponse.status === 'fulfilled') {
           const fetchedSlips = loadingSlipsResponse.value.loadingSlips || [];
           const currentSlips = store.loadingSlips;
-          
-          console.log('💾 LOADING SLIPS SYNC START');
-          console.log('📊 MongoDB Loading Slips Available:', fetchedSlips.length);
-          console.log('🏪 Current Store Loading Slips:', currentSlips.length);
-          
+
           // Check if a loading slip was recently created (within last 5 seconds)
           const recentSlipCreation = localStorage.getItem('lastLoadingSlipCreation');
           const isRecentSlipCreation = recentSlipCreation && (Date.now() - parseInt(recentSlipCreation)) < 5000;
-          
-          if (isRecentSlipCreation && currentSlips.length > 0) {
-            console.log('⏳ Skipping loading slip sync - recent creation detected');
-          } else {
-          
-          if (fetchedSlips.length === 0) {
-            console.error('❌ NO LOADING SLIPS FETCHED FROM MONGODB! Check API response.');
-            console.log('API Response:', loadingSlipsResponse.value);
+
+          if (!(isRecentSlipCreation && currentSlips.length > 0)) {
+            if (fetchedSlips.length > 0) {
+              const allSlipsMap = new Map();
+
+              currentSlips.forEach(slip => {
+                const slipId = slip.id || (slip as any)._id || slip.slip_number;
+                if (slipId) allSlipsMap.set(slipId, slip);
+              });
+
+              fetchedSlips.forEach(fetchedSlip => {
+                const slipId = fetchedSlip.id || (fetchedSlip as any)._id || fetchedSlip.slip_number;
+                if (slipId) {
+                  const slipWithId = {
+                    ...fetchedSlip,
+                    id: fetchedSlip.id || (fetchedSlip as any)._id
+                  };
+                  allSlipsMap.set(slipId, slipWithId);
+                }
+              });
+
+              const completeSlips = Array.from(allSlipsMap.values()).sort((a, b) => {
+                const dateA = new Date(a.created_at || a.date || 0).getTime();
+                const dateB = new Date(b.created_at || b.date || 0).getTime();
+                return dateB - dateA;
+              });
+
+              store.setLoadingSlips(completeSlips);
+            }
           }
-          
-          // ALWAYS ENSURE COMPLETE MONGODB DATA IS IMPORTED
-          if (fetchedSlips.length > 0) {
-            // Create comprehensive ID mapping for both current and fetched slips
-            const allSlipsMap = new Map();
-            
-            // First, add all current slips to preserve them
-            currentSlips.forEach(slip => {
-              const slipId = slip.id || (slip as any)._id || slip.slip_number;
-              if (slipId) {
-                allSlipsMap.set(slipId, slip);
-              }
-            });
-            
-            // Then, add/update with MongoDB slips (this ensures MongoDB data is authoritative)
-            fetchedSlips.forEach(fetchedSlip => {
-              const slipId = fetchedSlip.id || (fetchedSlip as any)._id || fetchedSlip.slip_number;
-              if (slipId) {
-                // Ensure slip has proper ID field for frontend compatibility
-                const slipWithId = {
-                  ...fetchedSlip,
-                  id: fetchedSlip.id || (fetchedSlip as any)._id
-                };
-                allSlipsMap.set(slipId, slipWithId);
-              }
-            });
-            
-            // Convert map back to array, sorted by creation date (newest first)
-            const completeSlips = Array.from(allSlipsMap.values()).sort((a, b) => {
-              const dateA = new Date(a.created_at || a.date || 0).getTime();
-              const dateB = new Date(b.created_at || b.date || 0).getTime();
-              return dateB - dateA;
-            });
-            
-            // Update store with complete dataset
-            store.setLoadingSlips(completeSlips);
-            
-            console.log('✅ LOADING SLIPS FULLY SYNCED');
-            console.log('📈 Total Loading Slips in Store:', completeSlips.length);
-            console.log('🔄 MongoDB Import Complete');
-          } else {
-            console.log('⚠️ No loading slips fetched from MongoDB');
-          }
-          } // end of else (not recent loading slip creation)
         }
 
         if (bankingEntriesResponse.status === 'fulfilled') {
           // Check if banking entry was recently created (within last 5 seconds)
           const recentBankingCreation = localStorage.getItem('lastBankingCreation');
           const isRecentCreation = recentBankingCreation && (Date.now() - parseInt(recentBankingCreation)) < 5000;
-          
-          // Only skip if we already have entries in store; never skip on an empty store (e.g., after refresh)
-          if (isRecentCreation && store.bankingEntries.length > 0) {
-            console.log('⏳ Skipping banking sync - recent creation detected and store already has entries');
-          } else {
+
+          if (!(isRecentCreation && store.bankingEntries.length > 0)) {
             const fetchedBankingEntries = bankingEntriesResponse.value.bankingEntries || [];
-            console.log('🏦 Banking entries synced from backend:', fetchedBankingEntries.length);
-            
-            // Normalize IDs for consistency
+
             const normalizedBankingEntries = fetchedBankingEntries.map((entry: any) => ({
               ...entry,
               id: entry.id || entry._id,
             }));
-            
-            // Deduplicate banking entries by ID to prevent duplicates
+
             const uniqueBankingEntries = normalizedBankingEntries.filter((entry: any, index: number, self: any[]) => {
               const entryId = entry.id || entry._id;
               return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
             });
-            
-            console.log('🏦 Unique banking entries after deduplication:', uniqueBankingEntries.length);
-            console.log('🧹 Database cleanup completed - removed duplicates from backend');
 
-            // Merge with any local entries to avoid temporary loss if backend hasn’t caught up yet
             const mergedMap = new Map<string, any>();
-            
+
             // CRITICAL: Preserve ALL store entries first - never lose data!
             store.bankingEntries.forEach((entry: any) => {
               const entryId = entry.id || entry._id;
-              if (entryId) {
-                mergedMap.set(entryId, entry);
-              }
+              if (entryId) mergedMap.set(entryId, entry);
             });
-            
+
             // Then update with backend entries - backend is authoritative for updated data
             uniqueBankingEntries.forEach((entry: any) => {
               const entryId = entry.id || entry._id;
               if (entryId) {
-                // Only update if backend entry is newer or different
                 const existingEntry = mergedMap.get(entryId);
                 if (!existingEntry || (entry.updated_at && existingEntry.updated_at && new Date(entry.updated_at) > new Date(existingEntry.updated_at))) {
                   mergedMap.set(entryId, entry);
                 }
               }
             });
-            
+
             const mergedBanking = Array.from(mergedMap.values());
-            console.log('🏦 Banking entries merged - Store:', store.bankingEntries.length, '+ Backend:', uniqueBankingEntries.length, '= Total:', mergedBanking.length);
-            
-            // Only update store if we actually have data or if store was empty
+
             if (mergedBanking.length > 0 || store.bankingEntries.length === 0) {
               store.setBankingEntries(mergedBanking);
-            } else {
-              console.warn('⚠️ Backend returned no banking entries but store has data - keeping store data intact');
             }
           }
         }
 
         if (cashbookEntriesResponse.status === 'fulfilled') {
-          // Check if cashbook entry was recently created (within last 5 seconds)
+          // Check if cashbook entry was recently created (within last 8 seconds)
           const recentCashbookCreation = localStorage.getItem('lastCashbookCreation');
           const isRecentCreation = recentCashbookCreation && (Date.now() - parseInt(recentCashbookCreation)) < 8000;
-          
-          // Only skip if we already have entries in store; never skip on an empty store (e.g., after refresh)
-          if (isRecentCreation && store.cashbookEntries.length > 0) {
-            console.log('⏳ Skipping cashbook sync - recent creation detected and store already has entries');
-          } else {
+
+          if (!(isRecentCreation && store.cashbookEntries.length > 0)) {
             const fetchedCashbookEntries = cashbookEntriesResponse.value.cashbookEntries || [];
-            console.log('💰 Cashbook entries synced from backend:', fetchedCashbookEntries.length);
-            
-            // Normalize IDs for consistency
+
             const normalizedCashbookEntries = fetchedCashbookEntries.map((entry: any) => ({
               ...entry,
               id: entry.id || entry._id,
             }));
-            
-            // Deduplicate cashbook entries by ID to prevent duplicates
+
             const uniqueCashbookEntries = normalizedCashbookEntries.filter((entry: any, index: number, self: any[]) => {
               const entryId = entry.id || entry._id;
               return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
             });
-            
-            console.log('💰 Unique cashbook entries after deduplication:', uniqueCashbookEntries.length);
 
-            // Merge with any local entries to avoid temporary loss if backend hasn’t caught up yet
             const mergedCashMap = new Map<string, any>();
-            
+
             // CRITICAL: Preserve ALL store entries first - never lose data!
             store.cashbookEntries.forEach((entry: any) => {
               const entryId = entry.id || entry._id;
-              if (entryId) {
-                mergedCashMap.set(entryId, entry);
-              }
+              if (entryId) mergedCashMap.set(entryId, entry);
             });
-            
-            // Then update with backend entries - backend is authoritative for updated data
+
             uniqueCashbookEntries.forEach((entry: any) => {
               const entryId = entry.id || entry._id;
               if (entryId) {
-                // Only update if backend entry is newer or different
                 const existingEntry = mergedCashMap.get(entryId);
                 if (!existingEntry || (entry.updated_at && existingEntry.updated_at && new Date(entry.updated_at) > new Date(existingEntry.updated_at))) {
                   mergedCashMap.set(entryId, entry);
                 }
               }
             });
-            
+
             const mergedCashbook = Array.from(mergedCashMap.values());
-            console.log('💰 Cashbook entries merged - Store:', store.cashbookEntries.length, '+ Backend:', uniqueCashbookEntries.length, '= Total:', mergedCashbook.length);
-            
-            // Only update store if we actually have data or if store was empty
+
             if (mergedCashbook.length > 0 || store.cashbookEntries.length === 0) {
               store.setCashbookEntries(mergedCashbook);
-            } else {
-              console.warn('⚠️ Backend returned no cashbook entries but store has data - keeping store data intact');
             }
           }
         }
 
         if (partiesResponse.status === 'fulfilled') {
           const fetchedParties = partiesResponse.value.parties || [];
-          console.log('🏢 Parties synced from backend:', fetchedParties.length);
-          // Replace with fresh data from backend
-          store.parties.forEach(party => store.deleteParty(party.id));
-          fetchedParties.forEach(party => store.addParty(party));
+          // Single batch update instead of N delete + N add calls
+          store.setParties(fetchedParties);
         }
 
         if (suppliersResponse.status === 'fulfilled') {
           const fetchedSuppliers = suppliersResponse.value.suppliers || [];
-          console.log('🚚 Suppliers synced from backend:', fetchedSuppliers.length);
-          console.log('🚚 Suppliers data:', fetchedSuppliers);
-          // Replace with fresh data from backend using efficient setSuppliers
           store.setSuppliers(fetchedSuppliers);
         } else {
-          console.error('❌ Failed to fetch suppliers:', suppliersResponse.reason);
+          console.error('❌ Failed to fetch suppliers:', (suppliersResponse as PromiseRejectedResult).reason);
         }
 
         if (vehiclesResponse.status === 'fulfilled') {
           const fetchedVehicles = vehiclesResponse.value.vehicles || [];
-          console.log('🚛 Vehicles synced from backend:', fetchedVehicles.length, 
-            'Own vehicles:', fetchedVehicles.filter(v => v.ownership_type === 'own').length);
-          // Clear all vehicles and replace with fresh data from backend
           store.setVehicles(fetchedVehicles);
         }
 
-        // POD files disabled to avoid MongoDB memory issues
-        // if (podFilesResponse.status === 'fulfilled') {
-        //   store.podFiles.forEach(file => store.deletePODFile(file.id));
-        //   podFilesResponse.value.podFiles?.forEach(file => store.addPODFile(file));
-        // }
-
         if (fuelWalletsResponse.status === 'fulfilled') {
           const fetchedWallets = fuelWalletsResponse.value.wallets || [];
-          console.log('⛽ Fuel wallets synced from backend:', fetchedWallets.length);
-          console.log('⛽ Wallet details:', fetchedWallets.map(w => `${w.name}: ${w.balance}`));
-          // Update fuel wallets in store
           store.setFuelWallets(fetchedWallets);
         }
 
         if (ledgerEntriesResponse.status === 'fulfilled') {
           const fetchedLedgerEntries = ledgerEntriesResponse.value.ledgerEntries || [];
-          console.log('📊 Ledger entries synced from backend:', fetchedLedgerEntries.length,
-            'Vehicle income entries:', fetchedLedgerEntries.filter((e: any) => e.ledger_type === 'vehicle_income').length);
-          // Replace with fresh data from backend
           store.setLedgerEntries(fetchedLedgerEntries);
         }
 
         if (fuelTransactionsResponse.status === 'fulfilled') {
-          // Check if fuel allocation was recently created (within last 5 seconds)
+          // Check if fuel allocation was recently created (within last 8 seconds)
           const recentFuelAllocation = localStorage.getItem('lastFuelAllocation');
           const isRecentAllocation = recentFuelAllocation && (Date.now() - parseInt(recentFuelAllocation)) < 8000;
-          
-          if (isRecentAllocation) {
-            console.log('⏳ Skipping fuel transactions sync - recent allocation detected');
-          } else {
+
+          if (!isRecentAllocation) {
             const fetchedTransactions = fuelTransactionsResponse.value.transactions || [];
-            console.log('⛽ Fuel transactions synced from backend:', fetchedTransactions.length);
-            // Update fuel transactions in store
             store.setFuelTransactions(fetchedTransactions);
           }
         }
 
-        console.log('Complete data synchronization finished - all modules synced including ledger entries');
       } catch (error) {
         console.error('Failed to sync data from API:', error);
       }
@@ -470,25 +321,21 @@ export const useApiSync = () => {
         eventSourceRef.current.close();
       }
 
-      const baseUrl = process.env.NODE_ENV === 'production' 
-        ? window.location.origin 
+      const baseUrl = process.env.NODE_ENV === 'production'
+        ? window.location.origin
         : 'http://localhost:5001';
-      
+
       const eventSource = new EventSource(`${baseUrl}/api/sync/events`);
       eventSourceRef.current = eventSource;
 
       eventSource.onopen = () => {
-        console.log('✅ Real-time sync connected');
         setIsRealTimeConnected(true);
       };
 
       eventSource.onmessage = (event) => {
         try {
           const syncEvent = JSON.parse(event.data);
-          
           if (syncEvent.type === 'data_change') {
-            console.log(`📡 Real-time change detected in ${syncEvent.collection}`);
-            // Trigger data sync when changes are detected
             setTimeout(() => syncData(), 500);
           }
         } catch (error) {
@@ -497,10 +344,7 @@ export const useApiSync = () => {
       };
 
       eventSource.onerror = () => {
-        console.error('❌ Real-time sync error');
         setIsRealTimeConnected(false);
-        
-        // Attempt to reconnect after 5 seconds
         setTimeout(() => {
           if (eventSourceRef.current?.readyState === EventSource.CLOSED) {
             connectToRealTimeSync();
@@ -511,25 +355,23 @@ export const useApiSync = () => {
 
     // Store reference to syncData so handleSyncEvent can call it
     syncDataRef.current = syncData;
-    
+
     syncData();
     connectToRealTimeSync();
-    
+
     // Cleanup event listener and EventSource
     return () => {
-      // Clean up sync timeout
       if (syncTimeoutRef.current) {
         clearTimeout(syncTimeoutRef.current);
         syncTimeoutRef.current = null;
       }
-      
-      // Remove event listener using stored reference
+
       const handler = (window as any).__cashbookSyncHandler;
       if (handler) {
         window.removeEventListener('data-sync-required', handler);
         delete (window as any).__cashbookSyncHandler;
       }
-      
+
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
@@ -542,27 +384,21 @@ export const useApiSync = () => {
     try {
       switch (type) {
         case 'bill':
-          // Mark bill creation timestamp to prevent immediate sync overwrite
           localStorage.setItem('lastBillCreation', Date.now().toString());
           const billResponse = await apiService.createBill(data);
           store.addBill(billResponse.bill);
-          // Trigger sync event for other components
           window.dispatchEvent(new CustomEvent('data-sync-required'));
           break;
         case 'memo':
-          console.log('syncAfterCreate memo data received:', data);
           if (!data.loading_slip_id) {
-            console.error('ERROR: loading_slip_id is missing from memo data!');
             throw new Error('loading_slip_id is required for memo creation');
           }
-          // Mark memo creation timestamp to prevent immediate sync overwrite
           localStorage.setItem('lastMemoCreation', Date.now().toString());
           const memoResponse = await apiService.createMemo(data);
           store.addMemo(memoResponse.memo);
           window.dispatchEvent(new CustomEvent('data-sync-required'));
           break;
         case 'loadingSlip':
-          // Mark loading slip creation timestamp to prevent immediate sync overwrite
           localStorage.setItem('lastLoadingSlipCreation', Date.now().toString());
           const slipResponse = await apiService.createLoadingSlip(data);
           store.addLoadingSlip(slipResponse.loadingSlip);
@@ -585,18 +421,15 @@ export const useApiSync = () => {
           break;
         case 'bankingEntry':
           // Banking entries are handled directly by Banking component
-          // This case should not be used to avoid double processing
-          console.log('⚠️ useApiSync bankingEntry case called - should be handled by component');
           break;
         default:
           console.warn('Unknown sync type:', type);
       }
     } catch (error) {
       console.error(`Failed to create ${type}:`, error);
-      // Show user-friendly error message
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      window.dispatchEvent(new CustomEvent('sync-error', { 
-        detail: { type: 'create', entity: type, error: errorMessage } 
+      window.dispatchEvent(new CustomEvent('sync-error', {
+        detail: { type: 'create', entity: type, error: errorMessage }
       }));
       throw error;
     }
@@ -646,8 +479,8 @@ export const useApiSync = () => {
     } catch (error) {
       console.error(`Failed to update ${type}:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      window.dispatchEvent(new CustomEvent('sync-error', { 
-        detail: { type: 'update', entity: type, error: errorMessage } 
+      window.dispatchEvent(new CustomEvent('sync-error', {
+        detail: { type: 'update', entity: type, error: errorMessage }
       }));
       throw error;
     }
@@ -697,17 +530,15 @@ export const useApiSync = () => {
     } catch (error) {
       console.error(`Failed to delete ${type}:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      window.dispatchEvent(new CustomEvent('sync-error', { 
-        detail: { type: 'delete', entity: type, error: errorMessage } 
+      window.dispatchEvent(new CustomEvent('sync-error', {
+        detail: { type: 'delete', entity: type, error: errorMessage }
       }));
       throw error;
     }
   };
 
-  // Add error recovery function
   const retrySync = async () => {
     try {
-      console.log('Retrying data synchronization...');
       window.dispatchEvent(new CustomEvent('data-sync-required'));
     } catch (error) {
       console.error('Failed to retry sync:', error);

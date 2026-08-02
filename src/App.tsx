@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { DataStoreProvider } from './lib/store';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useApiSync } from './hooks/useApiSync';
@@ -36,10 +36,10 @@ const AppContent: React.FC = () => {
     type: 'party' | 'supplier' | 'general' | 'tds';
   } | null>(null);
 
-  const handleNavigation = (page: string, params?: any) => {
+  const handleNavigation = useCallback((page: string, params?: any) => {
     setCurrentPage(page);
     setNavigationParams(params);
-  };
+  }, []);
 
   // Initialize API sync when user is authenticated
   useApiSync();
@@ -106,7 +106,7 @@ const AppContent: React.FC = () => {
       case 'tds-ledger':
         return <TDSLedger onNavigate={handleNavigation} />;
       case 'ledgers':
-        return <Ledgers onViewLedger={(name, type) => setShowLedgerDetail({ name, type })} key={Date.now()} />;
+        return <Ledgers onViewLedger={(name, type) => setShowLedgerDetail({ name, type })} key="ledgers" />;
       case 'pod':
         return <POD />;
       default:

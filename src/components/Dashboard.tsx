@@ -89,17 +89,6 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
   // Calculate party balance (bills due from parties) - OVERALL, not filtered by month
   const partyBalance = useMemo(() => {
-    console.log('🔄 Calculating Party Balance...');
-    console.log('Total bills:', bills.length);
-    const pendingBills = bills.filter(bill => bill.status !== 'received');
-    const receivedBills = bills.filter(bill => bill.status === 'received');
-    console.log('Pending bills (included):', pendingBills.length);
-    console.log('Received bills (excluded):', receivedBills.length);
-    console.log('Total banking entries:', bankingEntries.length);
-    
-    let totalBillAmount = 0;
-    let totalPayments = 0;
-    
     const balance = bills
       .filter(bill => bill.status !== 'received') // Exclude paid/received bills
       .reduce((sum, bill) => {
@@ -111,23 +100,19 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       const mamool = bill.mamool || 0;
       const tds = bill.tds || 0;
       const penalties = bill.penalties || 0;
-      
+
       // Net amount party owes = Bill Amount + Extras - Deductions
       const partyOwes = billAmount + detention + extra + rto - mamool - tds - penalties;
-      
+
       // Find all payments for this bill from banking entries
       const bankingPayments = bankingEntries
         .filter(entry => {
           const matchesReference = entry.reference_id === bill.bill_number;
           const isCredit = entry.type === 'credit';
-          // Include all credit entries that reference this bill
           return matchesReference && isCredit;
         })
-        .reduce((total, entry) => {
-          console.log(`  Banking Payment found: ${entry.category} - ₹${entry.amount}`);
-          return total + entry.amount;
-        }, 0);
-      
+        .reduce((total, entry) => total + entry.amount, 0);
+
       // Find all payments for this bill from cashbook entries
       const cashbookPayments = cashbookEntries
         .filter(entry => {
@@ -135,110 +120,40 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           const isCredit = entry.type === 'credit';
           return matchesReference && isCredit;
         })
-        .reduce((total, entry) => {
-          console.log(`  Cashbook Payment found: ${entry.category} - ₹${entry.amount}`);
-          return total + entry.amount;
-        }, 0);
-      
+        .reduce((total, entry) => total + entry.amount, 0);
+
       const billPayments = bankingPayments + cashbookPayments;
-      
       const billBalance = partyOwes - billPayments;
-      
+
       // Only include positive balances (pending amounts)
       const pendingAmount = Math.max(0, billBalance);
-      
-      totalBillAmount += partyOwes;
-      totalPayments += billPayments;
-      
-      console.log(`Bill ${bill.bill_number}:`);
-      console.log(`  Bill Amount: ₹${billAmount}, Detention: ₹${detention}, Extra: ₹${extra}, RTO: ₹${rto}`);
-      console.log(`  Mamool: ₹${mamool}, TDS: ₹${tds}, Penalties: ₹${penalties}`);
-      console.log(`  Party Owes: ₹${partyOwes}, Paid: ₹${billPayments}, Pending: ₹${pendingAmount}`);
-      
+
       return sum + pendingAmount;
     }, 0);
-    
+
     // Subtract party on account payments from total balance
     const partyOnAccountPayments = bankingEntries
       .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
       .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
     const partyOnAccountCashPayments = cashbookEntries
       .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
       .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
     // Subtract party debit notes from total balance (debit notes reduce what party owes us)
     const partyDebitNotes = bankingEntries
       .filter(entry => entry.type === 'credit' && entry.category === 'party_debit_note')
       .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
     const totalOnAccountPayments = partyOnAccountPayments + partyOnAccountCashPayments;
     const totalDebitNotes = partyDebitNotes;
     const finalBalance = Math.max(0, balance - totalOnAccountPayments - totalDebitNotes);
-    
-    console.log('📊 Party Balance Summary:');
-    console.log(`  Total Bill Amount: ₹${totalBillAmount}`);
-    console.log(`  Total Payments: ₹${totalPayments}`);
-    console.log(`  Total On Account Payments: ₹${totalOnAccountPayments}`);
-    console.log(`  Total Debit Notes: ₹${totalDebitNotes}`);
-    console.log(`  💰 Total Pending (Party Balance): ₹${finalBalance}`);
-    
-    // Debug: Show breakdown of on-account payments by party
-    const onAccountByParty = bankingEntries
-      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
-      .reduce((acc, entry) => {
-        const party = entry.reference_name || 'Unknown';
-        acc[party] = (acc[party] || 0) + entry.amount;
-        return acc;
-      }, {} as Record<string, number>);
-    
-    console.log('🏦 On Account Payments by Party:', onAccountByParty);
-    
-    // Verification: Simple calculation
-    const simpleTotalBills = bills.reduce((sum, bill) => {
-      // freight - mamool - commission + detention + rto + extra - tds - penalties
-      const netAmount = (bill.bill_amount || 0) - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.tds || 0) - (bill.penalties || 0);
-      return sum + netAmount;
-    }, 0);
-    
-    const simpleBankingPayments = bankingEntries
-      .filter(entry => entry.type === 'credit' && bills.some(bill => bill.bill_number === entry.reference_id))
-      .reduce((sum, entry) => sum + entry.amount, 0);
-    
-    const simpleCashbookPayments = cashbookEntries
-      .filter(entry => entry.type === 'credit' && bills.some(bill => bill.bill_number === entry.reference_id))
-      .reduce((sum, entry) => sum + entry.amount, 0);
-    
-    // Add party on account payments (these should reduce party balance)
-    const verifyPartyOnAccountPayments = bankingEntries
-      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-    
-    const verifyPartyOnAccountCashPayments = cashbookEntries
-      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-    
-    const simpleTotalPayments = simpleBankingPayments + simpleCashbookPayments + verifyPartyOnAccountPayments + verifyPartyOnAccountCashPayments;
-    
-    console.log('🔍 Verification:');
-    console.log(`  Simple Total Bills: ₹${simpleTotalBills}`);
-    console.log(`  Simple Total Payments: ₹${simpleTotalPayments}`);
-    console.log(`  Simple Balance: ₹${Math.max(0, simpleTotalBills - simpleTotalPayments)}`);
-    
+
     return finalBalance;
   }, [bills, bankingEntries, cashbookEntries]);
 
   // Calculate supplier balance (memos due to suppliers - ONLY market vehicles) - OVERALL, not filtered by month
   const supplierBalance = useMemo(() => {
-    console.log('🔄 Calculating Supplier Balance...');
-    console.log('Total memos:', memos.length);
-    const pendingMemos = memos.filter(memo => memo.status !== 'paid');
-    const paidMemos = memos.filter(memo => memo.status === 'paid');
-    console.log('Pending memos (included):', pendingMemos.length);
-    console.log('Paid memos (excluded):', paidMemos.length);
-    console.log('Total loading slips:', loadingSlips.length);
-    console.log('Total vehicles:', vehicles.length);
-    
     const balance = memos
       .filter(memo => memo.status !== 'paid') // Exclude memos explicitly marked as paid
       .reduce((sum, memo) => {
@@ -249,10 +164,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       } else if (memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
         loadingSlipId = (memo.loading_slip_id as any)._id || (memo.loading_slip_id as any).id;
       } else {
-        console.log(`Memo ${memo.memo_number}: No loading slip ID`);
         return sum;
       }
-      
+
       // Find the loading slip and vehicle to check ownership
       const ls = loadingSlips.find(s => {
         const idMatch = s.id === loadingSlipId;
@@ -260,27 +174,16 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
         const objectIdStringMatch = String((s as any)._id) === String(loadingSlipId);
         return idMatch || objectIdMatch || objectIdStringMatch;
       });
-      
-      if (!ls) {
-        console.log(`Memo ${memo.memo_number}: Loading slip not found for ID ${loadingSlipId}`);
-        return sum;
-      }
-      
+
+      if (!ls) return sum;
+
       const vehicle = vehicles.find(v => v.vehicle_no === ls.vehicle_no);
-      
-      if (!vehicle) {
-        console.log(`Memo ${memo.memo_number}: Vehicle not found for ${ls.vehicle_no}`);
-        return sum;
-      }
-      
-      console.log(`Memo ${memo.memo_number}: Vehicle ${ls.vehicle_no}, Ownership: ${vehicle.ownership_type}, Amount: ₹${memo.net_amount}`);
-      
+
+      if (!vehicle) return sum;
+
       // Only include market vehicles in supplier balance
-      if (vehicle.ownership_type !== 'market') {
-        console.log(`Skipping memo ${memo.memo_number} - not market vehicle (${vehicle.ownership_type})`);
-        return sum;
-      }
-      
+      if (vehicle.ownership_type !== 'market') return sum;
+
       // Check if memo has been paid (subtract all debit entries that reference this memo
       // in both banking and cashbook, same logic as SupplierDetail)
       const bankingPayments = bankingEntries
@@ -290,41 +193,32 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       const cashbookPayments = cashbookEntries
         .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
         .reduce((total, entry) => total + entry.amount, 0);
-      
-      const memoPayments = bankingPayments + cashbookPayments;
 
-      const rawMemoBalance = (memo.net_amount || 0) - memoPayments;
-      const memoBalance = Math.max(0, rawMemoBalance);
-      console.log(`Memo ${memo.memo_number}: Owes ₹${memo.net_amount}, Paid ₹${memoPayments}, Balance ₹${memoBalance} (raw: ₹${rawMemoBalance})`);
+      const memoPayments = bankingPayments + cashbookPayments;
+      const memoBalance = Math.max(0, (memo.net_amount || 0) - memoPayments);
 
       // Only add positive pending amount; fully paid or overpaid memos do not affect supplier balance
       return sum + memoBalance;
     }, 0);
-    
+
     // Subtract supplier on account payments from total balance
     const supplierOnAccountPayments = bankingEntries
       .filter(entry => entry.type === 'debit' && (entry.category as any) === 'supplier_on_account')
       .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
     const supplierOnAccountCashPayments = cashbookEntries
       .filter(entry => entry.type === 'debit' && entry.category === 'supplier_on_account')
       .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
     // Subtract supplier debit notes from total balance (debit notes reduce what we owe suppliers)
     const supplierDebitNotes = bankingEntries
       .filter(entry => entry.type === 'credit' && (entry.category as any) === 'supplier_debit_note')
       .reduce((sum, entry) => sum + entry.amount, 0);
-    
+
     const totalSupplierOnAccountPayments = supplierOnAccountPayments + supplierOnAccountCashPayments;
     const totalSupplierDebitNotes = supplierDebitNotes;
     const finalSupplierBalance = Math.max(0, balance - totalSupplierOnAccountPayments - totalSupplierDebitNotes);
-    
-    console.log('💰 Supplier Balance Summary:');
-    console.log(`  Total Memo Balance: ₹${balance}`);
-    console.log(`  Total On Account Payments: ₹${totalSupplierOnAccountPayments}`);
-    console.log(`  Total Debit Notes: ₹${totalSupplierDebitNotes}`);
-    console.log(`  💰 Final Supplier Balance: ₹${finalSupplierBalance}`);
-    
+
     return finalSupplierBalance;
   }, [memos, loadingSlips, vehicles, bankingEntries, cashbookEntries]);
 

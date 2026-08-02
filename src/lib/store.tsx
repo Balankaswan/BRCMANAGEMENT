@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useMemo } from 'react';
 import { apiService } from './api';
 import type { Bill, LoadingSlip, Memo, Party, Supplier, Vehicle, BankingEntry, CashbookEntry, LedgerEntry, PODFile, FuelWallet, FuelTransaction, VehicleFuelExpense } from '../types';
 
@@ -44,6 +44,7 @@ interface DataStoreState {
   addParty: (party: Party) => void;
   updateParty: (party: Party) => void;
   deleteParty: (id: string) => void;
+  setParties: (parties: Party[]) => void;
   addSupplier: (supplier: Supplier) => void;
   updateSupplier: (supplier: Supplier) => void;
   deleteSupplier: (id: string) => void;
@@ -83,7 +84,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const [vehicleFuelExpenses] = useState<VehicleFuelExpense[]>([]);
   const [podFiles, setPodFiles] = useState<PODFile[]>([]);
 
-  const contextValue: DataStoreState = {
+  const contextValue: DataStoreState = useMemo(() => ({
     loadingSlips,
     memos,
     bills,
@@ -109,7 +110,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updateMemo: (memo) => setMemos(prev => prev.map(m => m.id === memo.id ? memo : m)),
     deleteMemo: (id) => setMemos(prev => prev.filter(m => m.id !== id)),
     markMemoAsPaid: (id, paidDate, paidAmount) => {
-      setMemos(prev => prev.map(m => 
+      setMemos(prev => prev.map(m =>
         m.id === id ? { ...m, status: 'paid', paid_date: paidDate, paid_amount: paidAmount } : m
       ));
     },
@@ -120,7 +121,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     updateBill: (bill) => setBills(prev => prev.map(b => b.id === bill.id ? bill : b)),
     deleteBill: (id) => setBills(prev => prev.filter(b => b.id !== id)),
     markBillAsReceived: (id, receivedDate, receivedAmount) => {
-      setBills(prev => prev.map(b => 
+      setBills(prev => prev.map(b =>
         b.id === id ? { ...b, status: 'received', received_date: receivedDate, received_amount: receivedAmount } : b
       ));
     },
@@ -130,25 +131,18 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     addBankingEntry: (entry) => {
       setBankingEntries(prev => {
         const entryId = entry.id || entry._id;
-        // Check if entry already exists to prevent duplicates
         const exists = prev.some(e => (e.id || e._id) === entryId);
-        if (exists) {
-          console.log('🏦 Banking entry already exists, skipping duplicate:', entryId);
-          return prev;
-        }
-        console.log('🏦 Adding new banking entry to store:', entryId);
+        if (exists) return prev;
         return [entry, ...prev];
       });
     },
     updateBankingEntry: (id, entry) => setBankingEntries(prev => prev.map(e => (e.id === id || e._id === id) ? entry : e)),
     deleteBankingEntry: (id) => setBankingEntries(prev => prev.filter(e => (e.id !== id && e._id !== id))),
     setBankingEntries: (entries) => {
-      // Deduplicate entries by ID before setting
       const uniqueEntries = entries.filter((entry: any, index: number, self: any[]) => {
         const entryId = entry.id || entry._id;
         return index === self.findIndex((e: any) => (e.id || e._id) === entryId);
       });
-      console.log('🏦 Setting banking entries in store:', entries.length, '→', uniqueEntries.length, 'unique');
       setBankingEntries(uniqueEntries);
     },
 
@@ -156,23 +150,16 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     addCashbookEntry: (entry) => {
       setCashbookEntries(prev => {
         const entryId = entry.id || entry._id;
-        // Check if entry already exists to prevent duplicates
         const exists = prev.some(e => (e.id || e._id) === entryId);
-        if (exists) {
-          console.log('💰 Cashbook entry already exists, skipping duplicate:', entryId);
-          return prev;
-        }
-        console.log('💰 Adding new cashbook entry to store:', entryId);
+        if (exists) return prev;
         return [entry, ...prev];
       });
     },
     updateCashbookEntry: (entry) => {
       setCashbookEntries(prev => prev.map(e => (e.id === entry.id || e._id === entry._id) ? entry : e));
-      console.log('✅ Cashbook entry updated in store:', entry.id || entry._id);
     },
     deleteCashbookEntry: (id) => {
       setCashbookEntries(prev => prev.filter(e => (e.id !== id && e._id !== id)));
-      console.log('✅ Cashbook entry deleted from store:', id);
     },
     setCashbookEntries: (entries) => setCashbookEntries(entries),
 
@@ -183,6 +170,7 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     addParty: (party) => setParties(prev => [party, ...prev]),
     updateParty: (party) => setParties(prev => prev.map(p => p.id === party.id ? party : p)),
     deleteParty: (id) => setParties(prev => prev.filter(p => p.id !== id)),
+    setParties: (parties) => setParties(parties),
 
     // Supplier actions
     addSupplier: (supplier) => setSuppliers(prev => [supplier, ...prev]),
@@ -215,8 +203,6 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // Complex operations
     allocateFuelToVehicle: async (vehicleNo: string, walletName: string, amount: number, date: string, narration: string, fuelQuantity?: number, ratePerLiter?: number, odometerReading?: number, fuelType?: string, allocatedBy?: string, supplier?: string) => {
       try {
-        console.log('🚛 Starting fuel allocation:', { vehicleNo, walletName, amount, supplier });
-        
         const response = await apiService.allocateFuel({
           vehicle_no: vehicleNo,
           wallet_name: walletName,
@@ -230,49 +216,44 @@ export const DataStoreProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           allocated_by: allocatedBy,
           supplier_name: supplier
         });
-        
-        console.log('✅ Fuel allocation successful:', response);
-        
+
         // Set timestamp to prevent sync override
         localStorage.setItem('lastFuelAllocation', Date.now().toString());
-        
+
         // Immediately update local state with the new transaction
         if (response.transaction) {
-          setFuelTransactions(prev => {
-            console.log('🔄 Adding fuel transaction to local state:', response.transaction._id);
-            return [...prev, response.transaction];
-          });
+          setFuelTransactions(prev => [...prev, response.transaction]);
         }
-        
+
         // Update fuel wallet balance immediately
         if (response.wallet) {
-          setFuelWallets(prev => prev.map(wallet => 
-            wallet.name === walletName 
+          setFuelWallets(prev => prev.map(wallet =>
+            wallet.name === walletName
               ? { ...wallet, balance: response.wallet.balance }
               : wallet
           ));
         } else {
-          // Manually update wallet balance if not provided
-          setFuelWallets(prev => prev.map(wallet => 
-            wallet.name === walletName 
+          setFuelWallets(prev => prev.map(wallet =>
+            wallet.name === walletName
               ? { ...wallet, balance: wallet.balance - amount }
               : wallet
           ));
         }
-        
+
         // Trigger data sync to refresh other components
         window.dispatchEvent(new CustomEvent('data-sync-required'));
-        
+
         return response;
       } catch (error) {
         console.error('❌ Fuel allocation failed:', error);
         throw error;
       }
     },
-    bulkPaySupplierMemos: () => console.log('Bulk pay supplier memos - handled by backend'),
-    bulkPayBills: () => console.log('Bulk pay bills - handled by backend'),
-    cleanupSupplierLedgerForOwnVehicles: () => console.log('Cleanup supplier ledger - handled by backend')
-  };
+    bulkPaySupplierMemos: () => {},
+    bulkPayBills: () => {},
+    cleanupSupplierLedgerForOwnVehicles: () => {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [loadingSlips, memos, bills, bankingEntries, cashbookEntries, ledgerEntries, parties, suppliers, vehicles, fuelWallets, fuelTransactions, vehicleFuelExpenses, podFiles]);
 
   return (
     <DataStoreContext.Provider value={contextValue}>

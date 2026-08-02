@@ -8,25 +8,26 @@ interface LayoutProps {
   onNavigate: (page: string) => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) => {
-  const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Truck },
-    { id: 'loading-slip', label: 'Loading Slip', icon: FileText },
-    { id: 'memo', label: 'Memo', icon: Receipt },
-    { id: 'bills', label: 'Bills', icon: Receipt },
-    { id: 'banking', label: 'Banking', icon: CreditCard },
-    { id: 'cashbook', label: 'Cashbook', icon: CreditCard },
-    { id: 'party-ledger', label: 'Party Ledgers', icon: FileText },
-    { id: 'supplier-ledger', label: 'Supplier Ledgers', icon: FileText },
-    { id: 'general-ledger', label: 'General Ledgers', icon: FileText },
-    { id: 'tds-ledger', label: 'TDS Ledger', icon: Receipt },
-    { id: 'party-commission-ledger', label: 'Party Commission', icon: CreditCard },
-    { id: 'fuel-management', label: 'Fuel Management', icon: Fuel },
-    { id: 'vehicle-ledger', label: 'Vehicle Ledger', icon: Truck },
-    { id: 'vehicle-ownership', label: 'Vehicle Ownership', icon: Truck },
-    { id: 'pod', label: 'POD', icon: Archive },
-  ];
+// Static — defined outside component so it's never recreated on render
+const menuItems = [
+  { id: 'dashboard', label: 'Dashboard', icon: Truck },
+  { id: 'loading-slip', label: 'Loading Slip', icon: FileText },
+  { id: 'memo', label: 'Memo', icon: Receipt },
+  { id: 'bills', label: 'Bills', icon: Receipt },
+  { id: 'banking', label: 'Banking', icon: CreditCard },
+  { id: 'cashbook', label: 'Cashbook', icon: CreditCard },
+  { id: 'party-ledger', label: 'Party Ledgers', icon: FileText },
+  { id: 'supplier-ledger', label: 'Supplier Ledgers', icon: FileText },
+  { id: 'general-ledger', label: 'General Ledgers', icon: FileText },
+  { id: 'tds-ledger', label: 'TDS Ledger', icon: Receipt },
+  { id: 'party-commission-ledger', label: 'Party Commission', icon: CreditCard },
+  { id: 'fuel-management', label: 'Fuel Management', icon: Fuel },
+  { id: 'vehicle-ledger', label: 'Vehicle Ledger', icon: Truck },
+  { id: 'vehicle-ownership', label: 'Vehicle Ownership', icon: Truck },
+  { id: 'pod', label: 'POD', icon: Archive },
+];
 
+const Layout: React.FC<LayoutProps> = React.memo(({ children, currentPage, onNavigate }) => {
   return (
     <div className="h-screen overflow-hidden flex bg-gray-50">
       {/* Sidebar */}
@@ -99,6 +100,6 @@ const Layout: React.FC<LayoutProps> = ({ children, currentPage, onNavigate }) =>
       </div>
     </div>
   );
-};
+});
 
 export default Layout;
