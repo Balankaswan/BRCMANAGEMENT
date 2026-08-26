@@ -3,6 +3,7 @@ import { ArrowLeft, Truck, FileText, Calendar, DollarSign, CreditCard, MapPin, F
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
 import PDFPreviewModal from './PDFPreviewModal';
+import { isFuelAdvance } from './Memo';
 
 interface SupplierDetailProps {
   supplierId?: string;
@@ -78,7 +79,7 @@ const SupplierDetail: React.FC<SupplierDetailProps> = ({ supplierId, supplierNam
 
       // ── Fuel advances (BPCL/wallet) logged via Fuel Management ──────────────
       const fuelAdvances = (memo.advance_payments || [])
-        .filter(a => a.id?.startsWith('fuel-'))
+        .filter(isFuelAdvance)
         .reduce((sum, a) => sum + (a.amount || 0), 0);
 
       const memoPayments = bankingPayments + cashbookPayments + fuelAdvances;

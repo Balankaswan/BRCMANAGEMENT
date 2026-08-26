@@ -1,17 +1,32 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Edit, Trash2, FileText, Eye, Download, CheckCircle, FileSearch } from 'lucide-react';
+import { Plus, Edit, Trash2, FileText, Eye, Download, CheckCircle, FileSearch, X } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
 import { formatCurrency } from '../utils/numberGenerator';
 import MemoForm from './forms/MemoForm';
 import PDFPreviewModal from './PDFPreviewModal';
+import MonthFilterDropdown from './MonthFilterDropdown';
 import type { Memo } from '../types';
 
 interface MemoListProps {
   showOnlyFullyPaid?: boolean;
   highlightMemo?: string;
 }
+
+const isFuelAdvance = (a: any): boolean => {
+  if (!a) return false;
+  if (typeof a.id === 'string' && a.id.startsWith('fuel-')) return true;
+  if (typeof a.description === 'string' && a.description.toLowerCase().includes('fuel')) return true;
+  if (typeof a.reference === 'string' && (
+    a.reference.toLowerCase().includes('bpcl') ||
+    a.reference.toLowerCase().includes('hpcl') ||
+    a.reference.toLowerCase().includes('fuel') ||
+    a.reference.toLowerCase().includes('wallet')
+  )) return true;
+  if (typeof a.mode === 'string' && a.mode.toLowerCase() === 'other' && a.reference) return true;
+  return false;
+};
 
 const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, highlightMemo }) => {
   const { memos, addMemo, updateMemo, deleteMemo, bankingEntries, cashbookEntries, markMemoAsPaid, setLedgerEntries, loadingSlips, vehicles } = useDataStore();
@@ -25,6 +40,7 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
   const [paidDate, setPaidDate] = useState('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'pending' | 'paid'>('pending');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
 
   // Auto-scroll to highlighted memo
   useEffect(() => {
@@ -249,49 +265,49 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
 
 
   const filteredMemos = useMemo(() => {
-    // Use local viewMode state instead of prop for better control
-    const showPaid = showOnlyFullyPaid || viewMode === 'paid';
-    let base = showPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
+    // If month filter is active → show ALL memos (pending + paid) for those months
+    const monthFilterActive = selectedMonths.length > 0;
+
+    let base: Memo[];
+    if (monthFilterActive) {
+      // Show all memos regardless of status, filtered by selected months
+      base = memos.filter(m => {
+        const memoMonth = m.date ? m.date.substring(0, 7) : '';
+        return selectedMonths.includes(memoMonth);
+      });
+    } else {
+      // Original tab behavior (pending / paid)
+      const showPaid = showOnlyFullyPaid || viewMode === 'paid';
+      base = showPaid ? memos.filter(m => m.status === 'paid') : memos.filter(m => m.status !== 'paid');
+    }
 
     // Sort memos by document number (numeric part) in descending order, then by date
     base = [...base].sort((a, b) => {
-      // Extract numeric part from memo numbers for proper sorting
       const getNumericPart = (memoNumber: string) => {
         const match = memoNumber.match(/(\d+)$/);
         return match ? parseInt(match[1], 10) : 0;
       };
-
       const aNum = getNumericPart(a.memo_number);
       const bNum = getNumericPart(b.memo_number);
-
-      // Primary sort: by numeric part of memo number (descending)
-      if (aNum !== bNum) {
-        return bNum - aNum;
-      }
-
-      // Secondary sort: by date (descending - latest first)
+      if (aNum !== bNum) return bNum - aNum;
       return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
 
-    // Optional strict settlement check (kept, in case amounts changed)
-    if (showOnlyFullyPaid) {
+    // Optional strict settlement check (only when not using month filter)
+    if (!monthFilterActive && showOnlyFullyPaid) {
       base = base.filter(m => {
         const bankingPayments = bankingEntries
           .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === m.memo_number)
           .reduce((sum, e) => sum + e.amount, 0);
-
         const cashbookPayments = cashbookEntries
           .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === m.memo_number)
           .reduce((sum, e) => sum + e.amount, 0);
-
-        // Count only fuel-tagged advance_payments (id starts with 'fuel-') to avoid double counting banking/cashbook advances
-        const fuelAdvances = (m.advance_payments || []).filter(a => a.id?.startsWith('fuel-')).reduce((sum, a) => sum + (a.amount || 0), 0);
+        const fuelAdvances = (m.advance_payments || []).filter(isFuelAdvance).reduce((sum, a) => sum + (a.amount || 0), 0);
         const paid = bankingPayments + cashbookPayments + fuelAdvances;
-        // Balance = Net Amount - all payments (banking + cashbook + fuel advances)
-        const calculatedBalance = (m.net_amount || 0) - paid;
-        return calculatedBalance <= 0;
+        return (m.net_amount || 0) - paid <= 0;
       });
     }
+
     if (!search.trim()) return base;
     const q = search.toLowerCase();
     return base.filter(m => {
@@ -310,14 +326,17 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [memos, bankingEntries, cashbookEntries, showOnlyFullyPaid, viewMode, search, loadingSlips]);
+  }, [memos, bankingEntries, cashbookEntries, showOnlyFullyPaid, viewMode, search, loadingSlips, selectedMonths]);
+
+  const monthFilterActive = selectedMonths.length > 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <h1 className="text-2xl font-bold text-gray-900">Memo</h1>
-          {!showOnlyFullyPaid && (
+          {/* Show pending/paid toggle only when no month filter is active */}
+          {!showOnlyFullyPaid && !monthFilterActive && (
             <div className="flex bg-gray-100 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('pending')}
@@ -339,14 +358,26 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               </button>
             </div>
           )}
+          {/* Month filter active badge */}
+          {monthFilterActive && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+              All memos • {selectedMonths.length} month{selectedMonths.length > 1 ? 's' : ''} selected
+              <button onClick={() => setSelectedMonths([])} className="hover:text-blue-900">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          )}
         </div>
-        <button
-          onClick={handleShowForm}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-        >
-          <Plus className="w-5 h-5" />
-          <span>New Memo</span>
-        </button>
+        <div className="flex items-center space-x-3">
+          <MonthFilterDropdown selectedMonths={selectedMonths} onChange={setSelectedMonths} />
+          <button
+            onClick={handleShowForm}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>New Memo</span>
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -375,13 +406,21 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
       {/* Header Section */}
       <div className="bg-blue-600 rounded-xl shadow-sm p-6 text-white">
         <h2 className="text-xl font-bold mb-2">
-          {showOnlyFullyPaid || viewMode === 'paid' ? 'Paid Memos' : 'Broker Memos'}
+          {monthFilterActive
+            ? 'Memos (Month Filter)'
+            : showOnlyFullyPaid || viewMode === 'paid'
+              ? 'Paid Memos'
+              : 'Broker Memos'}
         </h2>
         <p className="text-blue-100">
-          {showOnlyFullyPaid || viewMode === 'paid' ? 'Manage settled supplier memos' : 'Manage supplier transportation memos'}
+          {monthFilterActive
+            ? 'Showing all memos (pending + paid) for selected month(s)'
+            : showOnlyFullyPaid || viewMode === 'paid'
+              ? 'Manage settled supplier memos'
+              : 'Manage supplier transportation memos'}
         </p>
         <div className="mt-4 text-sm text-blue-100">
-          {filteredMemos.length} of {filteredMemos.length} memos
+          {filteredMemos.length} memo{filteredMemos.length !== 1 ? 's' : ''} found
         </div>
       </div>
 
@@ -407,8 +446,8 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               .filter(e => (e.category === 'memo_advance' || e.category === 'memo_payment') && e.reference_id === memo.memo_number)
               .reduce((sum, e) => sum + e.amount, 0);
 
-            // Count only fuel-tagged advance_payments (id starts with 'fuel-') to avoid double counting banking/cashbook advances
-            const fuelAdvances = (memo.advance_payments || []).filter(a => a.id?.startsWith('fuel-')).reduce((sum, a) => sum + (a.amount || 0), 0);
+            // Count fuel-tagged advance_payments to avoid double counting banking/cashbook advances
+            const fuelAdvances = (memo.advance_payments || []).filter(isFuelAdvance).reduce((sum, a) => sum + (a.amount || 0), 0);
             const paid = bankingPayments + cashbookPayments + fuelAdvances;
             // Balance = Net Amount - all payments (banking + cashbook + fuel advances)
             const rawBalance = (memo.net_amount || 0) - paid;
@@ -507,6 +546,18 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
                     </div>
                   </div>
 
+                  {memo.advance_payments && memo.advance_payments.length > 0 && (
+                    <div className="mb-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2 text-xs">
+                      <span className="text-gray-500 font-medium">Advance Payments:</span>
+                      {memo.advance_payments.map((adv: any, i: number) => (
+                        <span key={adv._id || adv.id || i} className="bg-blue-50 border border-blue-200 text-blue-800 font-semibold px-2.5 py-1 rounded-md flex items-center gap-1">
+                          <span>{adv.reference || adv.description || 'Fuel/BPCL'}:</span>
+                          <span className="text-blue-900 font-bold">{formatCurrency(adv.amount)}</span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between pt-4 border-t border-gray-100">
                     <div className="flex items-center space-x-4">
                       <div className="text-sm">
@@ -591,6 +642,19 @@ const MemoComponent: React.FC<MemoListProps> = ({ showOnlyFullyPaid = false, hig
               <div><span className="text-gray-500">RTO:</span> {formatCurrency(viewMemo.rto)}</div>
               <div><span className="text-gray-500">Deduction:</span> {formatCurrency((viewMemo as any).deduction || 0)}</div>
               <div className="col-span-2"><span className="text-gray-500">Net Amount:</span> {formatCurrency(viewMemo.net_amount)}</div>
+              {viewMemo.advance_payments && viewMemo.advance_payments.length > 0 && (
+                <div className="col-span-2 border-t pt-3 mt-2">
+                  <span className="text-gray-700 font-semibold block mb-2">Advance Payments / Fuel Advances:</span>
+                  <div className="space-y-1.5">
+                    {viewMemo.advance_payments.map((adv: any, i: number) => (
+                      <div key={adv._id || adv.id || i} className="flex justify-between items-center bg-gray-50 p-2.5 rounded border border-gray-200 text-xs">
+                        <span>{new Date(adv.date).toLocaleDateString('en-IN')} • <strong className="text-blue-600">{adv.reference || adv.description || 'Fuel Advance'}</strong></span>
+                        <span className="font-bold text-green-700">{formatCurrency(adv.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
               {viewMemo.narration && (
                 <div className="col-span-2">
                   <span className="text-gray-500">Narration:</span>

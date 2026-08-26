@@ -3,6 +3,7 @@ import { X, ChevronDown, Plus, CreditCard } from 'lucide-react';
 import { useDataStore } from '../../lib/store';
 import { apiService } from '../../lib/api';
 import { formatCurrency } from '../../utils/numberGenerator';
+import { isFuelAdvance } from '../Memo';
 import type { BankingEntry } from '../../types';
 
 interface BankingFormProps {
@@ -127,7 +128,7 @@ const BankingForm: React.FC<BankingFormProps> = ({ onSubmit, onCancel, editingEn
 
     // Fuel advances already tagged to this memo
     const fuelAdvances = (memo.advance_payments || [])
-      .filter((a: any) => a.id?.startsWith('fuel-'))
+      .filter(isFuelAdvance)
       .reduce((sum: number, a: any) => sum + (a.amount || 0), 0);
 
     const totalPaid = bankingPayments + cashbookPayments + fuelAdvances;

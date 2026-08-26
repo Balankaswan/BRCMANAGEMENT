@@ -1,41 +1,65 @@
 import React, { useState, useMemo } from 'react';
-import { Receipt, FileText, CheckCircle, Trash2, Clock, Search } from 'lucide-react';
+import { Receipt, FileText, CheckCircle, Trash2, Clock, Search, X } from 'lucide-react';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 import { formatCurrency } from '../utils/numberGenerator';
+import MonthFilterDropdown from './MonthFilterDropdown';
 import type { Memo, Bill } from '../types';
 
 const MemosAndBills: React.FC = () => {
   const { memos, bills, deleteMemo, deleteBill, markMemoAsPaid, markBillAsReceived } = useDataStore();
   const [activeTab, setActiveTab] = useState<'memos' | 'bills'>('memos');
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
 
-  // Filter memos and bills based on search term
+  // Filter memos and bills based on search term AND selected months
   const filteredMemos = useMemo(() => {
-    if (!searchTerm.trim()) return memos;
-    
+    let result = memos;
+
+    // Month filter — when active, show ALL memos (pending + paid) for that month
+    if (selectedMonths.length > 0) {
+      result = result.filter(memo => {
+        const memoMonth = memo.date ? memo.date.substring(0, 7) : '';
+        return selectedMonths.includes(memoMonth);
+      });
+    }
+
+    if (!searchTerm.trim()) return result;
     const searchLower = searchTerm.toLowerCase();
-    return memos.filter(memo => 
+    return result.filter(memo =>
       memo.memo_number.toLowerCase().includes(searchLower) ||
       memo.supplier.toLowerCase().includes(searchLower) ||
       memo.date.includes(searchTerm) ||
       memo.net_amount.toString().includes(searchTerm)
     );
-  }, [memos, searchTerm]);
+  }, [memos, searchTerm, selectedMonths]);
 
   const filteredBills = useMemo(() => {
-    if (!searchTerm.trim()) return bills;
-    
+    let result = bills;
+
+    // Month filter — when active, show ALL bills (pending + received) for that month
+    if (selectedMonths.length > 0) {
+      result = result.filter(bill => {
+        const billMonth = bill.date ? bill.date.substring(0, 7) : '';
+        return selectedMonths.includes(billMonth);
+      });
+    }
+
+    if (!searchTerm.trim()) return result;
     const searchLower = searchTerm.toLowerCase();
-    return bills.filter(bill => 
+    return result.filter(bill =>
       bill.bill_number.toLowerCase().includes(searchLower) ||
       bill.party.toLowerCase().includes(searchLower) ||
       bill.date.includes(searchTerm) ||
       bill.net_amount.toString().includes(searchTerm)
     );
-  }, [bills, searchTerm]);
+  }, [bills, searchTerm, selectedMonths]);
 
-  const pendingMemos = filteredMemos.filter(m => m.status === 'pending');
+  const monthFilterActive = selectedMonths.length > 0;
+
+  const pendingMemos = monthFilterActive
+    ? filteredMemos.filter(m => m.status === 'pending')
+    : filteredMemos.filter(m => m.status === 'pending');
   const paidMemos = filteredMemos.filter(m => m.status === 'paid');
   const pendingBills = filteredBills.filter(b => b.status === 'pending');
   const receivedBills = filteredBills.filter(b => b.status === 'received');
@@ -214,7 +238,7 @@ const MemosAndBills: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Memos & Bills</h1>
-        <div className="flex items-center space-x-4">
+        <div className="flex items-center space-x-3">
           {/* Search Input */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -223,10 +247,13 @@ const MemosAndBills: React.FC = () => {
               placeholder={`Search ${activeTab}...`}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-64"
+              className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent w-56"
             />
           </div>
-          
+
+          {/* Month Filter */}
+          <MonthFilterDropdown selectedMonths={selectedMonths} onChange={setSelectedMonths} />
+
           {/* Tab Switcher */}
           <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg">
             <button
@@ -252,6 +279,20 @@ const MemosAndBills: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Month filter active banner */}
+      {monthFilterActive && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+          <span className="font-medium">Month filter active:</span>
+          <span>Showing pending + paid/received for {selectedMonths.length} month{selectedMonths.length > 1 ? 's' : ''}</span>
+          <button
+            onClick={() => setSelectedMonths([])}
+            className="ml-auto flex items-center gap-1 text-blue-500 hover:text-blue-700 font-medium"
+          >
+            <X className="w-3.5 h-3.5" /> Clear filter
+          </button>
+        </div>
+      )}
 
       {activeTab === 'memos' && (
         <div className="space-y-6">

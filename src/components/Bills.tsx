@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, FileText, Edit, Download, Eye, Trash2, FileSearch } from 'lucide-react';
+import { Plus, FileText, Edit, Download, Eye, Trash2, FileSearch, X } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { getNextSequenceNumber } from '../utils/sequenceGenerator';
 import BillForm from './forms/BillForm';
 import PDFPreviewModal from './PDFPreviewModal';
+import MonthFilterDropdown from './MonthFilterDropdown';
 import { useDataStore } from '../lib/store';
 import { apiService } from '../lib/api';
 import type { Bill } from '../types';
@@ -25,6 +26,7 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   const [receivedDate, setReceivedDate] = useState('');
   const [search, setSearch] = useState('');
   const [viewMode, setViewMode] = useState<'pending' | 'received'>('pending');
+  const [selectedMonths, setSelectedMonths] = useState<string[]>([]);
 
   // Auto-scroll to highlighted bill
   useEffect(() => {
@@ -243,52 +245,52 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
   };
 
   const filteredBills = useMemo(() => {
-    // Use local viewMode state instead of prop for better control
-    const showReceived = showOnlyFullyReceived || viewMode === 'received';
-    let base = showReceived ? bills.filter((b: any) => b.status === 'received') : bills.filter((b: any) => b.status !== 'received');
-    
+    // If month filter is active → show ALL bills (pending + received) for those months
+    const monthFilterActive = selectedMonths.length > 0;
+
+    let base: Bill[];
+    if (monthFilterActive) {
+      base = bills.filter((b: any) => {
+        const billMonth = b.date ? b.date.substring(0, 7) : '';
+        return selectedMonths.includes(billMonth);
+      });
+    } else {
+      // Original tab behavior
+      const showReceived = showOnlyFullyReceived || viewMode === 'received';
+      base = showReceived ? bills.filter((b: any) => b.status === 'received') : bills.filter((b: any) => b.status !== 'received');
+    }
+
     // Sort bills by document number (numeric part) in descending order, then by date
     base = [...base].sort((a, b) => {
-      // Extract numeric part from bill numbers for proper sorting
       const getNumericPart = (billNumber: string) => {
         const match = billNumber.match(/(\d+)$/);
         return match ? parseInt(match[1], 10) : 0;
       };
-      
       const aNum = getNumericPart(a.bill_number);
       const bNum = getNumericPart(b.bill_number);
-      
-      // Primary sort: by numeric part of bill number (descending)
-      if (aNum !== bNum) {
-        return bNum - aNum;
-      }
-      
-      // Secondary sort: by date (descending - latest first)
+      if (aNum !== bNum) return bNum - aNum;
       return new Date(b.date).getTime() - new Date(a.date).getTime();
     });
-    
-    // Optional strict settlement check (kept)
-    if (showOnlyFullyReceived) {
+
+    // Optional strict settlement check (only when not using month filter)
+    if (!monthFilterActive && showOnlyFullyReceived) {
       base = base.filter(b => {
-        // Calculate received from both banking and cashbook entries
         const bankingReceived = bankingEntries
           .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === b.bill_number)
           .reduce((sum, e) => sum + e.amount, 0);
-        
         const cashbookReceived = (cashbookEntries || [])
           .filter(e => (e.category === 'bill_advance' || e.category === 'bill_payment') && e.reference_id === b.bill_number)
           .reduce((sum, e) => sum + e.amount, 0);
-        
         const totalReceived = bankingReceived + cashbookReceived;
         return totalReceived >= b.net_amount && b.net_amount > 0;
       });
     }
+
     if (!search.trim()) return base;
     const q = search.toLowerCase();
     return base.filter(b => {
-      // Handle both cases: loading_slip_id as string or populated object
-      const ls = typeof b.loading_slip_id === 'object' && b.loading_slip_id !== null 
-        ? b.loading_slip_id 
+      const ls = typeof b.loading_slip_id === 'object' && b.loading_slip_id !== null
+        ? b.loading_slip_id
         : loadingSlips.find(ls => ls.id === b.loading_slip_id);
       const haystack = [
         b.bill_number,
@@ -302,23 +304,39 @@ const BillsComponent: React.FC<BillsListProps> = ({ showOnlyFullyReceived = fals
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [bills, bankingEntries, cashbookEntries, showOnlyFullyReceived, viewMode, search, loadingSlips]);
+  }, [bills, bankingEntries, cashbookEntries, showOnlyFullyReceived, viewMode, search, loadingSlips, selectedMonths]);
+
+  const monthFilterActive = selectedMonths.length > 0;
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Bills</h1>
-        <button
-          onClick={() => setShowForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
-        >
-          <Plus className="w-5 h-5" />
-          <span>New Bill</span>
-        </button>
+        <div className="flex items-center space-x-4">
+          <h1 className="text-2xl font-bold text-gray-900">Bills</h1>
+          {/* Month filter active badge */}
+          {monthFilterActive && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm font-medium">
+              All bills • {selectedMonths.length} month{selectedMonths.length > 1 ? 's' : ''} selected
+              <button onClick={() => setSelectedMonths([])} className="hover:text-blue-900">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </span>
+          )}
+        </div>
+        <div className="flex items-center space-x-3">
+          <MonthFilterDropdown selectedMonths={selectedMonths} onChange={setSelectedMonths} />
+          <button
+            onClick={() => setShowForm(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+          >
+            <Plus className="w-5 h-5" />
+            <span>New Bill</span>
+          </button>
+        </div>
       </div>
 
       {/* Tab Navigation */}
-      {!showOnlyFullyReceived && (
+      {!showOnlyFullyReceived && !monthFilterActive && (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-1">
           <div className="flex space-x-1">
             <button

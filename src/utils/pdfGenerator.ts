@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import { COMPANY_LOGO_BASE64 } from '../assets/logo';
 import type { LoadingSlip, Memo, Bill } from '../types';
+import { isFuelAdvance } from '../components/Memo';
 
 // Signature base64 - Add your actual signature image here
 const SIGNATURE_BASE64: string = ''; // Empty until you add your actual signature base64
@@ -179,8 +180,8 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
       .reduce((sum, e) => sum + e.amount, 0)
     : 0;
 
-  // Count fuel-tagged advance_payments (id starts with 'fuel-') separately from banking/cashbook
-  const fuelAdvances = (memo.advance_payments || []).filter(a => a.id?.startsWith('fuel-')).reduce((sum, a) => sum + (a.amount || 0), 0);
+  // Count fuel-tagged advance_payments separately from banking/cashbook
+  const fuelAdvances = (memo.advance_payments || []).filter(isFuelAdvance).reduce((sum, a) => sum + (a.amount || 0), 0);
   const totalAdvances = bankingAdvances + cashbookAdvances + fuelAdvances;
 
   // Financial table - matching image style with proper borders
@@ -244,8 +245,8 @@ export const generateMemoPDF = async (memo: Memo, loadingSlip: LoadingSlip, bank
 
   // Include fuel-tagged advance_payments from the memo
   const memoFuelPayments = (memo.advance_payments || [])
-    .filter(a => a.id?.startsWith('fuel-'))
-    .map(a => ({ ...a, date: a.date, amount: a.amount, source: a.reference || 'BPCL' }));
+    .filter(isFuelAdvance)
+    .map(a => ({ ...a, date: a.date, amount: a.amount, source: a.reference || a.description || 'BPCL' }));
 
   const allAdvancePayments = [...bankingAdvancePayments, ...cashbookAdvancePayments, ...memoFuelPayments]
     .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
