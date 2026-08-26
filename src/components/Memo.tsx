@@ -14,7 +14,7 @@ interface MemoListProps {
   highlightMemo?: string;
 }
 
-const isFuelAdvance = (a: any): boolean => {
+export const isFuelAdvance = (a: any): boolean => {
   if (!a) return false;
   if (typeof a.id === 'string' && a.id.startsWith('fuel-')) return true;
   if (typeof a.description === 'string' && a.description.toLowerCase().includes('fuel')) return true;
