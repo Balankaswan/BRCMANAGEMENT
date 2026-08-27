@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import MonthFilterDropdown from './MonthFilterDropdown';
-import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt, FileDown, Table, Download, ShieldAlert, AlertTriangle, CheckCircle, Calendar } from 'lucide-react';
+import { TrendingUp, Users, Truck, DollarSign, FileText, Receipt, FileDown, Table, ShieldAlert, CheckCircle, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatCurrency } from '../utils/numberGenerator';
 import { useDataStore } from '../lib/store';
 import { getExpiryStatus } from './VehicleDocumentModal';
@@ -74,18 +74,103 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, [vehicles]);
   
 
+  // Modal state
+  const [showProfitModal, setShowProfitModal] = useState(false);
+
   // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
   const totalProfit = useMemo(() => {
     const totalBillNetAmount = filteredBills.reduce((sum, bill) => {
-      // freight - mamool - commission + detention + rto + extra - penalties - party_commission_cut
-      const billNetAmountExcludingTDS = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0);
-      return sum + billNetAmountExcludingTDS;
+      const billNet = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0) + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0) - (bill.penalties || 0) - (bill.party_commission_cut || 0);
+      return sum + billNet;
     }, 0);
-    
     const totalMemoNetAmount = filteredMemos.reduce((sum, memo) => sum + memo.net_amount, 0);
-    
     return totalBillNetAmount - totalMemoNetAmount;
   }, [filteredBills, filteredMemos]);
+
+  // Build per-trip profit breakdown (bill ↔ memo matched via loading_slip_id)
+  const profitBreakdown = useMemo(() => {
+    type ProfitRow = {
+      slipId: string;
+      bill: typeof filteredBills[0] | null;
+      memo: typeof filteredMemos[0] | null;
+      billNet: number;
+      memoNet: number;
+      profit: number;
+      route: string;
+      vehicle: string;
+      party: string;
+      supplier: string;
+    };
+
+    const rows: ProfitRow[] = [];
+    const usedMemoIds = new Set<string>();
+
+    // Helper: resolve loading_slip_id to string
+    const resolveSlipId = (slipId: any): string => {
+      if (!slipId) return '';
+      if (typeof slipId === 'string') return slipId;
+      return slipId._id || slipId.id || '';
+    };
+
+    filteredBills.forEach(bill => {
+      const billSlipId = resolveSlipId(bill.loading_slip_id);
+      const ls = loadingSlips.find(s => s.id === billSlipId || (s as any)._id === billSlipId);
+
+      const billNet = bill.bill_amount - (bill.mamool || 0) - (bill.commission || 0)
+        + (bill.detention || 0) + (bill.rto || 0) + (bill.extra || 0)
+        - (bill.penalties || 0) - (bill.party_commission_cut || 0);
+
+      // Try to find a matching memo for the same loading slip
+      const matchedMemo = filteredMemos.find(m => {
+        const mSlipId = resolveSlipId(m.loading_slip_id);
+        return mSlipId && mSlipId === billSlipId && !usedMemoIds.has(m.id);
+      });
+
+      if (matchedMemo) usedMemoIds.add(matchedMemo.id);
+
+      rows.push({
+        slipId: billSlipId,
+        bill,
+        memo: matchedMemo || null,
+        billNet,
+        memoNet: matchedMemo ? matchedMemo.net_amount : 0,
+        profit: billNet - (matchedMemo ? matchedMemo.net_amount : 0),
+        route: ls ? `${ls.from_location} → ${ls.to_location}` : '—',
+        vehicle: ls?.vehicle_no || bill.party || '—',
+        party: bill.party,
+        supplier: matchedMemo?.supplier || ls?.supplier || '—',
+      });
+    });
+
+    // Unmatched memos (no corresponding bill in filtered period)
+    const unmatchedMemos = filteredMemos.filter(m => !usedMemoIds.has(m.id));
+    unmatchedMemos.forEach(memo => {
+      const mSlipId = resolveSlipId(memo.loading_slip_id);
+      const ls = loadingSlips.find(s => s.id === mSlipId || (s as any)._id === mSlipId);
+      rows.push({
+        slipId: mSlipId,
+        bill: null,
+        memo,
+        billNet: 0,
+        memoNet: memo.net_amount,
+        profit: -memo.net_amount,
+        route: ls ? `${ls.from_location} → ${ls.to_location}` : '—',
+        vehicle: ls?.vehicle_no || '—',
+        party: ls?.party || '—',
+        supplier: memo.supplier,
+      });
+    });
+
+    // Sort: matched pairs first (highest profit first), then unmatched
+    rows.sort((a, b) => {
+      const aMatched = a.bill && a.memo ? 1 : 0;
+      const bMatched = b.bill && b.memo ? 1 : 0;
+      if (aMatched !== bMatched) return bMatched - aMatched;
+      return b.profit - a.profit;
+    });
+
+    return rows;
+  }, [filteredBills, filteredMemos, loadingSlips]);
 
   // Calculate party balance (bills due from parties) - OVERALL, not filtered by month
   const partyBalance = useMemo(() => {
@@ -420,8 +505,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       title: 'Total Profit (Bill - Memo)',
       value: formatCurrency(totalProfit),
       icon: TrendingUp,
-      color: 'bg-green-50 text-green-700',
-      iconBg: 'bg-green-100',
+      color: totalProfit >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700',
+      iconBg: totalProfit >= 0 ? 'bg-green-100' : 'bg-red-100',
+      clickable: true,
+      onClick: () => setShowProfitModal(true),
     },
     {
       title: 'Party Balance',
@@ -429,6 +516,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       icon: Users,
       color: 'bg-blue-50 text-blue-700',
       iconBg: 'bg-blue-100',
+      clickable: true,
+      onClick: () => onNavigate?.('parties'),
     },
     {
       title: 'Supplier Balance',
@@ -436,6 +525,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       icon: Truck,
       color: 'bg-orange-50 text-orange-700',
       iconBg: 'bg-orange-100',
+      clickable: true,
+      onClick: () => onNavigate?.('suppliers'),
     },
     {
       title: selectedMonths.length === 0 ? 'Total Revenue' : selectedMonths.length === 1 ? 'Monthly Revenue' : 'Multi-Month Revenue',
@@ -443,6 +534,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       icon: DollarSign,
       color: 'bg-purple-50 text-purple-700',
       iconBg: 'bg-purple-100',
+      clickable: false,
+      onClick: undefined,
     },
   ];
 
@@ -481,33 +574,21 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
-          const isClickable = stat.title === 'Party Balance' || stat.title === 'Supplier Balance';
-          
-          const handleClick = () => {
-            if (!onNavigate) return;
-            
-            if (stat.title === 'Party Balance') {
-              onNavigate('parties');
-            } else if (stat.title === 'Supplier Balance') {
-              onNavigate('suppliers');
-            }
-          };
-          
           return (
-            <div 
-              key={`stat-${stat.title}-${index}`} 
+            <div
+              key={`stat-${stat.title}-${index}`}
               className={`bg-white rounded-xl shadow-sm border border-gray-200 p-6 transition-all duration-200 ${
-                isClickable 
-                  ? 'cursor-pointer hover:shadow-md hover:border-blue-300 hover:bg-blue-50' 
+                stat.clickable
+                  ? 'cursor-pointer hover:shadow-md hover:border-blue-300 hover:scale-[1.02]'
                   : ''
               }`}
-              onClick={isClickable ? handleClick : undefined}
+              onClick={stat.onClick}
             >
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">{stat.title}</p>
                   <p className="text-2xl font-bold text-gray-900 mt-2">{stat.value}</p>
-                  {isClickable && (
+                  {stat.clickable && (
                     <p className="text-xs text-blue-600 mt-1">Click to view details →</p>
                   )}
                 </div>
@@ -721,7 +802,383 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
         </div>
       </div>
+
+      {/* ── Profit Breakdown Modal ── */}
+      {showProfitModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-6 px-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl">
+
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-5 border-b border-gray-200 bg-gradient-to-r from-green-600 to-emerald-600 rounded-t-2xl">
+              <div>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5" />
+                  Profit Breakdown — Bill vs Memo
+                </h2>
+                <p className="text-green-100 text-sm mt-0.5">
+                  {selectedMonths.length === 0
+                    ? 'All time'
+                    : selectedMonths.length === 1
+                    ? new Date(selectedMonths[0] + '-01').toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })
+                    : `${selectedMonths.length} months selected`}
+                  {' · '}{profitBreakdown.length} trip{profitBreakdown.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowProfitModal(false)}
+                className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Summary Bar */}
+            <div className="grid grid-cols-3 gap-0 border-b border-gray-100">
+              <div className="px-6 py-4 text-center border-r border-gray-100">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Bill (Net)</div>
+                <div className="text-xl font-bold text-blue-600">
+                  {formatCurrency(profitBreakdown.reduce((s, r) => s + r.billNet, 0))}
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">{filteredBills.length} bills</div>
+              </div>
+              <div className="px-6 py-4 text-center border-r border-gray-100">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Total Memo (Net)</div>
+                <div className="text-xl font-bold text-orange-600">
+                  {formatCurrency(profitBreakdown.reduce((s, r) => s + r.memoNet, 0))}
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">{filteredMemos.length} memos</div>
+              </div>
+              <div className="px-6 py-4 text-center">
+                <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Net Profit</div>
+                <div className={`text-xl font-bold ${totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(totalProfit)}
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5">
+                  {profitBreakdown.filter(r => r.bill && r.memo).length} matched pairs
+                </div>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              {profitBreakdown.length === 0 ? (
+                <div className="text-center py-16 text-gray-400">
+                  <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="text-sm">No bills or memos found for this period.</p>
+                </div>
+              ) : (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      <th className="px-4 py-3 text-left">Bill No.</th>
+                      <th className="px-4 py-3 text-left">Memo No.</th>
+                      <th className="px-4 py-3 text-left">Route</th>
+                      <th className="px-4 py-3 text-left">Vehicle</th>
+                      <th className="px-4 py-3 text-left">Party</th>
+                      <th className="px-4 py-3 text-left">Supplier</th>
+                      <th className="px-4 py-3 text-right">Bill Net</th>
+                      <th className="px-4 py-3 text-right">Memo Net</th>
+                      <th className="px-4 py-3 text-right">Profit</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {profitBreakdown.map((row, idx) => (
+                      <ProfitRow key={idx} row={row} formatCurrency={formatCurrency} />
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
+                      <td colSpan={6} className="px-4 py-3 text-gray-700">Totals</td>
+                      <td className="px-4 py-3 text-right text-blue-700">
+                        {formatCurrency(profitBreakdown.reduce((s, r) => s + r.billNet, 0))}
+                      </td>
+                      <td className="px-4 py-3 text-right text-orange-700">
+                        {formatCurrency(profitBreakdown.reduce((s, r) => s + r.memoNet, 0))}
+                      </td>
+                      <td className={`px-4 py-3 text-right ${
+                        totalProfit >= 0 ? 'text-green-700' : 'text-red-700'
+                      }`}>
+                        {formatCurrency(totalProfit)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowProfitModal(false)}
+                className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium transition-colors text-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+};
+
+// ── Sub-component: expandable profit row ──────────────────────────────────
+interface ProfitRowProps {
+  row: {
+    bill: any;
+    memo: any;
+    billNet: number;
+    memoNet: number;
+    profit: number;
+    route: string;
+    vehicle: string;
+    party: string;
+    supplier: string;
+  };
+  formatCurrency: (n: number) => string;
+}
+
+const ProfitRow: React.FC<ProfitRowProps> = ({ row, formatCurrency }) => {
+  const [expanded, setExpanded] = useState(false);
+  const profit = row.profit;
+
+  return (
+    <>
+      <tr
+        className={`hover:bg-gray-50 transition-colors cursor-pointer ${
+          !row.bill ? 'bg-orange-50/40' : !row.memo ? 'bg-blue-50/40' : ''
+        }`}
+        onClick={() => setExpanded(e => !e)}
+      >
+        {/* Bill No */}
+        <td className="px-4 py-3">
+          {row.bill ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold text-xs">
+              {row.bill.bill_number}
+            </span>
+          ) : (
+            <span className="text-gray-300 text-xs italic">No Bill</span>
+          )}
+        </td>
+        {/* Memo No */}
+        <td className="px-4 py-3">
+          {row.memo ? (
+            <span className="inline-flex items-center px-2 py-0.5 rounded bg-orange-100 text-orange-800 font-semibold text-xs">
+              {row.memo.memo_number}
+            </span>
+          ) : (
+            <span className="text-gray-300 text-xs italic">No Memo</span>
+          )}
+        </td>
+        {/* Route */}
+        <td className="px-4 py-3 text-gray-700 max-w-[160px] truncate" title={row.route}>{row.route}</td>
+        {/* Vehicle */}
+        <td className="px-4 py-3 font-medium text-gray-800">{row.vehicle}</td>
+        {/* Party */}
+        <td className="px-4 py-3 text-gray-600 max-w-[120px] truncate" title={row.party}>{row.party}</td>
+        {/* Supplier */}
+        <td className="px-4 py-3 text-gray-600 max-w-[120px] truncate" title={row.supplier}>{row.supplier}</td>
+        {/* Bill Net */}
+        <td className="px-4 py-3 text-right font-medium text-blue-700">
+          {row.billNet > 0 ? formatCurrency(row.billNet) : <span className="text-gray-300">—</span>}
+        </td>
+        {/* Memo Net */}
+        <td className="px-4 py-3 text-right font-medium text-orange-700">
+          {row.memoNet > 0 ? formatCurrency(row.memoNet) : <span className="text-gray-300">—</span>}
+        </td>
+        {/* Profit */}
+        <td className="px-4 py-3 text-right">
+          <div className="flex items-center justify-end gap-1">
+            <span className={`font-bold ${
+              profit > 0 ? 'text-green-600' : profit < 0 ? 'text-red-600' : 'text-gray-500'
+            }`}>
+              {profit > 0 ? '+' : ''}{formatCurrency(profit)}
+            </span>
+            {expanded ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+          </div>
+        </td>
+      </tr>
+
+      {/* Expanded details row */}
+      {expanded && (
+        <tr className="bg-gradient-to-r from-gray-50 to-slate-50">
+          <td colSpan={9} className="px-6 py-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Bill Details */}
+              {row.bill && (
+                <div className="bg-blue-50 rounded-xl border border-blue-100 p-4">
+                  <div className="text-xs font-bold text-blue-600 uppercase tracking-wide mb-3 flex items-center gap-1">
+                    <FileText className="w-3.5 h-3.5" /> Bill Details — {row.bill.bill_number}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Date</span>
+                      <span className="font-medium">{new Date(row.bill.date).toLocaleDateString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Party</span>
+                      <span className="font-medium">{row.bill.party}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Bill Amount</span>
+                      <span className="font-medium text-blue-700">{formatCurrency(row.bill.bill_amount)}</span>
+                    </div>
+                    {(row.bill.detention || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Detention</span>
+                        <span className="font-medium text-green-600">+{formatCurrency(row.bill.detention)}</span>
+                      </div>
+                    )}
+                    {(row.bill.extra || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Extra</span>
+                        <span className="font-medium text-green-600">+{formatCurrency(row.bill.extra)}</span>
+                      </div>
+                    )}
+                    {(row.bill.rto || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">RTO</span>
+                        <span className="font-medium text-green-600">+{formatCurrency(row.bill.rto)}</span>
+                      </div>
+                    )}
+                    {(row.bill.mamool || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Mamool</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.bill.mamool)}</span>
+                      </div>
+                    )}
+                    {(row.bill.commission || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Commission</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.bill.commission)}</span>
+                      </div>
+                    )}
+                    {(row.bill.tds || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">TDS</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.bill.tds)}</span>
+                      </div>
+                    )}
+                    {(row.bill.penalties || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Penalties</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.bill.penalties)}</span>
+                      </div>
+                    )}
+                    {(row.bill.party_commission_cut || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Party Comm. Cut</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.bill.party_commission_cut)}</span>
+                      </div>
+                    )}
+                    <div className="col-span-2 border-t border-blue-200 pt-1.5 mt-0.5 flex justify-between">
+                      <span className="font-semibold text-gray-700">Net Bill</span>
+                      <span className="font-bold text-blue-700">{formatCurrency(row.billNet)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Status</span>
+                      <span className={`font-medium ${
+                        row.bill.status === 'received' ? 'text-green-600' : 'text-yellow-600'
+                      }`}>{row.bill.status === 'received' ? 'Received ✓' : 'Pending'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Memo Details */}
+              {row.memo && (
+                <div className="bg-orange-50 rounded-xl border border-orange-100 p-4">
+                  <div className="text-xs font-bold text-orange-600 uppercase tracking-wide mb-3 flex items-center gap-1">
+                    <Receipt className="w-3.5 h-3.5" /> Memo Details — {row.memo.memo_number}
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-xs">
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Date</span>
+                      <span className="font-medium">{new Date(row.memo.date).toLocaleDateString('en-IN')}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Supplier</span>
+                      <span className="font-medium">{row.memo.supplier}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Freight</span>
+                      <span className="font-medium text-orange-700">{formatCurrency(row.memo.freight)}</span>
+                    </div>
+                    {(row.memo.commission || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Commission</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.memo.commission)}</span>
+                      </div>
+                    )}
+                    {(row.memo.mamool || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Mamool</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.memo.mamool)}</span>
+                      </div>
+                    )}
+                    {(row.memo.detention || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Detention</span>
+                        <span className="font-medium text-green-600">+{formatCurrency(row.memo.detention)}</span>
+                      </div>
+                    )}
+                    {(row.memo.extra || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Extra</span>
+                        <span className="font-medium text-green-600">+{formatCurrency(row.memo.extra)}</span>
+                      </div>
+                    )}
+                    {(row.memo.rto || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">RTO</span>
+                        <span className="font-medium text-green-600">+{formatCurrency(row.memo.rto)}</span>
+                      </div>
+                    )}
+                    {(row.memo.deduction || 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-gray-500">Deduction</span>
+                        <span className="font-medium text-red-500">-{formatCurrency(row.memo.deduction)}</span>
+                      </div>
+                    )}
+                    <div className="col-span-2 border-t border-orange-200 pt-1.5 mt-0.5 flex justify-between">
+                      <span className="font-semibold text-gray-700">Net Memo</span>
+                      <span className="font-bold text-orange-700">{formatCurrency(row.memoNet)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">Status</span>
+                      <span className={`font-medium ${
+                        row.memo.status === 'paid' ? 'text-green-600' : 'text-yellow-600'
+                      }`}>{row.memo.status === 'paid' ? 'Paid ✓' : 'Pending'}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* If only bill (no memo) */}
+              {row.bill && !row.memo && (
+                <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-4 flex items-center justify-center">
+                  <p className="text-sm text-gray-400 italic">No memo linked to this loading slip</p>
+                </div>
+              )}
+              {/* If only memo (no bill) */}
+              {row.memo && !row.bill && (
+                <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-4 flex items-center justify-center">
+                  <p className="text-sm text-gray-400 italic">No bill linked to this loading slip</p>
+                </div>
+              )}
+            </div>
+
+            {/* Profit summary for this row */}
+            <div className={`mt-3 px-4 py-2.5 rounded-lg text-sm font-semibold flex items-center justify-between ${
+              profit > 0 ? 'bg-green-100 text-green-800' : profit < 0 ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-700'
+            }`}>
+              <span>Trip Profit</span>
+              <span className="text-base">{profit > 0 ? '+' : ''}{formatCurrency(profit)}</span>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   );
 };
 
