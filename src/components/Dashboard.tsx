@@ -74,8 +74,12 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   }, [vehicles]);
   
 
-  // Modal state
+  // Modal states
   const [showProfitModal, setShowProfitModal] = useState(false);
+  const [showPartyModal, setShowPartyModal] = useState(false);
+  const [showSupplierModal, setShowSupplierModal] = useState(false);
+  const [partyBalanceFilter, setPartyBalanceFilter] = useState<'unpaid'|'paid'|'all'>('unpaid');
+  const [supplierBalanceFilter, setSupplierBalanceFilter] = useState<'unpaid'|'paid'|'all'>('unpaid');
 
   // Calculate actual profit: Bill Net Amount (excluding TDS and Party Commission Cut) - Memo Net Amount
   const totalProfit = useMemo(() => {
@@ -172,140 +176,94 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
     return rows;
   }, [filteredBills, filteredMemos, loadingSlips]);
 
-  // Calculate party balance (bills due from parties) - OVERALL, not filtered by month
-  const partyBalance = useMemo(() => {
-    const balance = bills
-      .filter(bill => bill.status !== 'received') // Exclude paid/received bills
-      .reduce((sum, bill) => {
-      // Calculate total bill amount (what party owes)
-      const billAmount = bill.bill_amount || 0;
-      const detention = bill.detention || 0;
-      const extra = bill.extra || 0;
-      const rto = bill.rto || 0;
-      const mamool = bill.mamool || 0;
-      const tds = bill.tds || 0;
-      const penalties = bill.penalties || 0;
+  // ─── Per-bill breakdown for Party Balance modal ───────────────────────
+  const partyBillRows = useMemo(() => {
+    return bills
+      .map(bill => {
+        const billAmount = bill.bill_amount || 0;
+        const partyOwes = billAmount + (bill.detention || 0) + (bill.extra || 0) + (bill.rto || 0)
+          - (bill.mamool || 0) - (bill.tds || 0) - (bill.penalties || 0);
 
-      // Net amount party owes = Bill Amount + Extras - Deductions
-      const partyOwes = billAmount + detention + extra + rto - mamool - tds - penalties;
+        const paid = [
+          ...bankingEntries.filter(e => e.reference_id === bill.bill_number && e.type === 'credit'),
+          ...cashbookEntries.filter(e => e.reference_id === bill.bill_number && e.type === 'credit'),
+        ].reduce((s, e) => s + e.amount, 0);
 
-      // Find all payments for this bill from banking entries
-      const bankingPayments = bankingEntries
-        .filter(entry => {
-          const matchesReference = entry.reference_id === bill.bill_number;
-          const isCredit = entry.type === 'credit';
-          return matchesReference && isCredit;
-        })
-        .reduce((total, entry) => total + entry.amount, 0);
+        const balance = partyOwes - paid;
+        const isFullyPaid = bill.status === 'received' || balance <= 0;
 
-      // Find all payments for this bill from cashbook entries
-      const cashbookPayments = cashbookEntries
-        .filter(entry => {
-          const matchesReference = entry.reference_id === bill.bill_number;
-          const isCredit = entry.type === 'credit';
-          return matchesReference && isCredit;
-        })
-        .reduce((total, entry) => total + entry.amount, 0);
-
-      const billPayments = bankingPayments + cashbookPayments;
-      const billBalance = partyOwes - billPayments;
-
-      // Only include positive balances (pending amounts)
-      const pendingAmount = Math.max(0, billBalance);
-
-      return sum + pendingAmount;
-    }, 0);
-
-    // Subtract party on account payments from total balance
-    const partyOnAccountPayments = bankingEntries
-      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-
-    const partyOnAccountCashPayments = cashbookEntries
-      .filter(entry => entry.type === 'credit' && entry.category === 'party_on_account')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-
-    // Subtract party debit notes from total balance (debit notes reduce what party owes us)
-    const partyDebitNotes = bankingEntries
-      .filter(entry => entry.type === 'credit' && entry.category === 'party_debit_note')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-
-    const totalOnAccountPayments = partyOnAccountPayments + partyOnAccountCashPayments;
-    const totalDebitNotes = partyDebitNotes;
-    const finalBalance = Math.max(0, balance - totalOnAccountPayments - totalDebitNotes);
-
-    return finalBalance;
+        return {
+          bill_number: bill.bill_number,
+          party: bill.party,
+          date: bill.date,
+          net_amount: partyOwes,
+          paid,
+          balance: Math.max(0, balance),
+          isPaid: isFullyPaid,
+          status: bill.status,
+        };
+      })
+      // latest first
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [bills, bankingEntries, cashbookEntries]);
 
-  // Calculate supplier balance (memos due to suppliers - ONLY market vehicles) - OVERALL, not filtered by month
-  const supplierBalance = useMemo(() => {
-    const balance = memos
-      .filter(memo => memo.status !== 'paid') // Exclude memos explicitly marked as paid
-      .reduce((sum, memo) => {
-      // Handle both string loading_slip_id and populated object
-      let loadingSlipId: string;
-      if (typeof memo.loading_slip_id === 'string') {
-        loadingSlipId = memo.loading_slip_id;
-      } else if (memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
-        loadingSlipId = (memo.loading_slip_id as any)._id || (memo.loading_slip_id as any).id;
-      } else {
-        return sum;
-      }
+  // Derived: party balance summary numbers
+  const partyBalance = useMemo(() =>
+    partyBillRows.filter(r => !r.isPaid).reduce((s, r) => s + r.balance, 0),
+  [partyBillRows]);
 
-      // Find the loading slip and vehicle to check ownership
-      const ls = loadingSlips.find(s => {
-        const idMatch = s.id === loadingSlipId;
-        const objectIdMatch = (s as any)._id === loadingSlipId;
-        const objectIdStringMatch = String((s as any)._id) === String(loadingSlipId);
-        return idMatch || objectIdMatch || objectIdStringMatch;
-      });
+  // ─── Per-memo breakdown for Supplier Balance modal ────────────────────
+  const supplierMemoRows = useMemo(() => {
+    return memos
+      .map(memo => {
+        let loadingSlipId: string;
+        if (typeof memo.loading_slip_id === 'string') {
+          loadingSlipId = memo.loading_slip_id;
+        } else if (memo.loading_slip_id && typeof memo.loading_slip_id === 'object') {
+          loadingSlipId = (memo.loading_slip_id as any)._id || (memo.loading_slip_id as any).id;
+        } else {
+          return null;
+        }
 
-      if (!ls) return sum;
+        const ls = loadingSlips.find(s =>
+          s.id === loadingSlipId ||
+          (s as any)._id === loadingSlipId ||
+          String((s as any)._id) === String(loadingSlipId)
+        );
+        if (!ls) return null;
 
-      const vehicle = vehicles.find(v => v.vehicle_no === ls.vehicle_no);
+        const vehicle = vehicles.find(v => v.vehicle_no === ls.vehicle_no);
+        if (!vehicle || vehicle.ownership_type !== 'market') return null;
 
-      if (!vehicle) return sum;
+        const paid = [
+          ...bankingEntries.filter(e => e.reference_id === memo.memo_number && e.type === 'debit'),
+          ...cashbookEntries.filter(e => e.reference_id === memo.memo_number && e.type === 'debit'),
+        ].reduce((s, e) => s + e.amount, 0);
 
-      // Only include market vehicles in supplier balance
-      if (vehicle.ownership_type !== 'market') return sum;
+        const balance = Math.max(0, (memo.net_amount || 0) - paid);
+        const isFullyPaid = memo.status === 'paid' || balance <= 0;
 
-      // Check if memo has been paid (subtract all debit entries that reference this memo
-      // in both banking and cashbook, same logic as SupplierDetail)
-      const bankingPayments = bankingEntries
-        .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
-        .reduce((total, entry) => total + entry.amount, 0);
-
-      const cashbookPayments = cashbookEntries
-        .filter(entry => entry.reference_id === memo.memo_number && entry.type === 'debit')
-        .reduce((total, entry) => total + entry.amount, 0);
-
-      const memoPayments = bankingPayments + cashbookPayments;
-      const memoBalance = Math.max(0, (memo.net_amount || 0) - memoPayments);
-
-      // Only add positive pending amount; fully paid or overpaid memos do not affect supplier balance
-      return sum + memoBalance;
-    }, 0);
-
-    // Subtract supplier on account payments from total balance
-    const supplierOnAccountPayments = bankingEntries
-      .filter(entry => entry.type === 'debit' && (entry.category as any) === 'supplier_on_account')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-
-    const supplierOnAccountCashPayments = cashbookEntries
-      .filter(entry => entry.type === 'debit' && entry.category === 'supplier_on_account')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-
-    // Subtract supplier debit notes from total balance (debit notes reduce what we owe suppliers)
-    const supplierDebitNotes = bankingEntries
-      .filter(entry => entry.type === 'credit' && (entry.category as any) === 'supplier_debit_note')
-      .reduce((sum, entry) => sum + entry.amount, 0);
-
-    const totalSupplierOnAccountPayments = supplierOnAccountPayments + supplierOnAccountCashPayments;
-    const totalSupplierDebitNotes = supplierDebitNotes;
-    const finalSupplierBalance = Math.max(0, balance - totalSupplierOnAccountPayments - totalSupplierDebitNotes);
-
-    return finalSupplierBalance;
+        return {
+          memo_number: memo.memo_number,
+          supplier: memo.supplier,
+          vehicle: ls.vehicle_no,
+          date: memo.date,
+          net_amount: memo.net_amount || 0,
+          paid,
+          balance,
+          isPaid: isFullyPaid,
+          status: memo.status,
+        };
+      })
+      .filter(Boolean) as NonNullable<ReturnType<typeof memos['map']>[0]>[]
+      // latest first
+      .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [memos, loadingSlips, vehicles, bankingEntries, cashbookEntries]);
+
+  // Derived: supplier balance summary number
+  const supplierBalance = useMemo(() =>
+    (supplierMemoRows as any[]).filter((r: any) => !r.isPaid).reduce((s: number, r: any) => s + r.balance, 0),
+  [supplierMemoRows]);
 
   // ─── Compute full per-party ledger summaries for PDF/Excel export ─────
   const allPartyLedgerSummaries = useMemo((): PartyLedgerSummary[] => {
@@ -517,7 +475,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       color: 'bg-blue-50 text-blue-700',
       iconBg: 'bg-blue-100',
       clickable: true,
-      onClick: () => onNavigate?.('parties'),
+      onClick: () => setShowPartyModal(true),
     },
     {
       title: 'Supplier Balance',
@@ -526,7 +484,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
       color: 'bg-orange-50 text-orange-700',
       iconBg: 'bg-orange-100',
       clickable: true,
-      onClick: () => onNavigate?.('suppliers'),
+      onClick: () => setShowSupplierModal(true),
     },
     {
       title: selectedMonths.length === 0 ? 'Total Revenue' : selectedMonths.length === 1 ? 'Monthly Revenue' : 'Multi-Month Revenue',
@@ -918,6 +876,226 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           </div>
         </div>
       )}
+
+      {/* ── Party Balance Modal ── */}
+      {showPartyModal && (() => {
+        const filtered = partyBillRows.filter(r =>
+          partyBalanceFilter === 'all' ? true :
+          partyBalanceFilter === 'paid' ? r.isPaid : !r.isPaid
+        );
+        const totalShown = filtered.reduce((s, r) => s + (r.isPaid ? 0 : r.balance), 0);
+        return (
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-6 px-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-2xl">
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Users className="w-5 h-5" /> Party Balance
+                  </h2>
+                  <p className="text-blue-100 text-sm mt-0.5">
+                    {partyBillRows.length} bills total · Unpaid: {formatCurrency(partyBalance)}
+                  </p>
+                </div>
+                <button onClick={() => setShowPartyModal(false)} className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100 bg-gray-50">
+                {(['unpaid', 'paid', 'all'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setPartyBalanceFilter(f)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+                      partyBalanceFilter === f
+                        ? f === 'unpaid' ? 'bg-red-500 text-white' : f === 'paid' ? 'bg-green-500 text-white' : 'bg-blue-600 text-white'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {f === 'unpaid' ? `Unpaid (${partyBillRows.filter(r => !r.isPaid).length})` :
+                     f === 'paid'   ? `Paid (${partyBillRows.filter(r => r.isPaid).length})` :
+                     `All (${partyBillRows.length})`}
+                  </button>
+                ))}
+                {partyBalanceFilter === 'unpaid' && (
+                  <span className="ml-auto text-sm font-bold text-red-600">
+                    Total Pending: {formatCurrency(partyBalance)}
+                  </span>
+                )}
+              </div>
+
+              {/* List */}
+              <div className="overflow-y-auto max-h-[60vh]">
+                {filtered.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <FileText className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">No bills in this category.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0">
+                      <tr className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        <th className="px-4 py-3 text-left">Bill No.</th>
+                        <th className="px-4 py-3 text-left">Party</th>
+                        <th className="px-4 py-3 text-left">Date</th>
+                        <th className="px-4 py-3 text-right">Net Amount</th>
+                        <th className="px-4 py-3 text-right">Paid</th>
+                        <th className="px-4 py-3 text-right">Balance</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filtered.map((r, i) => (
+                        <tr key={i} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-semibold text-xs">{r.bill_number}</span>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-800 max-w-[140px] truncate" title={r.party}>{r.party}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{new Date(r.date).toLocaleDateString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-medium text-blue-700">{formatCurrency(r.net_amount)}</td>
+                          <td className="px-4 py-3 text-right text-green-600 font-medium">{r.paid > 0 ? formatCurrency(r.paid) : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3 text-right font-bold text-red-600">{r.balance > 0 ? formatCurrency(r.balance) : <span className="text-gray-400">—</span>}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${r.isPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {r.isPaid ? 'Received ✓' : 'Pending'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {partyBalanceFilter !== 'paid' && (
+                      <tfoot>
+                        <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
+                          <td colSpan={5} className="px-4 py-3 text-gray-700">Total Pending Balance</td>
+                          <td className="px-4 py-3 text-right text-red-700">{formatCurrency(partyBalance)}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+                <button onClick={() => setShowPartyModal(false)} className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-colors">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Supplier Balance Modal ── */}
+      {showSupplierModal && (() => {
+        const rows = supplierMemoRows as any[];
+        const filtered = rows.filter(r =>
+          supplierBalanceFilter === 'all' ? true :
+          supplierBalanceFilter === 'paid' ? r.isPaid : !r.isPaid
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 backdrop-blur-sm overflow-y-auto py-6 px-4">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-5 bg-gradient-to-r from-orange-500 to-amber-500 rounded-t-2xl">
+                <div>
+                  <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <Truck className="w-5 h-5" /> Supplier Balance (Market Vehicles)
+                  </h2>
+                  <p className="text-orange-100 text-sm mt-0.5">
+                    {rows.length} memos total · Unpaid: {formatCurrency(supplierBalance)}
+                  </p>
+                </div>
+                <button onClick={() => setShowSupplierModal(false)} className="p-2 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-100 bg-gray-50">
+                {(['unpaid', 'paid', 'all'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setSupplierBalanceFilter(f)}
+                    className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-colors ${
+                      supplierBalanceFilter === f
+                        ? f === 'unpaid' ? 'bg-red-500 text-white' : f === 'paid' ? 'bg-green-500 text-white' : 'bg-orange-500 text-white'
+                        : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
+                    }`}
+                  >
+                    {f === 'unpaid' ? `Unpaid (${rows.filter((r: any) => !r.isPaid).length})` :
+                     f === 'paid'   ? `Paid (${rows.filter((r: any) => r.isPaid).length})` :
+                     `All (${rows.length})`}
+                  </button>
+                ))}
+                {supplierBalanceFilter === 'unpaid' && (
+                  <span className="ml-auto text-sm font-bold text-red-600">
+                    Total Pending: {formatCurrency(supplierBalance)}
+                  </span>
+                )}
+              </div>
+
+              {/* List */}
+              <div className="overflow-y-auto max-h-[60vh]">
+                {filtered.length === 0 ? (
+                  <div className="text-center py-12 text-gray-400">
+                    <Receipt className="w-10 h-10 mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">No memos in this category.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0">
+                      <tr className="bg-gray-50 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                        <th className="px-4 py-3 text-left">Memo No.</th>
+                        <th className="px-4 py-3 text-left">Supplier</th>
+                        <th className="px-4 py-3 text-left">Vehicle</th>
+                        <th className="px-4 py-3 text-left">Date</th>
+                        <th className="px-4 py-3 text-right">Net Amount</th>
+                        <th className="px-4 py-3 text-right">Paid</th>
+                        <th className="px-4 py-3 text-right">Balance</th>
+                        <th className="px-4 py-3 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {filtered.map((r: any, i: number) => (
+                        <tr key={i} className="hover:bg-gray-50 transition-colors">
+                          <td className="px-4 py-3">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded bg-orange-100 text-orange-800 font-semibold text-xs">{r.memo_number}</span>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-gray-800 max-w-[120px] truncate" title={r.supplier}>{r.supplier}</td>
+                          <td className="px-4 py-3 text-gray-700 font-medium">{r.vehicle}</td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{new Date(r.date).toLocaleDateString('en-IN')}</td>
+                          <td className="px-4 py-3 text-right font-medium text-orange-700">{formatCurrency(r.net_amount)}</td>
+                          <td className="px-4 py-3 text-right text-green-600 font-medium">{r.paid > 0 ? formatCurrency(r.paid) : <span className="text-gray-300">—</span>}</td>
+                          <td className="px-4 py-3 text-right font-bold text-red-600">{r.balance > 0 ? formatCurrency(r.balance) : <span className="text-gray-400">—</span>}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-bold ${r.isPaid ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {r.isPaid ? 'Paid ✓' : 'Pending'}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {supplierBalanceFilter !== 'paid' && (
+                      <tfoot>
+                        <tr className="bg-gray-50 font-bold border-t-2 border-gray-200">
+                          <td colSpan={6} className="px-4 py-3 text-gray-700">Total Pending Balance</td>
+                          <td className="px-4 py-3 text-right text-red-700">{formatCurrency(supplierBalance)}</td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                )}
+              </div>
+
+              <div className="px-6 py-4 border-t border-gray-100 flex justify-end">
+                <button onClick={() => setShowSupplierModal(false)} className="px-5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg font-medium text-sm transition-colors">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
