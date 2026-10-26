@@ -255,9 +255,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
           status: memo.status,
         };
       })
-      .filter(Boolean) as NonNullable<ReturnType<typeof memos['map']>[0]>[]
-      // latest first
-      .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      .filter((r): r is NonNullable<typeof r> => Boolean(r))
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [memos, loadingSlips, vehicles, bankingEntries, cashbookEntries]);
 
   // Derived: supplier balance summary number
